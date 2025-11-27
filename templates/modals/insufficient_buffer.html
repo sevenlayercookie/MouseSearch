@@ -1,0 +1,36 @@
+ <!-- Insufficient Buffer Modal -->
+  <div class="modal fade" id="insufficientBufferModal" tabindex="-1" aria-labelledby="insufficientBufferModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-warning">
+          <h5 class="modal-title" id="insufficientBufferModalLabel">
+            <i class="bi bi-exclamation-triangle-fill"></i> Insufficient Upload Buffer
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>You don't have enough upload buffer to download this torrent.</p>
+          <div class="alert alert-info">
+            <strong>Your Buffer:</strong> <span id="modal-buffer-gb">0</span> GB<br>
+            <strong>Torrent Size:</strong> <span id="modal-torrent-size">0</span> GB<br>
+            <strong>Needed:</strong> <span id="modal-needed-gb">0</span> GB
+          </div>
+          <p>Purchase upload credit to proceed with this download:</p>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-primary" id="modal-buy-recommended">
+              Buy <span id="modal-recommended-amount">0</span> GB
+              (<span id="modal-recommended-cost">0</span> BP)
+            </button>
+            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal"
+              data-bs-target="#uploadPurchaseModal">
+              Choose Custom Amount
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>

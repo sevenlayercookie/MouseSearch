@@ -1,0 +1,71 @@
+  <div class="modal fade" id="vipPurchaseModal" tabindex="-1" aria-labelledby="vipPurchaseModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="vipPurchaseModalLabel">
+            <i class="bi bi-star-fill text-warning"></i> Top Up VIP
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+
+          <div class="card mb-3">
+            <div class="card-body py-2 px-3">
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted">Current Bonus Points:</span>
+                <strong id="vip-modal-current-bp">---</strong>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted">Current VIP Duration:</span>
+                <strong id="vip-modal-current-weeks">---</strong>
+              </div>
+              <div class="d-flex justify-content-between small">
+                <span class="text-muted">Max Allowed:</span>
+                <strong>12.8 weeks (90 days)</strong>
+              </div>
+            </div>
+          </div>
+
+          <p class="small text-muted mb-3 text-center">
+            VIP costs <strong>1,250 BP</strong> per week.
+          </p>
+
+          <div class="d-grid gap-2">
+            <button type="button"
+              class="btn btn-outline-primary d-flex justify-content-between align-items-center vip-buy-btn"
+              data-duration="4">
+              <div class="text-start">
+                <div class="fw-bold">Buy 4 Weeks</div>
+                <small class="text-muted" style="font-size: 0.75rem;">+28 Days</small>
+              </div>
+              <span class="badge bg-secondary">5,000 BP</span>
+            </button>
+
+            <button type="button"
+              class="btn btn-outline-primary d-flex justify-content-between align-items-center vip-buy-btn"
+              data-duration="8">
+              <div class="text-start">
+                <div class="fw-bold">Buy 8 Weeks</div>
+                <small class="text-muted" style="font-size: 0.75rem;">+56 Days</small>
+              </div>
+              <span class="badge bg-secondary">10,000 BP</span>
+            </button>
+
+            <hr class="my-2">
+
+            <button type="button" class="btn btn-success d-flex justify-content-between align-items-center vip-buy-btn"
+              data-duration="max" id="vip-buy-max-btn">
+              <div class="text-start">
+                <div class="fw-bold" id="vip-max-title">Top Up Max</div>
+                <small class="text-white-50" style="font-size: 0.75rem;" id="vip-max-subtitle">Calculated based on
+                  limit</small>
+              </div>
+              <span class="badge bg-dark" id="vip-max-cost">Calculating...</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>

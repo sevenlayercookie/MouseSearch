@@ -1,0 +1,113 @@
+{% if error_message %}
+<div class="alert alert-danger text-center" role="alert">
+    {{ error_message }}
+</div>
+{% elif not results %}
+<div class="alert alert-warning text-center" role="alert">
+    No results found. Please try a different search query.
+</div>
+{% else %}
+{% for result in results %}
+<div class="row my-3 mx-0 py-2 pe-lg-0 rounded-1 border shadow-sm result-item" data-torrent-id="{{ result.id }}"
+    data-snatched="{{ result.my_snatched }}" data-torrent-url="{{ result.download_link | safe }}">
+    <div class="col-6 col-md-4 d-flex justify-content-center align-items-center">
+        <a href="https://www.myanonamouse.net/t/{{ result.id }}" target="_blank">
+            <img class="img-fluid me-2 rounded" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}"
+                alt="Thumbnail" loading="lazy" style="object-fit: contain;"
+                onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
+        </a>
+    </div>
+
+    <div class="col-6 col-md-5 pb-3 mb-0 small lh-sm">
+        <div class="d-flex justify-content-between">
+            <a href="https://www.myanonamouse.net/t/{{ result.id }}" target="_blank">
+                <strong class="text-gray-dark">{{ result.title | safe }}</strong>
+            </a>
+        </div>
+
+        <div class="my-2">
+            {% if result.my_snatched == 1 %}
+            <span class="badge bg-success m-1">Downloaded</span>
+            {% endif %}
+            {% if result.vip == 1 %}
+            <span class="badge bg-warning text-dark m-1">VIP</span>
+            {% endif %}
+            {% if result.free == 1 or result.personal_freeleech == 1 %}
+            <span class="badge bg-info text-dark m-1">Freeleech</span>
+            {% endif %}
+        </div>
+
+        <div class="row g-2 torrent-details">
+            {% if result.series_display %}
+            <div class="col-12" title="Series">
+                <i class="bi bi-collection"></i> {{ result.series_display }}
+            </div>
+            {% endif %}
+            {% if result.author_info %}
+            <div class="col-6" title="Author">
+                <i class="bi bi-person"></i> {{ result.author_info }}
+            </div>
+            {% endif %}
+            <div class="col-6" title="Narrator">
+                <i class="bi bi-mic"></i> {{ result.narrator_info or "N/A" }}
+            </div>
+            <div class="col-6" title="File Type">
+                <i class="bi bi-file-earmark-music"></i> {{ result.filetype }}
+            </div>
+            <div class="col-6" title="Size">
+                <i class="bi bi-hdd"></i> {{ result.size }}
+            </div>
+            <div class="col-6" title="Date Added">
+                <i class="bi bi-calendar3"></i> {{ result.added }}
+            </div>
+            <div class="col-6" title="Seeders / Leechers">
+                <i class="bi bi-people"></i> {{ result.seeders }}/{{ result.leechers }}
+            </div>
+            <div class="col-6" title="Relevance Score">
+                <i class="bi bi-star"></i> {{ result.score }}
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3 py-2 d-flex flex-column justify-content-center">
+        {% if result.download_link %}
+        <div class="d-grid gap-2 d-md-block" style="width:100%" {% if CLIENT_STATUS !='CONNECTED'
+            %}title="Torrent client is not connected." {% endif %}>
+            <button type="button" class="btn btn-primary add-to-client-button" style="width:100%"
+                data-torrent-url="{{ result.download_link | safe }}" data-author="{{ result.author_info }}"
+                data-title="{{ result.title }}" data-id="{{ result.id }}" data-size="{{ result.size }}"
+                data-main-cat="{{ result.main_cat }}" data-series-info="{{ result.series_info | escape }}" {% if
+                CLIENT_STATUS !='CONNECTED' %}disabled{% endif %}>
+                Download
+            </button>
+        </div>
+
+        <div class="form-floating mt-2">
+            <select name="category" class="form-select category-dropdown" id="catSelect{{ result.id }}">
+                <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
+                {% for category_name, category_info in categories.items() %}
+                <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{% endif %}>
+                    {{ category_name }}
+                </option>
+                {% endfor %}
+            </select>
+            <label for="catSelect{{ result.id }}">Torrent Category</label>
+        </div>
+
+                <div class="text-center mt-1 lh-1">
+            <a href="{{ result.download_link | safe }}" class="small text-muted text-decoration-none" target="_blank">
+                <i class="bi bi-download" style="font-size: 0.8rem;"></i> Save .torrent file
+            </a>
+        </div>
+
+        <div class="response-message-result mt-2"></div>
+        <div class="torrent-status-container mt-2"></div>
+
+        {% else %}
+        <div class="text-center text-muted small p-2">
+            No torrent file available; check your VIP status.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endif %}

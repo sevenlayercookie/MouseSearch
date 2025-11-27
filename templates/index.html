@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <script src="{{ url_for('static', filename='bootstrap/js/color-modes.js') }}"></script>
+  <script>
+    // Make upload options available globally for validation
+    window.UPLOAD_OPTIONS = {{ UPLOAD_OPTIONS | tojson }};
+    // Create sorted array of valid amounts for easy lookup
+    window.VALID_UPLOAD_AMOUNTS = Object.keys(window.UPLOAD_OPTIONS)
+      .map(k => parseFloat(k))
+      .sort((a, b) => a - b);
+  </script>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MyAnonaMouse Search utility">
+  <meta name="author" content="sevenlayercookie">
+  <title>MouseSearch</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@docsearch/css@3">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon/favicon-96x96.png') }}"
+    sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon/favicon.svg') }}" />
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon/favicon.ico') }}" />
+  <link rel="apple-touch-icon" sizes="180x180"
+    href="{{ url_for('static', filename='favicon/apple-touch-icon.png') }}" />
+  <meta name="apple-mobile-web-app-title" content="Mouse" />
+  <link rel="manifest" href="{{ url_for('static', filename='favicon/site.webmanifest') }}" />
+  <meta name="theme-color" content="#712cf9">
+
+
+
+
+</head>
+
+<body class="bg-body-tertiary">
+  <svg xmlns="http://www.w3.org/2000/svg" class="d-none">
+    <symbol id="check2" viewBox="0 0 16 16">
+      <path
+        d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z">
+      </path>
+    </symbol>
+    <symbol id="circle-half" viewBox="0 0 16 16">
+      <path d="M8 15A7 7 0 1 0 8 1v14zm0 1A8 8 0 1 1 8 0a8 8 0 0 1 0 16z"></path>
+    </symbol>
+    <symbol id="moon-stars-fill" viewBox="0 0 16 16">
+      <path
+        d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z">
+      </path>
+      <path
+        d="M10.794 3.148a.217.217 0 0 1 .412 0l.387 1.162c.173.518.579.924 1.097 1.097l1.162.387a.217.217 0 0 1 0 .412l-1.162.387a1.734 1.734 0 0 0-1.097 1.097l-.387 1.162a.217.217 0 0 1-.412 0l-.387-1.162A1.734 1.734 0 0 0 9.31 6.593l-1.162-.387a.217.217 0 0 1 0-.412l1.162-.387a1.734 1.734 0 0 0 1.097-1.097l.387-1.162zM13.863.099a.145.145 0 0 1 .274 0l.258.774c.115.346.386.617.732.732l.774.258a.145.145 0 0 1 0 .274l-.774.258a1.156 1.156 0 0 0-.732.732l-.258.774a.145.145 0 0 1-.274 0l-.258-.774a1.156 1.156 0 0 0-.732-.732l-.774-.258a.145.145 0 0 1 0-.274l.774-.258c.346-.115.617-.386.732-.732L13.863.1z">
+      </path>
+    </symbol>
+    <symbol id="sun-fill" viewBox="0 0 16 16">
+      <path
+        d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708z">
+      </path>
+    </symbol>
+  </svg>
+
+  <div class="dropdown position-fixed bottom-0 end-0 mb-3 me-3 bd-mode-toggle">
+    <button class="btn btn-bd-primary py-2 dropdown-toggle d-flex align-items-center" id="bd-theme" type="button"
+      aria-expanded="false" data-bs-toggle="dropdown" aria-label="Toggle theme (dark)">
+      <svg class="bi my-1 theme-icon-active" width="1em" height="1em">
+        <use href="#moon-stars-fill"></use>
+      </svg>
+      <span class="visually-hidden" id="bd-theme-text">Toggle theme</span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="bd-theme-text">
+      <li>
+        <button type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="light"
+          aria-pressed="false">
+          <svg class="bi me-2 opacity-50" width="1em" height="1em">
+            <use href="#sun-fill"></use>
+          </svg>
+          Light
+          <svg class="bi ms-auto d-none" width="1em" height="1em">
+            <use href="#check2"></use>
+          </svg>
+        </button>
+      </li>
+      <li>
+        <button type="button" class="dropdown-item d-flex align-items-center active" data-bs-theme-value="dark"
+          aria-pressed="true">
+          <svg class="bi me-2 opacity-50" width="1em" height="1em">
+            <use href="#moon-stars-fill"></use>
+          </svg>
+          Dark
+          <svg class="bi ms-auto d-none" width="1em" height="1em">
+            <use href="#check2"></use>
+          </svg>
+        </button>
+      </li>
+      <li>
+        <button type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="auto"
+          aria-pressed="false">
+          <svg class="bi me-2 opacity-50" width="1em" height="1em">
+            <use href="#circle-half"></use>
+          </svg>
+          Auto
+          <svg class="bi ms-auto d-none" width="1em" height="1em">
+            <use href="#check2"></use>
+          </svg>
+        </button>
+      </li>
+    </ul>
+  </div>
+
+
+  <nav class="navbar fixed-top navbar-dark bg-dark" aria-label="Main navigation">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#"></a>
+      <button class="navbar-toggler p-0 border-0" type="button" data-bs-toggle="offcanvas"
+        data-bs-target="#settingsOffcanvas">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+    </div>
+  </nav>
+
+
+
+  <main class="container">
+    <div class="d-flex justify-content-center align-items-center p-3 my-3 text-white bg-purple rounded shadow-sm">
+      <a href="/" class="lh-1 text-center text-decoration-none">
+        <img src="{{ url_for('static', filename='favicon/transparent.png') }}" alt="Logo" height="48">
+        <h1 class="h1 mb-0 text-white lh-1">MouseSearch</h1>
+      </a>
+    </div>
+
+    <div class="my-3 p-3 bg-body rounded shadow-sm">
+      <main class="">
+        <form id="search-form" method="GET" autocomplete="off">
+          <h1 class="h3 mb-3 fw-normal"></h1>
+
+          <div class="form-floating">
+            <input type="text" class="form-control" id="query" name="query"
+              placeholder="The Great Gatsby F. Scott Fitzgerald">
+            <label for="query">Search...</label>
+          </div>
+          <div>
+            <div class="form-check form-check-inline text-start my-3">
+              <input class="form-check-input" name="search_in_title" type="checkbox" id="search_in_title" checked>
+              <label class="form-check-label" for="search_in_title">
+                Title
+              </label>
+            </div>
+            <div class="form-check form-check-inline text-start my-3">
+              <input class="form-check-input" name="search_in_author" type="checkbox" id="search_in_author" checked>
+              <label class="form-check-label" for="search_in_author">
+                Author
+              </label>
+            </div>
+            <div class="form-check form-check-inline text-start my-3">
+              <input class="form-check-input" name="search_in_narrator" type="checkbox" id="search_in_narrator">
+              <label class="form-check-label" for="search_in_narrator">
+                Narrator
+              </label>
+            </div>
+            <div class="form-check form-check-inline text-start my-3">
+              <input class="form-check-input" name="search_in_series" type="checkbox" id="search_in_series" checked>
+              <label class="form-check-label" for="search_in_series">
+                Series
+              </label>
+            </div>
+          </div>
+          <div class="mb-3 form-floating">
+            <select class="form-select" name="media_type" id="media_type" aria-label="Media type">
+              <option value="13" selected>Audiobooks</option>
+              <option value="14">E-Books</option>
+              <option value="15">Musicology</option>
+              <option value="16">Radio</option>
+              <option value="all">All</option>
+            </select>
+            <label for="media_type">Media type</label>
+          </div>
+          <div class="mb-3 form-floating">
+            <select class="form-select" name="language" id="language" aria-label="Language">
+              {% for lang in
+              ['English','Afrikaans','Arabic','Bengali','Bosnian','Bulgarian','Burmese','Cantonese','Catalan','Chinese','Croatian','Czech','Danish','Dutch','Estonian','Farsi','Finnish','French','German','Greek','Greek,
+              Ancient','Gujarati','Hebrew','Hindi','Hungarian','Icelandic','Indonesian','Irish','Italian','Japanese','Javanese','Kannada','Korean','Lithuanian','Latin','Latvian','Malay','Malayalam','Manx','Marathi','Norwegian','Polish','Portuguese','Brazilian
+              Portuguese (BP)','Punjabi','Romanian','Russian','Scottish
+              Gaelic','Sanskrit','Serbian','Slovenian','Spanish','Castilian
+              Spanish','Swedish','Tagalog','Tamil','Telugu','Thai','Turkish','Ukrainian','Urdu','Vietnamese','Other'] %}
+              <option value="{{ lang }}" {% if lang=='English' %}selected{% endif %}>{{ lang }}</option>
+              {% endfor %}
+            </select>
+            <label for="language">Language</label>
+          </div>
+
+          <div class="d-grid mb-3">
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
+              data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+              Advanced Filters
+            </button>
+          </div>
+
+          <div class="collapse" id="advancedFilters">
+            <div class="card card-body mb-3">
+              <h6 class="card-title">Search Type</h6>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeAll" value="all" checked>
+                <label class="form-check-label" for="searchTypeAll">All (Default)</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeActive" value="active">
+                <label class="form-check-label" for="searchTypeActive">Active (1+ seeders)</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeInactive" value="inactive">
+                <label class="form-check-label" for="searchTypeInactive">Inactive (0 seeders)</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeFL" value="fl">
+                <label class="form-check-label" for="searchTypeFL">Freeleech</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeFLVIP" value="fl-VIP">
+                <label class="form-check-label" for="searchTypeFLVIP">Freeleech or VIP</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeVIP" value="VIP">
+                <label class="form-check-label" for="searchTypeVIP">VIP Only</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeNVIP" value="nVIP">
+                <label class="form-check-label" for="searchTypeNVIP">Not VIP</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="searchType" id="searchTypeNMeta" value="nMeta">
+                <label class="form-check-label" for="searchTypeNMeta">Missing Metadata</label>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary w-100 py-2" id="searchButton" type="submit">Search</button>
+        </form>
+
+        <div class="accordion my-3" id="clientAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="clientAccordionHeading">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#clientAccordionCollapse" aria-expanded="true" aria-controls="clientAccordionCollapse">
+                <span id="client-type-display">{{ CLIENT_DISPLAY_NAME }}</span><span id="client-status-icon"
+                  class="ms-2"></span>
+              </button>
+            </h2>
+            <div id="clientAccordionCollapse" class="accordion-collapse collapse"
+              aria-labelledby="clientAccordionHeading" data-bs-parent="#clientAccordion">
+              <div class="accordion-body">
+                <a href="{{ TORRENT_CLIENT_URL }}" id="clientLink" target="_blank" class="">{{ TORRENT_CLIENT_URL }}</a>
+                <br>
+                Status: <span id="client-status"
+                  class="{{ 'text-success' if CLIENT_STATUS == 'CONNECTED' else 'text-danger' }}">
+                  {{ CLIENT_STATUS or 'NOT CONNECTED' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion my-3" id="mamAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="mamAccordionHeading">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#mamAccordionCollapse" aria-expanded="false" aria-controls="mamAccordionCollapse">
+                MyAnonaMouse<span id="mam-status-icon" class="ms-2"></span>
+              </button>
+            </h2>
+            <div id="mamAccordionCollapse" class="accordion-collapse collapse" aria-labelledby="mamAccordionHeading"
+              data-bs-parent="#mamAccordion">
+              <div class="accordion-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <strong>Username:</strong> <span id="mam-username">Loading...</span><br>
+                    <strong>Class:</strong> <span id="mam-class">Loading...</span><br>
+                    <strong>Uploaded:</strong> <span id="mam-uploaded">Loading...</span>
+                  </div>
+                  <div class="col-md-6">
+                    <strong>Downloaded:</strong> <span id="mam-downloaded">Loading...</span><br>
+                    <strong>Ratio:</strong> <span id="mam-ratio">Loading...</span><br>
+                    <strong>Bonus Points:</strong> <span id="mam-bonus">Loading...</span>
+                  </div>
+                </div>
+                <hr class="my-2">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <strong>Status:</strong> <span id="mam-status" class="text-warning">LOADING</span>
+                  </div>
+                  <div>
+                    <button type="button" class="btn btn-sm btn-outline-primary me-2" id="buy-vip-button">
+                      <i class="bi bi-star-fill"></i> Top Up VIP
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="buy-upload-button"
+                      data-bs-toggle="modal" data-bs-target="#uploadPurchaseModal">
+                      <i class="bi bi-cloud-arrow-up-fill"></i> Buy Upload
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-2 text-end" id="vip-weeks-container" style="display: none;">
+                  <small class="text-muted">
+                    <i class="bi bi-clock"></i> VIP expires in <strong id="vip-weeks-remaining">--</strong>
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <div class="my-3 p-3 bg-body rounded shadow-sm results-container-wrapper" id="results-container-wrapper"
+      style="display: none;">
+      <h6 id="results-title" class="border-bottom pb-2 mb-0">Results</h6>
+      <div id="results-container">
+      </div>
+    </div>
+  </main>
+
+  {% include 'modals/upload_purchase.html' %}
+  {% include 'modals/vip_purchase.html' %}
+  {% include 'modals/download_confirm.html' %}
+  {% include 'modals/settings_offcanvas.html' %}
+  {% include 'modals/insufficient_buffer.html' %}
+
+  <script src="static/bootstrap/js/bootstrap.bundle.min.js">import "bootstrap";</script>
+  <script src="static/js/main.js"></script>
+
+
+  <div id="toast-container" aria-live="polite" aria-atomic="true" class="position-fixed bottom-0 end-0 p-3"
+    style="z-index: 1101; pointer-events: none;">
+
+    <div id="server-response-toast" class="toast align-items-center text-bg-primary border-0" role="alert"
+      aria-live="assertive" aria-atomic="true" style="pointer-events: auto;">
+      <div class="d-flex">
+        <div class="toast-body" id="toast-message">
+        </div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+          aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>

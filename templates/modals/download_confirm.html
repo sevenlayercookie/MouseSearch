@@ -1,0 +1,49 @@
+  <!-- Download Confirmation Modal -->
+  <div class="modal fade" id="downloadConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Confirm Download</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>Review the organization path before downloading.</p>
+
+          <div class="mb-3">
+            <label class="form-label text-muted small">Organization Root</label>
+            <input type="text" class="form-control" value="{{ ORGANIZED_PATH }}" disabled readonly>
+          </div>
+
+          <div class="mb-3">
+            <label for="confirm-path-input" class="form-label mb-1">Relative Path</label>
+            <input type="text" class="form-control" id="confirm-path-input">
+            <div class="form-text m-0" id="path-format-hint">Format: Author / Title</div>
+            <br>
+            <div class="d-flex align-items-center gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary py-0 d-flex align-items-center gap-1"
+                id="add-series-btn" style="font-size: 0.75rem;">
+                <i class="bi bi-plus-lg"></i> Series
+              </button>
+              <span id="series-name-preview" class="text-muted fst-italic me-2"
+                style="font-size: 0.75rem; display: none;"></span>
+
+
+            </div>
+
+          </div>
+
+          <div class="alert alert-light border small" role="alert">
+            <strong>Full Path: </strong>
+            <span class="text-muted">{{ ORGANIZED_PATH }}/</span><span id="full-path-preview"
+              class="text-primary fw-bold"></span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirm-download-btn">
+            <i class="bi bi-download"></i> Start Download
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>

@@ -1,0 +1,21 @@
+services:
+  mousesearch:
+    image: sevenlayercookie/mousesearch:latest
+    container_name: mousesearch
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/data  # location that config and state files will be stored
+      - /downloads:/downloads # where all downloads are stored (torrent client downloads and organized files) -- only needed if using auto-organize
+      
+      # see README.md for recommended structure and paths
+      
+    env_file: .env # optional: load environment variables from a file
+
+    environment:
+      - TZ=America/Chicago 
+      # Change these to match your host user (run 'id' in terminal to check)
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+
