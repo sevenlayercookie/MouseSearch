@@ -1,10 +1,15 @@
 # clients/__init__.py
 from .qbittorrent import QBittorrentClient
+from .transmission import TransmissionClient
+from .rtorrent import RTorrentClient # NEW
+from .deluge import DelugeClient  # NEW
 
 # Registry mapping config strings to Client Classes
 CLIENT_MAP = {
     "qbittorrent": QBittorrentClient,
-    # Future: "transmission": TransmissionClient
+    "transmission": TransmissionClient,
+    "rtorrent": RTorrentClient, # NEW
+    "deluge": DelugeClient, # NEW
 }
 
 def get_torrent_client(config):
@@ -37,3 +42,18 @@ def get_client_display_name(client_type):
             
     # Fallback to title case if class not found
     return client_type.title()
+
+def get_available_clients():
+    """
+    Returns a sorted list of dictionaries for the UI.
+    Example: [{'id': 'qbittorrent', 'name': 'qBittorrent'}, ...]
+    """
+    options = []
+    for client_id in CLIENT_MAP.keys():
+        options.append({
+            'id': client_id,
+            'name': get_client_display_name(client_id)
+        })
+    
+    # Sort alphabetically by display name
+    return sorted(options, key=lambda x: x['name'])

@@ -36,6 +36,11 @@ class TorrentClient(ABC):
     async def get_torrent_info(self, hash_val: str) -> dict:
         """Returns specific torrent info (name, save_path, etc)."""
         pass
+    
+    @abstractmethod
+    async def get_files(self, hash_val: str) -> list:
+        """Returns the list of files for a specific torrent."""
+        pass
 
     @abstractmethod
     async def get_api_version(self) -> str:

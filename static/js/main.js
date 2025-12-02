@@ -115,12 +115,17 @@ function initializeEventStream() {
                     const statusIconSpan = document.getElementById("client-status-icon");
                     const clientTypeDisplay = document.getElementById('client-type-display');
                     const isConnected = data.status === "connected";
+                    
                     if (statusSpan) {
                         statusSpan.textContent = isConnected ? "CONNECTED" : "NOT CONNECTED";
                         statusSpan.className = isConnected ? "text-success" : "text-danger";
                     }
                     if (statusIconSpan) statusIconSpan.innerHTML = isConnected ? greenCheckIcon : redXIcon;
-                    if (isConnected && data.display_name && clientTypeDisplay) clientTypeDisplay.textContent = data.display_name;
+                    
+                    // FIX: Update display name regardless of connection status
+                    if (data.display_name && clientTypeDisplay) {
+                        clientTypeDisplay.textContent = data.display_name;
+                    }
                     break;
                 case 'mam-stats':
                     const userData = data.data || {};
@@ -236,12 +241,18 @@ function checkClientStatus() {
         .then(response => response.json())
         .then(data => {
             const isSuccess = data.status === "success";
+            
             if (statusSpan) {
                 statusSpan.textContent = isSuccess ? "CONNECTED" : "NOT CONNECTED";
                 statusSpan.className = isSuccess ? "text-success" : "text-danger";
             }
             if (statusIconSpan) statusIconSpan.innerHTML = isSuccess ? greenCheckIcon : redXIcon;
-            if (isSuccess && data.display_name && clientTypeDisplay) clientTypeDisplay.textContent = data.display_name;
+
+            // FIX: Always update the name if the server sends it, even on error
+            if (data.display_name && clientTypeDisplay) {
+                clientTypeDisplay.textContent = data.display_name;
+            }
+
             if (isSuccess) refreshCategories();
         })
         .catch(error => {
@@ -256,7 +267,9 @@ function refreshCategories() {
         .then(data => {
             const resultDropdowns = document.querySelectorAll('.category-dropdown');
             const defaultCategory = document.getElementById('TORRENT_CLIENT_CATEGORY')?.value || '';
+            
             resultDropdowns.forEach(dropdown => {
+                dropdown.disabled = false; // <--- ADD THIS
                 const currentVal = dropdown.value;
                 dropdown.innerHTML = '<option value="">Category</option>';
                 if (data && typeof data === 'object') {
@@ -264,8 +277,10 @@ function refreshCategories() {
                 }
                 dropdown.value = currentVal || defaultCategory;
             });
+
             const settingsDropdown = document.getElementById('TORRENT_CLIENT_CATEGORY');
             if (settingsDropdown) {
+                settingsDropdown.disabled = false; // <--- ADD THIS
                 const currentValue = settingsDropdown.dataset.currentValue || '';
                 settingsDropdown.innerHTML = '<option value="">None</option>';
                 if (data && typeof data === 'object') {
@@ -463,6 +478,7 @@ document.addEventListener("DOMContentLoaded", function () {
             pathContainer.classList.toggle('d-none', !organizeOnAdd && !organizeOnSchedule);
         }
     }
+    
 
     ['AUTO_ORGANIZE_ON_ADD', 'AUTO_ORGANIZE_ON_SCHEDULE'].forEach(id => {
         const el = document.getElementById(id);
@@ -470,6 +486,28 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     updateDependentFields();
+
+    // --- Client Type Change Listener ---
+    const clientTypeSelect = document.getElementById('TORRENT_CLIENT_TYPE');
+    const settingsCatSelect = document.getElementById('TORRENT_CLIENT_CATEGORY');
+
+    if (clientTypeSelect) {
+        clientTypeSelect.addEventListener('change', function() {
+            const tempMsg = '<option value="">Save settings to load...</option>';
+            
+            // 1. Disable and reset Settings dropdown
+            if (settingsCatSelect) {
+                settingsCatSelect.innerHTML = tempMsg;
+                settingsCatSelect.disabled = true;
+            }
+
+            // 2. Disable and reset all Result card dropdowns 
+            document.querySelectorAll('.category-dropdown').forEach(dd => {
+                dd.innerHTML = tempMsg;
+                dd.disabled = true;
+            });
+        });
+    }
 
     // Upload Amount Validation
     function findNearestValidAmount(value) {

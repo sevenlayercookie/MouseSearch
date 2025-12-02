@@ -21,7 +21,7 @@ from static.language_dict import language_dict
 
 import asyncio
 
-from clients import get_torrent_client, get_client_display_name
+from clients import get_torrent_client, get_client_display_name, get_available_clients
 from hashing import calculate_torrent_hash_from_url
 
 # --- SCHEDULER AND STATE SETUP ---
@@ -1057,7 +1057,7 @@ async def client_add_torrent():
         app.logger.info(f"MID {id} detected - adding torrent without hash calculation")
         
         # Add torrent immediately
-        result = await torrent_client.add_torrent(torrent_url, category)
+        result = await torrent_client.add_torrent(torrent_url, category, mid=id)
         
         if result['status'] == 'success':
             # Extract additional metadata from incoming_data
@@ -1428,10 +1428,13 @@ async def index():
     c_type = app.config.get("TORRENT_CLIENT_TYPE", "qbittorrent")
     display_name = get_client_display_name(c_type)
     
+    # NEW: Get list of all registered clients
+    available_clients = get_available_clients()
 
     return await render_template(
         "index.html", 
         CLIENT_DISPLAY_NAME=display_name,
+        AVAILABLE_CLIENTS=available_clients, # Pass the list here
         **app.config
     )
     
