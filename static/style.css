@@ -14,11 +14,14 @@ body {
         pointer-events: none;          /* Lets you click "through" the empty space */
     }
 
-    .responsive-navbar .navbar-toggler {
-        background-color: #212529;     /* Dark background for the button only */
-        pointer-events: auto;          /* Makes the button clickable */
-        border: 1px;
-        box-shadow: 0 .125rem .25rem rgba(0,0,0,.075); /* Optional shadow */
+.responsive-navbar .navbar-toggler {
+        background-color: #212529;     
+        pointer-events: auto;          
+        
+        /* UPDATED: Set a base transparent border so the button size doesn't jump */
+        border: 1px solid transparent; 
+        
+        box-shadow: 0 .125rem .25rem rgba(0,0,0,.075); 
     }
 }
 
@@ -175,7 +178,7 @@ input:disabled, select:disabled {
     }
 
     .bd-mode-toggle {
-      z-index: 1000;
+      z-index: 1060;
     }
 
     .bd-mode-toggle .dropdown-menu .active .bi {
@@ -309,4 +312,20 @@ input:disabled, select:disabled {
 /* Ensure the second backdrop also stacks correctly if Bootstrap adds it */
 .modal-backdrop.show:nth-of-type(2) {
     z-index: 1056; /* Higher than first modal (1055), lower than second modal (1060) */
+}
+
+/* --- DARK MODE TOGGLER BORDER --- */
+
+/* Target the navbar-toggler ONLY when the theme is dark.
+   We use rgba(255,255,255, 0.5) for a semi-transparent white border.
+   You can change 0.5 to 1.0 for a solid white border.
+*/
+[data-bs-theme="dark"] .navbar-toggler {
+    border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* --- SETTINGS MODAL LAYER --- */
+/* Force this specific modal to be on top of the mode toggler */
+#settingsOffcanvas {
+    z-index: 1070;
 }
