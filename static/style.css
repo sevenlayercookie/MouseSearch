@@ -2,9 +2,74 @@ a {
   text-decoration: none;
 }
 
+/* --- GLOBAL SETTINGS --- */
 body {
-    padding-top: 56px;
-  }
+    padding-top: 0; /* Content goes to the very top behind the nav */
+}
+
+/* --- MOBILE STYLES (Screen width < 992px) --- */
+@media (max-width: 991.98px) {
+    .responsive-navbar {
+        background-color: transparent; /* Invisible container */
+        pointer-events: none;          /* Lets you click "through" the empty space */
+    }
+
+    .responsive-navbar .navbar-toggler {
+        background-color: #212529;     /* Dark background for the button only */
+        pointer-events: auto;          /* Makes the button clickable */
+        border: 1px;
+        box-shadow: 0 .125rem .25rem rgba(0,0,0,.075); /* Optional shadow */
+    }
+}
+
+/* --- DESKTOP STYLES (Screen width >= 992px) --- */
+@media (min-width: 992px) {
+    .responsive-navbar {
+        background-color: #212529; /* Standard Dark Background */
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    
+    /* Since the bar is solid, we generally add body padding back 
+       ONLY on desktop so content doesn't get hidden behind the bar. 
+       If you prefer the purple header to still go behind the bar on desktop,
+       remove this block. */
+    body {
+        padding-top: 60px; 
+    }
+}
+
+/* --- UNIVERSAL TRANSITIONS --- */
+/* This ensures every change happens smoothly, not instantly */
+.navbar-toggler, 
+.navbar-toggler-icon {
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* --- HOVER EFFECT 1: The "Lift" --- */
+/* When hovering the button, it grows slightly, lifts up, and brightens */
+.navbar-toggler:hover {
+    /* transform: translateY(-2px) scale(1.05); Moves up 2px and grows 5% */
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.3) !important; /* Deeper shadow */
+    background-color: #2b3035 !important; /* Slightly lighter than pure black */
+    border-color: #495057; /* Adds a subtle border highlight */
+}
+
+/* --- HOVER EFFECT 2: The "Active Press" --- */
+/* When you actually click/tap the button */
+.navbar-toggler:active {
+    transform: translateY(0) scale(0.95); /* Presses down slightly */
+    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.2) !important;
+}
+
+/* --- HOVER EFFECT 3: The Icon Pop --- */
+/* The lines inside the button zoom in slightly */
+.navbar-toggler:hover .navbar-toggler-icon {
+    /* transform: scale(1.15); */
+    filter: drop-shadow(0 0 2px rgba(255,255,255,0.4)); /* Subtle glow */
+}
+
   .bg-purple {
     background-color: #6f42c1;
   }
@@ -123,3 +188,121 @@ input:disabled, select:disabled {
       user-select: none;
       -webkit-user-select: none;
     }
+
+/* --- Audible Style Book Details --- */
+
+.book-hero-container {
+    background-color: var(--bs-body-bg); /* Fallback to match theme */
+    min-height: 400px;
+    /* Remove the box-shadow, the overlay handles the blend now */
+    box-shadow: none; 
+    /* Ensure text pops even if gradient blends to white in light mode */
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+}
+
+.book-hero-bg {
+    /* Position matches the container */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+
+    /* Image handling */
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;
+
+    /* The Blur Effect */
+    -webkit-filter: blur(50px);
+    filter: blur(50px);
+    
+    /* Scale up to hide the white/faded edges caused by the blur */
+    transform: scale(1.2);
+    
+    /* opacity: 0.5 ensures it doesn't overpower the text */
+    opacity: 0.5; 
+}
+
+.book-hero-overlay {
+    /* The Magic Gradient:
+       0% (Top): Dark tint (0,0,0, 0.4) to ensure white text is readable against bright album art.
+       100% (Bottom): The exact color of the web page body (--bs-body-bg-rgb)
+    */
+    background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.4) 0%, 
+        rgba(var(--bs-body-bg-rgb), 0.0) 50%, 
+        rgba(var(--bs-body-bg-rgb), 0.8) 85%,
+        rgba(var(--bs-body-bg-rgb), 1) 100%
+    );
+}
+
+/* --- Cover Art Aspect Ratio Control --- */
+.book-cover-wrapper {
+    max-width: 300px; /* Limit width on large screens */
+    margin: 0 auto;   /* Center on mobile */
+    line-height: 0;   /* Remove bottom spacing for images */
+    background-color: #212529; /* Placeholder color while loading */
+}
+
+.book-cover-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+    object-fit: cover; /* Ensures it fills width without distortion */
+}
+
+/* Custom Scrollbar for Modal */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(128, 128, 128, 0.5);
+    border-radius: 4px;
+}
+
+/* --- Adaptive Button (Dark in Light Mode, Light in Dark Mode) --- */
+.btn-outline-adaptive {
+    text-shadow: none !important;
+    --bs-btn-bg: var(--bd-violet-bg);
+    --bs-btn-color: var(--bs-body-color);
+    --bs-btn-border-color: var(--bs-body-color);
+    
+    /* Hover State: Invert colors (Bg becomes Text Color, Text becomes Bg Color) */
+    --bs-btn-hover-bg: var(--bs-body-color);
+    --bs-btn-hover-color: var(--bs-body-bg);
+    --bs-btn-hover-border-color: var(--bs-body-color);
+    
+    /* Active/Focus States */
+    --bs-btn-focus-shadow-rgb: var(--bs-body-color-rgb);
+    --bs-btn-active-color: var(--bs-body-bg);
+    --bs-btn-active-bg: var(--bs-body-color);
+    --bs-btn-active-border-color: var(--bs-body-color);
+    
+    /* Optional: Add a slight semi-transparent background to ensure readability 
+       if the button sits exactly on the transition line of the gradient */
+    background-color: rgba(var(--bs-body-bg-rgb), 0.8); 
+    backdrop-filter: blur(2px);
+}
+
+/* --- Modal Stacking Fix --- */
+/* Since Book Details is fullscreen, we must ensure these specific "Action" modals 
+   have a higher z-index so they appear on top of it, regardless of HTML order.
+   Bootstrap default modal z-index is 1055. We set these to 1060.
+*/
+#downloadConfirmModal,
+#insufficientBufferModal,
+#uploadPurchaseModal,
+#vipPurchaseModal {
+    z-index: 1060; 
+}
+
+/* Ensure the second backdrop also stacks correctly if Bootstrap adds it */
+.modal-backdrop.show:nth-of-type(2) {
+    z-index: 1056; /* Higher than first modal (1055), lower than second modal (1060) */
+}

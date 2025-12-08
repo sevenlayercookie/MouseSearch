@@ -27,6 +27,70 @@ window.toggleCardSwitch = function (checkboxId) {
 };
 
 /**
+ * Handle broken images in the modal.
+ * 1. Swaps broken img -> placeholder
+ * 2. Swaps broken/empty background -> nice generic gradient
+ */
+function handleBookCoverError(imgElement) {
+    // 1. Prevent infinite loop if placeholder is also missing
+    imgElement.onerror = null; 
+    imgElement.src = '/static/icons/no_cover.png';
+
+    // 2. Set a fallback background for the hero
+    // (Blurring the "no_cover.png" usually looks bad, so we use a gradient instead)
+    const heroBg = document.getElementById('detail-hero-bg');
+    if (heroBg) {
+        // A neutral, deep purple/blue gradient that looks premium
+        heroBg.style.backgroundImage = 'linear-gradient(135deg, rgb(59 114 193) 0%, rgb(86 49 91) 100%)';
+        // Remove the filter so it looks clean, not blurry mud
+        heroBg.style.filter = 'none'; 
+        heroBg.style.transform = 'none';
+        heroBg.style.opacity = '1';
+    }
+}
+
+// Explicitly attach to window to ensure global access
+window.handleBookCoverError = handleBookCoverError;
+
+// 1. Language Helper (Simplified)
+// We initialize with 'en' so the resulting names are in English (e.g. outputs "German" instead of "Deutsch")
+// const languageNames = new Intl.DisplayNames(['en'], { type: 'language' });
+const languageNames = new Intl.DisplayNames(undefined, { type: 'language' });
+
+function getLanguageName(code) {
+    if (!code) return "Unknown";
+    try {
+        // Intl handles 3-letter codes (ISO 639-2) like 'ENG', 'SPA' natively (case-insensitive)
+        return languageNames.of(code);
+    } catch (e) {
+        // Fallback to the code itself if Intl throws an error (e.g. invalid format)
+        return code;
+    }
+}
+
+// Helper to parse MAM specific JSON strings (e.g. "{\"91\":\"Douglas Adams\"}")
+function parseMamJson(jsonStr) {
+    if (!jsonStr) return null;
+    try {
+        const obj = typeof jsonStr === 'object' ? jsonStr : JSON.parse(jsonStr);
+        // MAM returns objects with IDs as keys, we just want the values joined by comma
+        // If it's an array (Series usually), handle that differently
+        if (Array.isArray(obj)) return obj.join(', ');
+        
+        // Handle Series Object format: {"id": ["Name", "", -1]}
+        const values = Object.values(obj);
+        if (values.length > 0 && Array.isArray(values[0])) {
+            return values.map(v => v[0]).join(', ');
+        }
+        
+        // Handle Standard Object format: {"id": "Name"}
+        return Object.values(obj).join(', ');
+    } catch (e) {
+        return jsonStr; // Return raw string if parse fails
+    }
+}
+
+/**
  * Displays a toast message on the screen.
  */
 function showToast(message, type = 'primary') {
@@ -63,6 +127,33 @@ function formatDuration(seconds) {
         }
     }
     return result.slice(0, 2).join(' ');
+}
+
+/**
+ * Converts UTC strings to the user's local date (No Time).
+ */
+function localizeDates(scope = document) {
+    scope.querySelectorAll('.render-local-date').forEach(el => {
+        const rawDate = el.getAttribute('data-date');
+        if (!rawDate || el.dataset.processed) return;
+
+        try {
+            // Standardize format: "2023-11-05 14:30:00" -> "2023-11-05T14:30:00Z"
+            let cleanDate = rawDate.trim().replace(" ", "T");
+            if (!cleanDate.endsWith('Z')) cleanDate += 'Z';
+
+            const dateObj = new Date(cleanDate);
+            if (!isNaN(dateObj)) {
+                // CHANGED: used toLocaleDateString() instead of toLocaleString()
+                // and removed hour/minute options.
+                el.textContent = dateObj.toLocaleDateString();
+                
+                el.dataset.processed = "true";
+            }
+        } catch (e) {
+            console.error("Date localization error:", e);
+        }
+    });
 }
 
 function sanitizeFilename(name) {
@@ -400,6 +491,8 @@ document.addEventListener("DOMContentLoaded", function () {
     // Init Tooltips
     [...document.querySelectorAll('[data-bs-toggle="tooltip"]')].map(el => new bootstrap.Tooltip(el));
     
+    localizeDates();
+
     // Initial Fetches
     fetchPublicIP();
     checkClientStatus();
@@ -707,18 +800,20 @@ document.addEventListener("DOMContentLoaded", function () {
     if (confirmInput && previewSpan) confirmInput.addEventListener('input', function () { previewSpan.textContent = this.value; });
 
     function performSearch(queryString, isHistoryNavigation = false) {
-        if (!queryString) return;
+        if (!queryString) return Promise.resolve(); // Return resolved promise if no query
 
         searchButton.disabled = true;
         searchButton.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Searching...`;
         if (resultsTitle) resultsTitle.textContent = 'Results';
         hashToElementMap.clear();
 
-        fetch(`/mam/search?${queryString}`)
+        // ADD 'return' HERE
+        return fetch(`/mam/search?${queryString}`)
             .then(response => response.text())
             .then(html => {
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = html;
+                localizeDates(resultsContainer);
                 const count = resultsContainer.querySelectorAll('.result-item').length;
                 if (resultsTitle) resultsTitle.textContent = `Results (${count})`;
                 if (!isHistoryNavigation) {
@@ -731,9 +826,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = `<div class="alert alert-danger">Search failed.</div>`;
             })
-            .finally(() => { 
-                searchButton.disabled = false; 
-                searchButton.innerHTML = "Search"; 
+            .finally(() => {
+                searchButton.disabled = false;
+                searchButton.innerHTML = "Search";
             });
     }
 
@@ -750,6 +845,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (searchForm) {
         searchForm.addEventListener("submit", function (e) {
             e.preventDefault();
+            document.getElementById('query').blur();
             const formData = new FormData(searchForm);
             const queryParams = new URLSearchParams(formData);
             const queryString = queryParams.toString();
@@ -760,36 +856,117 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // Handle Browser Back/Forward
+    // ============================================================
+    //  UNIFIED HISTORY & NAVIGATION MANAGER
+    // ============================================================
+
+    // 1. Central History Listener
     window.addEventListener('popstate', (event) => {
-        if (event.state && event.state.type === 'search') {
-            restoreFormFromURL(new URLSearchParams(event.state.query));
-            performSearch(event.state.query, true);
+        // UI Elements
+        const bookModalEl = document.getElementById('bookDetailsModal');
+        const bookModal = bootstrap.Modal.getOrCreateInstance(bookModalEl);
+        
+        const settingsEl = document.getElementById('settingsOffcanvas');
+        const settingsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(settingsEl);
+
+        // Close everything first (clean slate)
+        bookModal.hide();
+        settingsOffcanvas.hide();
+
+        if (event.state) {
+            // --- STATE: BOOK DETAILS ---
+            if (event.state.type === 'book_details') {
+                renderBookDetails(event.state.bookData, event.state.coverSrc);
+                bookModal.show();
+            } 
+            // --- STATE: SETTINGS ---
+            else if (event.state.type === 'settings') {
+                settingsOffcanvas.show();
+            }
+            // --- STATE: SEARCH RESULTS ---
+            else if (event.state.type === 'search') {
+                restoreFormFromURL(new URLSearchParams(event.state.query));
+                performSearch(event.state.query, true);
+            }
         } else {
+            // --- STATE: LANDING PAGE (No state) ---
+            // If there are query params in URL (e.g. refresh), load search
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.has('query')) {
-                 performSearch(urlParams.toString(), true);
-            } else {
-                wrapper.style.display = 'none';
-                resultsContainer.innerHTML = '';
-                document.getElementById('query').value = '';
-                if (resultsTitle) resultsTitle.textContent = 'Results';
+                performSearch(urlParams.toString(), true);
             }
-        }
-        
-        // Handle Settings Offcanvas via History
-        const openedCanvas = document.querySelector('.offcanvas.show');
-        if (openedCanvas) {
-            const bsCanvas = bootstrap.Offcanvas.getInstance(openedCanvas);
-            if (bsCanvas) bsCanvas.hide();
         }
     });
 
+    // 2. Book Modal: Sync History on Manual Close
+    document.getElementById('bookDetailsModal')?.addEventListener('hide.bs.modal', function() {
+        // Only go back if we are currently IN the book_details state.
+        // This prevents a double-back loop if the user pressed the Browser Back button.
+        if (history.state && history.state.type === 'book_details') {
+            history.back();
+        }
+    });
+
+    // 3. Settings Offcanvas: Sync History on Manual Close/Open
+    const settingsEl = document.getElementById('settingsOffcanvas');
+    if (settingsEl) {
+        // When manually OPENED (clicked the gear icon)
+        settingsEl.addEventListener('show.bs.offcanvas', function(e) {
+            // Prevent pushing state if we are just restoring it from history (popstate)
+            if (!e.relatedTarget) return; // bootstrap sets relatedTarget to null if triggered via JS (.show())
+            
+            // Push state
+            history.pushState({ type: 'settings' }, '', '#settings');
+        });
+
+        // When manually CLOSED (clicked X or backdrop)
+        settingsEl.addEventListener('hide.bs.offcanvas', function() {
+            if (history.state && history.state.type === 'settings') {
+                history.back();
+            }
+        });
+    }
+
     // Deep Linking (Load search on refresh)
     const initialParams = new URLSearchParams(window.location.search);
+    
+    // Check if we have a book hash (#book=12345)
+    const hash = window.location.hash;
+    const deepLinkID = hash.startsWith('#book=') ? hash.split('=')[1] : null;
+
     if (initialParams.has('query')) {
+        // SCENARIO 1: We have a search query (Standard Refresh)
         restoreFormFromURL(initialParams);
-        performSearch(initialParams.toString());
+        performSearch(initialParams.toString()).then(() => {
+            if (deepLinkID) openDeepLink(deepLinkID);
+        });
+    } 
+    else if (deepLinkID) {
+        // SCENARIO 2: We have NO search query, but we have a Book ID (Direct Link)
+        // We artificially create a search for this specific ID to get the data
+        const fakeQuery = new URLSearchParams();
+        fakeQuery.set('query', deepLinkID); // Searching the ID usually works on trackers
+        
+        // Update the search bar visually so the user knows what happened
+        document.getElementById('query').value = deepLinkID;
+        
+        performSearch(fakeQuery.toString()).then(() => {
+            openDeepLink(deepLinkID);
+        });
+    }
+
+    // Helper to find the row and open the modal
+    function openDeepLink(id) {
+        const targetRow = document.querySelector(`.result-item[data-torrent-id="${id}"]`);
+        if (targetRow) {
+            const rawJson = targetRow.dataset.json;
+            if (rawJson) {
+                try {
+                    const data = JSON.parse(rawJson);
+                    openBookDetailsModal(data, targetRow);
+                } catch (e) { console.error("Deep link parse error", e); }
+            }
+        }
     }
 
     // Settings Offcanvas History Support
@@ -804,68 +981,225 @@ document.addEventListener("DOMContentLoaded", function () {
     // Result Click Handling (Download/Series)
     if (resultsContainer) {
         resultsContainer.addEventListener('click', function (event) {
+            
+            // CASE A: Clicked the "Download" button
             const button = event.target.closest('.add-to-client-button');
             if (button) {
                 event.preventDefault();
+                event.stopPropagation(); // Prevent opening the details modal
+                
                 const resultItem = button.closest('.result-item');
-                const rawSeries = button.dataset.seriesInfo;
-                const seriesName = getSeriesName(rawSeries);
+                initiateDownloadFlow(button, resultItem);
+                return; 
+            }
 
-                const downloadData = {
-                    torrent_url: button.dataset.torrentUrl,
-                    category: resultItem.querySelector('.category-dropdown')?.value || '',
-                    id: resultItem.dataset.torrentId,
-                    author: button.dataset.author || "Unknown",
-                    title: button.dataset.title || "Unknown",
-                    size: button.dataset.size || '0 GiB',
-                    main_cat: button.dataset.mainCat || '',
-                    series_info: rawSeries
-                };
+            // CASE B: Clicked a Dropdown or Link (e.g., Author link)
+            // We want default browser behavior, NOT opening the details modal
+            if (event.target.closest('select') || event.target.closest('a')) {
+                return; 
+            }
 
-                const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
-
-                if (autoOrganizeEnabled && confirmModal) {
-                    const cleanAuthor = sanitizeFilename(downloadData.author);
-                    const cleanTitle = sanitizeFilename(downloadData.title);
-
-                    confirmInput.value = `${cleanAuthor}/${cleanTitle}`;
-                    previewSpan.textContent = confirmInput.value;
-                    document.getElementById('path-format-hint').textContent = "Format: Author / Title";
-
-                    const addSeriesBtn = document.getElementById('add-series-btn');
-                    const seriesPreviewEl = document.getElementById('series-name-preview');
-
-                    if (addSeriesBtn) {
-                        addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
-                        addSeriesBtn.dataset.cleanTitle = cleanTitle;
-                        addSeriesBtn.dataset.active = "false";
-                        addSeriesBtn.classList.replace('btn-secondary', 'btn-outline-secondary');
-                        addSeriesBtn.classList.remove('text-white');
-                        addSeriesBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Series';
-
-                        if (seriesName) {
-                            const cleanSeries = sanitizeFilename(seriesName);
-                            addSeriesBtn.dataset.cleanSeries = cleanSeries;
-                            addSeriesBtn.disabled = false;
-                            if (seriesPreviewEl) {
-                                seriesPreviewEl.textContent = `"${cleanSeries}"`;
-                                seriesPreviewEl.style.display = 'inline';
-                            }
-                        } else {
-                            addSeriesBtn.dataset.cleanSeries = "";
-                            addSeriesBtn.disabled = true;
-                            if (seriesPreviewEl) seriesPreviewEl.style.display = 'none';
-                        }
+            // CASE C: Clicked the Row (Result Item) -> Open Details Modal
+            const resultItem = event.target.closest('.result-item');
+            if (resultItem) {
+                // Retrieve the full JSON we injected into the HTML
+                const rawJson = resultItem.dataset.json;
+                if(rawJson) {
+                    try {
+                        const data = JSON.parse(rawJson);
+                        // Open the modal (make sure openBookDetailsModal is defined in main.js)
+                        openBookDetailsModal(data, resultItem); 
+                    } catch(e) { 
+                        console.error("Error parsing book data", e); 
                     }
-
-                    pendingDownloadData = downloadData;
-                    pendingButton = button;
-                    confirmModal.show();
-                } else {
-                    performDownload(downloadData, button);
                 }
             }
         });
+    }
+
+        /**
+     * REFACTORED: Handles the download logic. 
+     * Can be called from the main list OR the details modal.
+     * @param {HTMLElement} button - The button clicked (contains data attributes)
+     * @param {HTMLElement} resultItem - The row element (contains the category dropdown)
+     */
+    function initiateDownloadFlow(button, resultItem) {
+        const rawSeries = button.dataset.seriesInfo;
+        const seriesName = getSeriesName(rawSeries);
+        
+        // 1. Construct the download payload from the button's data attributes
+        const downloadData = {
+            torrent_url: button.dataset.torrentUrl,
+            // Try to find the dropdown in the resultItem; default to empty if not found
+            category: resultItem ? (resultItem.querySelector('.category-dropdown')?.value || '') : '',
+            id: button.dataset.id,
+            author: button.dataset.author || "Unknown",
+            title: button.dataset.title || "Unknown",
+            size: button.dataset.size || '0 GiB',
+            main_cat: button.dataset.mainCat || '',
+            series_info: rawSeries
+        };
+
+        // 2. Check if Auto-Organize is enabled
+        const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
+
+        if (autoOrganizeEnabled && confirmModal) {
+            // --- Auto-Organize Logic (Populate Confirm Modal) ---
+            
+            const cleanAuthor = sanitizeFilename(downloadData.author);
+            const cleanTitle = sanitizeFilename(downloadData.title);
+
+            // Set default path: Author / Title
+            confirmInput.value = `${cleanAuthor}/${cleanTitle}`;
+            previewSpan.textContent = confirmInput.value;
+            document.getElementById('path-format-hint').textContent = "Format: Author / Title";
+
+            // Logic for the "+ Series" button inside the modal
+            const addSeriesBtn = document.getElementById('add-series-btn');
+            const seriesPreviewEl = document.getElementById('series-name-preview');
+
+            if (addSeriesBtn) {
+                // Reset button state
+                addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
+                addSeriesBtn.dataset.cleanTitle = cleanTitle;
+                addSeriesBtn.dataset.active = "false";
+                addSeriesBtn.classList.replace('btn-secondary', 'btn-outline-secondary');
+                addSeriesBtn.classList.remove('text-white');
+                addSeriesBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Series';
+
+                if (seriesName) {
+                    const cleanSeries = sanitizeFilename(seriesName);
+                    addSeriesBtn.dataset.cleanSeries = cleanSeries;
+                    addSeriesBtn.disabled = false;
+                    if (seriesPreviewEl) {
+                        seriesPreviewEl.textContent = `"${cleanSeries}"`;
+                        seriesPreviewEl.style.display = 'inline';
+                    }
+                } else {
+                    addSeriesBtn.dataset.cleanSeries = "";
+                    addSeriesBtn.disabled = true;
+                    if (seriesPreviewEl) seriesPreviewEl.style.display = 'none';
+                }
+            }
+
+            // Save data to global vars for the "Confirm" button to use later
+            pendingDownloadData = downloadData;
+            pendingButton = button;
+
+            confirmModal.show();
+        } else {
+            // --- Direct Download (No Confirm Modal) ---
+            performDownload(downloadData, button);
+        }
+    }
+
+    // ============================================================
+    //  MODAL RENDERING LOGIC
+    // ============================================================
+
+    /**
+     * 1. OPEN FUNCTION
+     * Called when you CLICK a row.
+     * Pushes state to history -> Renders content -> Shows Modal.
+     */
+    function openBookDetailsModal(data, originElement) {
+        // Get Cover Source (fallback to placeholder if missing)
+        const coverSrc = originElement.querySelector('img')?.src || '/static/icons/no_cover.png';
+
+        // Push History State so the "Back" button works
+        const newUrl = window.location.pathname + window.location.search + `#book=${data.id}`;
+        history.pushState({ 
+            type: 'book_details', 
+            bookData: data, 
+            coverSrc: coverSrc 
+        }, '', newUrl);
+
+        // Render & Show
+        renderBookDetails(data, coverSrc);
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('bookDetailsModal'));
+        modal.show();
+    }
+
+    /**
+     * 2. RENDER FUNCTION
+     * Called by openBookDetailsModal AND by the History Manager (popstate).
+     * Updates the DOM elements inside the modal.
+     */
+    function renderBookDetails(data, coverSrc) {
+        // Parse Complex Fields
+        const authors = parseMamJson(data.author_info);
+        const narrators = parseMamJson(data.narrator_info) || "N/A";
+        const series = parseMamJson(data.series_info);
+
+        // Populate Text
+        document.getElementById('detail-title').innerHTML = data.title;
+        document.getElementById('detail-subtitle').innerHTML = series ? `<span class="badge bg-secondary opacity-75">Series</span> ${series}` : '';
+        document.getElementById('detail-authors').textContent = authors;
+        document.getElementById('detail-narrators').textContent = narrators;
+        document.getElementById('detail-description').innerHTML = data.description || "No description available.";
+        
+        // Populate Image
+        const imgEl = document.getElementById('detail-cover');
+        // Reset the error handler (in case it was nulled out previously)
+        imgEl.onerror = function() { handleBookCoverError(this); };
+        imgEl.src = coverSrc;
+
+        // Dynamic Hero Background (Blurred Image)
+        const heroBg = document.getElementById('detail-hero-bg');
+        heroBg.style.backgroundImage = `url('${coverSrc}')`;
+        
+        // RESET styles in case previous book triggered the error handler
+        heroBg.style.filter = 'blur(50px)';
+        heroBg.style.transform = 'scale(1.2)';
+        heroBg.style.opacity = '0.5';
+
+        // Populate Metadata Sidebar
+        document.getElementById('detail-category').innerHTML = data.catname;
+        document.getElementById('detail-language').textContent = getLanguageName(data.lang_code);
+        document.getElementById('detail-filetype').textContent = data.filetype;
+        document.getElementById('detail-size').textContent = data.size.replace('iB', 'B');
+        document.getElementById('detail-added').textContent = new Date(data.added).toLocaleDateString();
+        document.getElementById('detail-seeders').textContent = data.seeders;
+        document.getElementById('detail-leechers').textContent = data.leechers;
+
+        // Populate Tags
+        const tagsContainer = document.getElementById('detail-tags');
+        tagsContainer.innerHTML = '';
+        if(data.tags) {
+            data.tags.split(',').forEach(tag => {
+                if (!tag.trim()) return;
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-body-secondary text-body-emphasis border border-secondary-subtle fw-normal text-wrap text-start lh-base';
+                badge.textContent = tag.trim();
+                tagsContainer.appendChild(badge);
+            });
+        }
+
+        // Setup Download Button
+        const dlBtn = document.getElementById('detail-download-btn');
+        
+        // Copy data attributes to the button so initiateDownloadFlow can read them
+        dlBtn.dataset.torrentUrl = data.download_link;
+        dlBtn.dataset.id = data.id;
+        dlBtn.dataset.author = authors;
+        dlBtn.dataset.title = data.title;
+        dlBtn.dataset.size = data.size;
+        dlBtn.dataset.mainCat = data.main_cat;
+        dlBtn.dataset.seriesInfo = data.series_info;
+
+        // Clone button to remove old event listeners (prevents multiple clicks firing)
+        const newDlBtn = dlBtn.cloneNode(true);
+        dlBtn.parentNode.replaceChild(newDlBtn, dlBtn);
+        
+        // Add Click Listener
+        newDlBtn.addEventListener('click', function() {
+            // Pass null for resultItem because the modal doesn't have the category dropdown
+            // The initiateDownloadFlow function handles null gracefully
+            initiateDownloadFlow(this, null);
+        });
+
+        // Setup .torrent link
+        document.getElementById('detail-torrent-link').href = data.download_link;
     }
 
     // Confirm Download Modal Action
@@ -903,6 +1237,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function performDownload(downloadData, button) {
         if (button) button.disabled = true;
+        
         fetch('/client/add', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -910,44 +1245,69 @@ document.addEventListener("DOMContentLoaded", function () {
         })
             .then(response => response.json())
             .then(async data => {
+                // 1. Handle Insufficient Buffer
                 if (data.status === 'insufficient_buffer') {
+                    // ... (Population of buffer modal fields) ...
                     document.getElementById('modal-buffer-gb').textContent = data.buffer_gb || 0;
                     document.getElementById('modal-torrent-size').textContent = data.torrent_size_gb || 0;
                     document.getElementById('modal-needed-gb').textContent = data.needed_gb || 0;
                     document.getElementById('modal-recommended-amount').textContent = data.recommended_amount || 0;
                     document.getElementById('modal-recommended-cost').textContent = (data.recommended_cost || 0).toLocaleString();
                     const buyBtn = document.getElementById('modal-buy-recommended');
-                    buyBtn.dataset.amount = data.recommended_amount || 0;
+                    if(buyBtn) buyBtn.dataset.amount = data.recommended_amount || 0;
+                    
                     window.pendingDownload = downloadData;
                     new bootstrap.Modal(document.getElementById('insufficientBufferModal')).show();
+                    
                     if (button) button.disabled = false;
                     return;
                 }
-                showToast(data.message || data.error, data.message ? 'success' : 'danger');
-                if (data.message && button) {
-                    button.textContent = 'Added!';
-                    const resultItem = button.closest('.result-item');
-                    const statusContainer = resultItem.querySelector('.torrent-status-container');
-                    if (statusContainer) statusContainer.innerHTML = `<span class="badge bg-info text-wrap">Resolving torrent...</span>`;
 
-                    let attempts = 0;
-                    const pollInterval = setInterval(async () => {
-                        attempts++;
-                        const hash = await getTorrentHashByMID(downloadData.id);
-                        if (hash) {
-                            clearInterval(pollInterval);
-                            pollTorrentStatus(hash, resultItem);
-                            fetchAndUpdateTorrentStatus(hash, resultItem);
-                        } else if (attempts >= 15) {
-                            clearInterval(pollInterval);
-                            if (statusContainer) statusContainer.innerHTML = `<span class="badge bg-warning">Added (pending)</span>`;
-                        }
-                    }, 2000);
+                // 2. Show Server Message
+                showToast(data.message || data.error, data.message ? 'success' : 'danger');
+
+                // 3. Update UI on Success
+                if (data.message) {
+                    if (button) button.textContent = 'Added!';
+
+                    // --- CRITICAL FIX START ---
+                    // Try to find the row relative to the button (List View click)
+                    let resultItem = button.closest ? button.closest('.result-item') : null;
+
+                    // If null (Modal View click), find the row by ID in the main list
+                    if (!resultItem && downloadData.id) {
+                        resultItem = document.querySelector(`.result-item[data-torrent-id="${downloadData.id}"]`);
+                    }
+                    // --- CRITICAL FIX END ---
+
+                    // Only proceed with UI updates if the result row actually exists
+                    if (resultItem) {
+                        const statusContainer = resultItem.querySelector('.torrent-status-container');
+                        if (statusContainer) statusContainer.innerHTML = `<span class="badge bg-info text-wrap">Resolving torrent...</span>`;
+
+                        // Start Polling for Hash
+                        let attempts = 0;
+                        const pollInterval = setInterval(async () => {
+                            attempts++;
+                            const hash = await getTorrentHashByMID(downloadData.id);
+                            
+                            if (hash) {
+                                clearInterval(pollInterval);
+                                pollTorrentStatus(hash, resultItem);
+                                fetchAndUpdateTorrentStatus(hash, resultItem);
+                            } else if (attempts >= 15) {
+                                clearInterval(pollInterval);
+                                if (statusContainer) statusContainer.innerHTML = `<span class="badge bg-warning">Added (pending)</span>`;
+                            }
+                        }, 2000);
+                    }
                 } else if (button) {
+                    // If message is missing (error state), re-enable button
                     button.disabled = false;
                 }
             })
             .catch(error => {
+                console.error("Download Logic Error:", error); 
                 showToast("Error adding torrent.", 'danger');
                 if (button) button.disabled = false;
             });

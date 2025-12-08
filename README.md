@@ -6,7 +6,6 @@
 MouseSearch is a self-hosted web application that provides a clean, fast search interface for MyAnonamouse (MAM). It connects directly to the MAM API for searching and supports modular torrent client integrations (qBittorrent, Deluge, Transmission, rTorrent) for one-click downloading, bridging the gap between your favorite tracker and your download client.
 
 
-<img width="1685" alt="image" align="center" src="screenshots/1-main.png" />
 
 ## Key Features
 
@@ -85,7 +84,7 @@ The application will be available at `http://<your-server-ip>:5000`.
 
 ### Setup Steps
 
-1.  Fork or Clone this repository:
+1.  Clone this repository:
     ```bash
     git clone https://github.com/sevenlayercookie/MouseSearch.git
     cd MouseSearch
@@ -278,9 +277,7 @@ These can be enabled independently of each other:
 For hard links to work, your source (`TORRENT_DOWNLOAD_PATH`) and destination (`ORGANIZED_PATH`) directories **must**:
 1. exist on the same filesystem
 
-    **AND** 
-
-2. within the same volume mount (if using Docker)
+    **AND** 2. within the same volume mount (if using Docker)
 
 The easiest way to ensure this is to have a single parent directory (e.g., `/mnt/storage/downloads`) on your host machine that contains *both* your torrents and your organized media. You then pass this single parent directory as a volume in your `compose.yaml`, as shown in the example.
 

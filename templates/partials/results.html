@@ -8,21 +8,18 @@
 </div>
 {% else %}
 {% for result in results %}
-<div class="row my-3 mx-0 py-2 pe-lg-0 rounded-1 border shadow-sm result-item" data-torrent-id="{{ result.id }}"
-    data-snatched="{{ result.my_snatched }}" data-torrent-url="{{ result.download_link | safe }}">
+<div class="row my-3 mx-0 py-2 pe-lg-0 rounded-1 border shadow-sm result-item cursor-pointer"
+    data-torrent-id="{{ result.id }}" data-snatched="{{ result.my_snatched }}"
+    data-torrent-url="{{ result.download_link | safe }}" data-json="{{ result | tojson | forceescape }}">
     <div class="col-6 col-md-4 d-flex justify-content-center align-items-center">
-        <a href="https://www.myanonamouse.net/t/{{ result.id }}" target="_blank">
-            <img class="img-fluid me-2 rounded" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}"
-                alt="Thumbnail" loading="lazy" style="object-fit: contain;"
-                onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
-        </a>
+        <img class="img-fluid me-2 rounded" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}" alt="Thumbnail"
+            loading="lazy" style="object-fit: contain;"
+            onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
     </div>
 
     <div class="col-6 col-md-5 pb-3 mb-0 small lh-sm">
         <div class="d-flex justify-content-between">
-            <a href="https://www.myanonamouse.net/t/{{ result.id }}" target="_blank">
-                <strong class="text-gray-dark">{{ result.title | safe }}</strong>
-            </a>
+            <strong class="text-gray-dark">{{ result.title | safe }}</strong>
         </div>
 
         <div class="my-2">
@@ -55,10 +52,12 @@
                 <i class="bi bi-file-earmark-music"></i> {{ result.filetype }}
             </div>
             <div class="col-6" title="Size">
-                <i class="bi bi-hdd"></i> {{ result.size }}
+                {# Replaces 'GiB' with 'GB' and 'MiB' with 'MB' purely for display #}
+                <i class="bi bi-hdd"></i> {{ result.size.replace('iB', 'B') }}
             </div>
             <div class="col-6" title="Date Added">
-                <i class="bi bi-calendar3"></i> {{ result.added }}
+                <i class="bi bi-calendar3"></i> 
+                <span class="render-local-date" data-date="{{ result.added }}">{{ result.added }}</span>
             </div>
             <div class="col-6" title="Seeders / Leechers">
                 <i class="bi bi-people"></i> {{ result.seeders }}/{{ result.leechers }}
@@ -93,7 +92,7 @@
             <label for="catSelect{{ result.id }}">Torrent Category</label>
         </div>
 
-                <div class="text-center mt-1 lh-1">
+        <div class="text-center mt-1 lh-1">
             <a href="{{ result.download_link | safe }}" class="small text-muted text-decoration-none" target="_blank">
                 <i class="bi bi-download" style="font-size: 0.8rem;"></i> Save .torrent file
             </a>
@@ -110,4 +109,34 @@
     </div>
 </div>
 {% endfor %}
+<script>
+    (function() {
+        document.querySelectorAll('.render-local-date').forEach(function(element) {
+            // Prevent re-processing if this partial is re-rendered or cached
+            if (element.dataset.processed) return;
+
+            const rawDate = element.getAttribute('data-date');
+            if (!rawDate) return;
+
+            // MAM API typically returns "YYYY-MM-DD HH:MM:SS" in UTC.
+            // We replace space with 'T' and add 'Z' to ensure JS parses it as UTC.
+            // If your API returns a different format, adjust the formatting string below.
+            const cleanDate = rawDate.replace(" ", "T") + "Z";
+            const dateObj = new Date(cleanDate);
+
+            if (!isNaN(dateObj)) {
+                // Convert to user's locale
+                element.textContent = dateObj.toLocaleString(undefined, {
+                    year: 'numeric', 
+                    month: 'short', 
+                    day: 'numeric',
+                    hour: '2-digit', 
+                    minute: '2-digit'
+                });
+                element.dataset.processed = "true";
+            }
+        });
+    })();
+</script>
 {% endif %}
+

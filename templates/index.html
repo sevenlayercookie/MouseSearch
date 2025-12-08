@@ -114,16 +114,20 @@
   </div>
 
 
-  <nav class="navbar fixed-top navbar-dark bg-dark" aria-label="Main navigation">
+<nav class="navbar fixed-top navbar-dark responsive-navbar" aria-label="Main navigation">
     <div class="container-fluid">
+      
       <a class="navbar-brand" href="#"></a>
-      <button class="navbar-toggler p-0 border-0" type="button" data-bs-toggle="offcanvas"
-        data-bs-target="#settingsOffcanvas">
+      
+      <button class="navbar-toggler p-2 rounded border" type="button" data-bs-toggle="offcanvas" data-bs-target="#settingsOffcanvas">
         <span class="navbar-toggler-icon"></span>
       </button>
 
+      <div class="collapse navbar-collapse" id="navbarCollapse">
+           </div>
+
     </div>
-  </nav>
+</nav>
 
 
 
@@ -330,8 +334,10 @@
   {% include 'modals/download_confirm.html' %}
   {% include 'modals/settings_offcanvas.html' %}
   {% include 'modals/insufficient_buffer.html' %}
+  {% include 'modals/book_details.html' %}
 
   <script src="static/bootstrap/js/bootstrap.bundle.min.js">import "bootstrap";</script>
+  <script src="static/categoryDefinitions.js"></script>
   <script src="static/js/main.js"></script>
 
 

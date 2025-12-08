@@ -145,7 +145,7 @@ FALLBACK_CONFIG = {
     "AUTO_BUY_UPLOAD_BUFFER_AMOUNT": 10,
     "AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS": 6,
     "BLOCK_DOWNLOAD_ON_LOW_BUFFER": True,
-    "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": False,
+    "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": True,
     "THUMBNAIL_CACHE_MAX_SIZE_MB": 500
 }
 
@@ -1342,6 +1342,7 @@ async def mam_search():
         "tor[srchIn][narrator]": "on" if request.args.get("search_in_narrator") else "off",
         "tor[srchIn][series]": "on" if request.args.get("search_in_series") else "off",
         "tor[searchType]": request.args.get("searchType", "all"),
+        "isbn": "true", "description": "true", "mediaInfo": "true"
     }
     if (media_type := request.args.get("media_type", "13")) != "all":
         params["tor[main_cat][]"] = media_type
@@ -1358,9 +1359,16 @@ async def mam_search():
             for item in results:
                 if dl_hash := item.get('dl'): item['download_link'] = base_dl_url + dl_hash
                 else: item['download_link'] = '' 
+
+                # Only set if thumbnail is missing
                 if not item.get('thumbnail'):
-                    cat = item.get('category', '')
-                    item['thumbnail'] = f"https://static.myanonamouse.net/pic/cats/3/{cat}.png"
+                    # Optimistically assume the CDN link works to save time
+                    # You can add logic here: if item['id'] is missing, go straight to category
+                    if item.get('id'):
+                        item['thumbnail'] = f"https://cdn.myanonamouse.net/t/p/small/{item['id']}.webp"
+                    else:
+                        cat = item.get('category', '')
+                        item['thumbnail'] = f"https://static.myanonamouse.net/pic/cats/3/{cat}.png"
 
             ranked = rank_results(results)
             client_status_data = await torrent_client.get_status() if torrent_client else {"status": "error"}
