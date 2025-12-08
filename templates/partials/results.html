@@ -11,13 +11,13 @@
 <div class="row my-3 mx-0 py-2 pe-lg-0 rounded-1 border shadow-sm result-item cursor-pointer"
     data-torrent-id="{{ result.id }}" data-snatched="{{ result.my_snatched }}"
     data-torrent-url="{{ result.download_link | safe }}" data-json="{{ result | tojson | forceescape }}">
-    <div id="cover" class="col-6 col-md-4 d-flex justify-content-start justify-content-md-center align-items-center">
+    <div id="cover" class="col-6 col-lg-4 d-flex justify-content-start justify-content-md-center align-items-center">
         <img class="img-fluid me-2 rounded" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}" alt="Thumbnail"
             loading="lazy" style="object-fit: contain;"
             onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
     </div>
 
-    <div id="details" class="col-6 col-md-4 pb-3 mb-0 small lh-sm">
+    <div id="details" class="col-6 col-lg-4 pb-3 mb-0 small lh-sm">
         <div class="d-flex justify-content-between">
             <strong class="text-gray-dark fs-6">{{ result.title | safe }}</strong>
         </div>
@@ -56,7 +56,7 @@
                 <i class="bi bi-hdd"></i> {{ result.size.replace('iB', 'B') }}
             </div>
             <div class="col-6" title="Date Added">
-                <i class="bi bi-calendar3"></i> 
+                <i class="bi bi-calendar3"></i>
                 <span class="render-local-date" data-date="{{ result.added }}">{{ result.added }}</span>
             </div>
             <div class="col-6" title="Seeders / Leechers">
@@ -67,39 +67,42 @@
             </div>
         </div>
     </div>
-    <div id="actions" class="col-12 col-md-4 py-2 d-flex flex-column justify-content-center">
+    <div id="actions" class="col-12 col-lg-4 py-2 d-flex flex-column justify-content-center">
         {% if result.download_link %}
-        <div class="d-grid gap-2 d-md-block" style="width:100%" {% if CLIENT_STATUS !='CONNECTED'
-            %}title="Torrent client is not connected." {% endif %}>
-            <button type="button" class="btn btn-primary add-to-client-button" style="width:100%"
-                data-torrent-url="{{ result.download_link | safe }}" data-author="{{ result.author_info }}"
-                data-title="{{ result.title }}" data-id="{{ result.id }}" data-size="{{ result.size }}"
-                data-main-cat="{{ result.main_cat }}" data-series-info="{{ result.series_info | escape }}" {% if
-                CLIENT_STATUS !='CONNECTED' %}disabled{% endif %}>
-                Download
-            </button>
+        <div id="download-section" class="d-none d-lg-block">
+            <div class="d-grid gap-2 d-md-block" style="width:100%" {% if CLIENT_STATUS !='CONNECTED'
+                %}title="Torrent client is not connected." {% endif %}>
+                <button type="button" class="btn btn-primary add-to-client-button" style="width:100%"
+                    data-torrent-url="{{ result.download_link | safe }}" data-author="{{ result.author_info }}"
+                    data-title="{{ result.title }}" data-id="{{ result.id }}" data-size="{{ result.size }}"
+                    data-main-cat="{{ result.main_cat }}" data-series-info="{{ result.series_info | escape }}" {% if
+                    CLIENT_STATUS !='CONNECTED' %}disabled{% endif %}>
+                    Download
+                </button>
+            </div>
+            <div class="form-floating mt-2">
+                <select name="category" class="form-select category-dropdown" id="catSelect{{ result.id }}">
+                    <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
+                    {% for category_name, category_info in categories.items() %}
+                    <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{% endif
+                        %}>
+                        {{ category_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <label for="catSelect{{ result.id }}">Torrent Category</label>
+            </div>
+
+            <div class="text-center mt-1 lh-1">
+                <a href="{{ result.download_link | safe }}" class="small text-muted text-decoration-none"
+                    target="_blank">
+                    <i class="bi bi-download" style="font-size: 0.8rem;"></i> Save .torrent file
+                </a>
+            </div>
         </div>
 
-        <div class="form-floating mt-2">
-            <select name="category" class="form-select category-dropdown" id="catSelect{{ result.id }}">
-                <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
-                {% for category_name, category_info in categories.items() %}
-                <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{% endif %}>
-                    {{ category_name }}
-                </option>
-                {% endfor %}
-            </select>
-            <label for="catSelect{{ result.id }}">Torrent Category</label>
-        </div>
-
-        <div class="text-center mt-1 lh-1">
-            <a href="{{ result.download_link | safe }}" class="small text-muted text-decoration-none" target="_blank">
-                <i class="bi bi-download" style="font-size: 0.8rem;"></i> Save .torrent file
-            </a>
-        </div>
-
-        <div class="response-message-result mt-2"></div>
-        <div class="torrent-status-container mt-2"></div>
+        <div class="response-message-result"></div>
+        <div class="torrent-status-container"></div>
 
         {% else %}
         <div class="text-center text-muted small p-2">
@@ -110,8 +113,8 @@
 </div>
 {% endfor %}
 <script>
-    (function() {
-        document.querySelectorAll('.render-local-date').forEach(function(element) {
+    (function () {
+        document.querySelectorAll('.render-local-date').forEach(function (element) {
             // Prevent re-processing if this partial is re-rendered or cached
             if (element.dataset.processed) return;
 
@@ -127,10 +130,10 @@
             if (!isNaN(dateObj)) {
                 // Convert to user's locale
                 element.textContent = dateObj.toLocaleString(undefined, {
-                    year: 'numeric', 
-                    month: 'short', 
+                    year: 'numeric',
+                    month: 'short',
                     day: 'numeric',
-                    hour: '2-digit', 
+                    hour: '2-digit',
                     minute: '2-digit'
                 });
                 element.dataset.processed = "true";
@@ -139,4 +142,3 @@
     })();
 </script>
 {% endif %}
-

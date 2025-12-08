@@ -247,18 +247,22 @@ input:disabled, select:disabled {
 
 /* --- Cover Art Aspect Ratio Control --- */
 .book-cover-wrapper {
-    max-width: 300px; /* Limit width on large screens */
-    margin: 0 auto;   /* Center on mobile */
-    line-height: 0;   /* Remove bottom spacing for images */
-    background-color: #212529; /* Placeholder color while loading */
+    max-width: 300px;
+    margin: 0 auto;
+    line-height: 0;
+    /* background-color: #212529; */
+    text-align: center;
 }
 
 .book-cover-img {
-    width: 100%;
+    width: auto;
     height: auto;
-    display: block;
+    max-width: 100%;
+    max-height: 70vh;
+    /* display: block; */
     border-radius: 8px;
-    object-fit: cover; /* Ensures it fills width without distortion */
+    /* object-fit: contain; */
+    filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
 }
 
 /* Custom Scrollbar for Modal */
