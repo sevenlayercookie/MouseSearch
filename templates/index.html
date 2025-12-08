@@ -114,24 +114,25 @@
   </div>
 
 
-<nav class="navbar fixed-top navbar-dark responsive-navbar" aria-label="Main navigation">
+  <nav class="navbar fixed-top navbar-dark responsive-navbar" aria-label="Main navigation">
     <div class="container-fluid">
-      
+
       <a class="navbar-brand" href="#"></a>
-      
-      <button class="navbar-toggler p-2 rounded border" type="button" data-bs-toggle="offcanvas" data-bs-target="#settingsOffcanvas">
+
+      <button class="navbar-toggler p-2 rounded border" type="button" data-bs-toggle="offcanvas"
+        data-bs-target="#settingsOffcanvas">
         <span class="navbar-toggler-icon"></span>
       </button>
 
       <div class="collapse navbar-collapse" id="navbarCollapse">
-           </div>
+      </div>
 
     </div>
-</nav>
+  </nav>
 
 
 
-  <main class="container">
+  <main class="container px-0">
     <div class="d-flex justify-content-center align-items-center p-3 my-3 text-white bg-purple rounded shadow-sm">
       <a href="/" class="lh-1 text-center text-decoration-none">
         <img src="{{ url_for('static', filename='favicon/transparent.png') }}" alt="Logo" height="48">
@@ -321,9 +322,13 @@
       </main>
     </div>
 
-    <div class="my-3 p-3 bg-body rounded shadow-sm results-container-wrapper" id="results-container-wrapper"
-      style="display: none;">
-      <h6 id="results-title" class="border-bottom pb-2 mb-0">Results</h6>
+    <div class="my-3 px-1 py-3 p-sm-3 bg-body rounded shadow-sm results-container-wrapper"
+      id="results-container-wrapper" style="display: none;">
+      <div class="bg-body-tertiary p-2 rounded mb-3 d-flex align-items-center justify-content-center border">
+
+        <h4 class="mb-0 fw-bold text-body-secondary">Results</h4>
+
+      </div>
       <div id="results-container">
       </div>
     </div>
