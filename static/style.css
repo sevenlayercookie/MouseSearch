@@ -247,7 +247,7 @@ input:disabled, select:disabled {
 
 /* --- Cover Art Aspect Ratio Control --- */
 .book-cover-wrapper {
-    max-width: 300px;
+    max-width: 500px;
     margin: 0 auto;
     line-height: 0;
     /* background-color: #212529; */
