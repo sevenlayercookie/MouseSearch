@@ -1191,41 +1191,47 @@ document.addEventListener("DOMContentLoaded", function () {
         const imgEl = document.getElementById('detail-cover');
         const heroBg = document.getElementById('detail-hero-bg');
 
-        // 1. Reset Background Styles 
-        // (Important: If previous book triggered 'handleBookCoverError', these styles were removed. We must restore them.)
+        // 1. ADD VISUAL CUE & CLICK HANDLER (New Code)
+        imgEl.style.cursor = 'zoom-in';
+        
+        // Remove old listeners to prevent stacking if function runs multiple times
+        const newImgEl = imgEl.cloneNode(true);
+        imgEl.parentNode.replaceChild(newImgEl, imgEl);
+        
+        newImgEl.onclick = function() {
+            const lightboxImg = document.getElementById('lightbox-img');
+            // Use the hiResSrc we calculated for the modal
+            lightboxImg.src = hiResSrc; 
+            
+            const lightboxModal = new bootstrap.Modal(document.getElementById('coverLightboxModal'));
+            lightboxModal.show();
+        };
+
+        // Reset reference for the rest of the logic
+        const activeImgEl = newImgEl; 
+
+        // 2. Reset Background Styles
         heroBg.style.filter = 'blur(50px)';
         heroBg.style.transform = 'scale(1.2)';
         heroBg.style.opacity = '0.5';
-        
-        // 2. Attach Error Handler to Visible Image immediately
-        // If Low Res fails, this triggers your existing fallback logic (Placeholder + Gradient BG)
-        imgEl.onerror = function() { handleBookCoverError(this); };
 
-        // 3. Set Initial State: Use Low Res for BOTH Cover and Background
-        // This is instant if cached, or very fast if not.
-        imgEl.src = lowResSrc;
+        // 3. Attach Error Handler
+        activeImgEl.onerror = function() { handleBookCoverError(this); };
+
+        // 4. Set Initial State
+        activeImgEl.src = lowResSrc;
         heroBg.style.backgroundImage = `url('${lowResSrc}')`;
 
-        // 4. Spin up High Res Loader in the background
+        // 5. Spin up High Res Loader
         const hiResLoader = new Image();
         hiResLoader.src = hiResSrc;
 
         hiResLoader.onload = function() {
-            // Ensure the modal is still open and showing THIS book
-            // (Checks if the low res currently displayed matches what we are trying to upgrade)
-            const currentSrc = imgEl.src;
-            
-            // Note: We check includes because the browser expands relative URLs to absolute
-            if (imgEl && (currentSrc.includes(lowResSrc) || currentSrc.includes('no_cover.png'))) {
-                // Swap the Cover Image
-                imgEl.src = hiResSrc;
-                
-                // Optional: Swap the Background too? 
-                // Usually keeping the Low Res BG is fine since it's blurred 50px, 
-                // but swapping ensures color accuracy if High Res is significantly different.
+            const currentSrc = activeImgEl.src;
+            if (activeImgEl && (currentSrc.includes(lowResSrc) || currentSrc.includes('no_cover.png'))) {
+                activeImgEl.src = hiResSrc;
                 heroBg.style.backgroundImage = `url('${hiResSrc}')`;
                 
-                // If we recovered from a "no_cover" state (rare edge case), restore blur styles
                 if (currentSrc.includes('no_cover.png')) {
                     heroBg.style.filter = 'blur(50px)';
                     heroBg.style.transform = 'scale(1.2)';
