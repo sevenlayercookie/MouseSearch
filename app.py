@@ -212,15 +212,70 @@ ORGANIZED_PATH = None
 TORRENT_DOWNLOAD_PATH = None
 
 def load_config():
+    # 1. Start with Hardcoded Defaults (Lowest Priority)
     config = FALLBACK_CONFIG.copy()
+    
+    # 2. Update with Environment Variables (Medium Priority)
+    # These act as fallbacks if the key is missing in config.json
+    env_config = {key: os.getenv(key) for key in config.keys() if os.getenv(key) is not None}
+    config.update(env_config)
+
+    # 3. Update with config.json (Highest Priority - The Source of Truth)
+    # If a value exists here, it overwrites whatever was in .env or defaults
     json_config = {}
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
-             json_config = json.load(f)
+            try:
+                json_config = json.load(f)
+            except json.JSONDecodeError:
+                pass # corrupted config, ignore
+    
+    config.update(json_config)
 
-    env_config = {key: os.getenv(key) for key in config.keys() if os.getenv(key) is not None}
-    config.update(env_config) 
-    config.update(json_config) 
+    # --- TYPE CASTING BLOCK (Safety) ---
+    # Now that we have the final values, we force them into the correct types
+    
+    # Integers
+    for key in [
+        "AUTO_ORGANIZE_INTERVAL_HOURS", 
+        "DYNAMIC_IP_UPDATE_INTERVAL_HOURS",
+        "AUTO_BUY_VIP_INTERVAL_HOURS",
+        "AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS",
+        "THUMBNAIL_CACHE_MAX_SIZE_MB"
+    ]:
+        try:
+            config[key] = int(config[key])
+        except (ValueError, TypeError):
+            config[key] = FALLBACK_CONFIG[key]
+
+    # Floats
+    for key in [
+        "AUTO_BUY_UPLOAD_RATIO_THRESHOLD",
+        "AUTO_BUY_UPLOAD_RATIO_AMOUNT",
+        "AUTO_BUY_UPLOAD_BUFFER_THRESHOLD",
+        "AUTO_BUY_UPLOAD_BUFFER_AMOUNT"
+    ]:
+        try:
+            config[key] = float(config[key])
+        except (ValueError, TypeError):
+            config[key] = FALLBACK_CONFIG[key]
+
+    # Booleans
+    for key in [
+        "AUTO_ORGANIZE_ON_ADD",
+        "AUTO_ORGANIZE_ON_SCHEDULE",
+        "ENABLE_DYNAMIC_IP_UPDATE",
+        "AUTO_BUY_VIP",
+        "AUTO_BUY_UPLOAD_ON_RATIO",
+        "AUTO_BUY_UPLOAD_ON_BUFFER",
+        "BLOCK_DOWNLOAD_ON_LOW_BUFFER",
+        "ENABLE_FILESYSTEM_THUMBNAIL_CACHE"
+    ]:
+        val = config[key]
+        if not isinstance(val, bool):
+            # Check against common string representations of True
+            config[key] = str(val).lower() in ('true', '1', 't', 'yes', 'on')
+
     return config
 
 def save_config(config):
@@ -1674,7 +1729,15 @@ async def cleanup_cache_task():
                     app.logger.info(f"[CACHE-CLEANUP] Deleted {files_deleted_age} files older than 30 days")
                 
                 # 2. Enforce size limit by deleting oldest files first
-                max_size_bytes = app.config.get("THUMBNAIL_CACHE_MAX_SIZE_MB", 500) * 1024 * 1024
+                # --- FIX START ---
+                try:
+                    limit_mb = int(app.config.get("THUMBNAIL_CACHE_MAX_SIZE_MB", 500))
+                except ValueError:
+                    limit_mb = 500 # Fallback if config is malformed
+                
+                max_size_bytes = limit_mb * 1024 * 1024
+                # --- FIX END ---
+
                 total_size = sum(f['size'] for f in file_stats)
                 
                 if total_size > max_size_bytes:
@@ -1692,7 +1755,7 @@ async def cleanup_cache_task():
                             app.logger.warning(f"Failed to delete cache file for size limit {oldest['path']}: {e}")
                     
                     if files_deleted_size > 0:
-                        app.logger.info(f"[CACHE-CLEANUP] Deleted {files_deleted_size} oldest files to enforce {app.config.get('THUMBNAIL_CACHE_MAX_SIZE_MB', 500)}MB size limit (freed {(sum(f['size'] for f in file_stats[:files_deleted_size]) / 1024 / 1024):.2f} MB)")
+                        app.logger.info(f"[CACHE-CLEANUP] Deleted {files_deleted_size} oldest files to enforce {limit_mb}MB size limit (freed {(sum(f['size'] for f in file_stats[:files_deleted_size]) / 1024 / 1024):.2f} MB)")
                             
         except Exception as e:
             app.logger.error(f"Error during cache cleanup: {e}")
