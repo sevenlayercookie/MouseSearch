@@ -200,7 +200,7 @@ input:disabled, select:disabled {
 
 .book-hero-container {
     background-color: var(--bs-body-bg); /* Fallback to match theme */
-    min-height: 400px;
+    /* min-height: 400px; */
     /* Remove the box-shadow, the overlay handles the blend now */
     box-shadow: none; 
     /* Ensure text pops even if gradient blends to white in light mode */
@@ -343,4 +343,54 @@ input:disabled, select:disabled {
        We'll use '0.5rem' to match Bootstrap's 'rounded-3' size. */
     border-radius: 0.5rem !important;
   }
+}
+
+/* --- SEARCH RESULT CARD (Dark/Light Mode Compatible) --- */
+
+.result-card {
+    /* Use Bootstrap variables so it adapts to the theme automatically */
+    background-color: var(--bs-card-bg); 
+    border: 1px solid var(--bs-border-color-translucent); 
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.result-card:hover {
+    transform: translateY(-2px);
+    /* Stronger shadow for light mode, subtle glow for dark mode */
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15) !important; 
+    border-color: var(--bs-primary-border-subtle) !important; 
+    cursor: pointer;
+}
+
+/* Ensure the image container stands out slightly in both modes */
+.img-container-adaptive {
+    background-color: var(--bs-body-tertiary);
+}
+
+/* The right-hand action column background */
+.actions-column-adaptive {
+    background-color: var(--bs-body-tertiary); 
+    border-left: 1px solid var(--bs-border-color-translucent);
+}
+
+/* Custom link hover that respects theme colors */
+.hover-primary {
+    color: var(--bs-secondary-color) !important;
+    transition: color 0.2s;
+}
+.hover-primary:hover {
+    color: var(--bs-primary) !important;
+    text-decoration: underline !important;
+}
+
+/* Icon alignment fix */
+.bi {
+    vertical-align: -0.125em;
+}
+
+/* Fix dropdowns inside cards in Dark Mode */
+[data-bs-theme="dark"] .form-select-sm {
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color);
+    color: var(--bs-body-color);
 }

@@ -15,7 +15,7 @@ let lastClientStatus = null;
 window.currentVipUntil = null;
 window.currentBonusPoints = 0;
 // Validation for upload purchase amounts
-window.VALID_UPLOAD_AMOUNTS = [10, 50, 100, 500, 1000]; 
+window.VALID_UPLOAD_AMOUNTS = [10, 50, 100, 500, 1000];
 
 /**
  * Global helper to toggle switch when header is clicked.
@@ -33,7 +33,7 @@ window.toggleCardSwitch = function (checkboxId) {
  */
 function handleBookCoverError(imgElement) {
     // 1. Prevent infinite loop if placeholder is also missing
-    imgElement.onerror = null; 
+    imgElement.onerror = null;
     imgElement.src = '/static/icons/no_cover.png';
 
     // 2. Set a fallback background for the hero
@@ -43,7 +43,7 @@ function handleBookCoverError(imgElement) {
         // A neutral, deep purple/blue gradient that looks premium
         heroBg.style.backgroundImage = 'linear-gradient(135deg, rgb(59 114 193) 0%, rgb(86 49 91) 100%)';
         // Remove the filter so it looks clean, not blurry mud
-        heroBg.style.filter = 'none'; 
+        heroBg.style.filter = 'none';
         heroBg.style.transform = 'none';
         heroBg.style.opacity = '1';
     }
@@ -76,13 +76,13 @@ function parseMamJson(jsonStr) {
         // MAM returns objects with IDs as keys, we just want the values joined by comma
         // If it's an array (Series usually), handle that differently
         if (Array.isArray(obj)) return obj.join(', ');
-        
+
         // Handle Series Object format: {"id": ["Name", "", -1]}
         const values = Object.values(obj);
         if (values.length > 0 && Array.isArray(values[0])) {
             return values.map(v => v[0]).join(', ');
         }
-        
+
         // Handle Standard Object format: {"id": "Name"}
         return Object.values(obj).join(', ');
     } catch (e) {
@@ -147,7 +147,7 @@ function localizeDates(scope = document) {
                 // CHANGED: used toLocaleDateString() instead of toLocaleString()
                 // and removed hour/minute options.
                 el.textContent = dateObj.toLocaleDateString();
-                
+
                 el.dataset.processed = "true";
             }
         } catch (e) {
@@ -206,13 +206,13 @@ function initializeEventStream() {
                     const statusIconSpan = document.getElementById("client-status-icon");
                     const clientTypeDisplay = document.getElementById('client-type-display');
                     const isConnected = data.status === "connected";
-                    
+
                     if (statusSpan) {
                         statusSpan.textContent = isConnected ? "CONNECTED" : "NOT CONNECTED";
                         statusSpan.className = isConnected ? "text-success" : "text-danger";
                     }
                     if (statusIconSpan) statusIconSpan.innerHTML = isConnected ? greenCheckIcon : redXIcon;
-                    
+
                     // FIX: Update display name regardless of connection status
                     if (data.display_name && clientTypeDisplay) {
                         clientTypeDisplay.textContent = data.display_name;
@@ -275,8 +275,9 @@ async function getTorrentHashByMID(torrentId) {
 }
 
 function updateTorrentUI(hash, data, resultItem) {
-    const statusContainer = resultItem.querySelector('.torrent-status-container');
-    if (!statusContainer) return;
+    // 1. Find ALL containers (Desktop & Mobile)
+    const statusContainers = resultItem.querySelectorAll('.torrent-status-container');
+    if (!statusContainers.length) return;
 
     const state = data.state || 'unknown';
     const progressPercent = Math.floor((data.progress || 0) * 100);
@@ -313,14 +314,24 @@ function updateTorrentUI(hash, data, resultItem) {
     } else {
         htmlContent = `<div class="badge bg-secondary">State: ${state}</div>`;
     }
-    statusContainer.innerHTML = htmlContent;
+
+    // 2. Loop through and update BOTH containers
+    statusContainers.forEach(container => {
+        container.innerHTML = htmlContent;
+    });
 }
 
 function pollTorrentStatus(hash, resultItem) {
-    const statusContainer = resultItem.querySelector('.torrent-status-container');
-    if (!statusContainer) return;
+    // 1. Find ALL containers
+    const statusContainers = resultItem.querySelectorAll('.torrent-status-container');
+    if (!statusContainers.length) return;
+
     hashToElementMap.set(hash, resultItem);
-    statusContainer.innerHTML = `<span class="badge bg-info text-wrap">Waiting for updates...</span>`;
+
+    // 2. Loop through and set the "Waiting" message on BOTH
+    statusContainers.forEach(container => {
+        container.innerHTML = `<span class="badge bg-info text-wrap">Waiting for updates...</span>`;
+    });
 }
 
 function checkClientStatus() {
@@ -332,7 +343,7 @@ function checkClientStatus() {
         .then(response => response.json())
         .then(data => {
             const isSuccess = data.status === "success";
-            
+
             if (statusSpan) {
                 statusSpan.textContent = isSuccess ? "CONNECTED" : "NOT CONNECTED";
                 statusSpan.className = isSuccess ? "text-success" : "text-danger";
@@ -358,7 +369,7 @@ function refreshCategories() {
         .then(data => {
             const resultDropdowns = document.querySelectorAll('.category-dropdown');
             const defaultCategory = document.getElementById('TORRENT_CLIENT_CATEGORY')?.value || '';
-            
+
             resultDropdowns.forEach(dropdown => {
                 dropdown.disabled = false; // <--- ADD THIS
                 const currentVal = dropdown.value;
@@ -490,7 +501,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Init Tooltips
     [...document.querySelectorAll('[data-bs-toggle="tooltip"]')].map(el => new bootstrap.Tooltip(el));
-    
+
     localizeDates();
 
     // Initial Fetches
@@ -571,7 +582,7 @@ document.addEventListener("DOMContentLoaded", function () {
             pathContainer.classList.toggle('d-none', !organizeOnAdd && !organizeOnSchedule);
         }
     }
-    
+
 
     ['AUTO_ORGANIZE_ON_ADD', 'AUTO_ORGANIZE_ON_SCHEDULE'].forEach(id => {
         const el = document.getElementById(id);
@@ -585,9 +596,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const settingsCatSelect = document.getElementById('TORRENT_CLIENT_CATEGORY');
 
     if (clientTypeSelect) {
-        clientTypeSelect.addEventListener('change', function() {
+        clientTypeSelect.addEventListener('change', function () {
             const tempMsg = '<option value="">Save settings to load...</option>';
-            
+
             // 1. Disable and reset Settings dropdown
             if (settingsCatSelect) {
                 settingsCatSelect.innerHTML = tempMsg;
@@ -788,7 +799,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const searchButton = document.getElementById("searchButton");
     const wrapper = document.getElementById('results-container-wrapper');
     const resultsTitle = document.getElementById('results-title');
-    
+
     // Download Confirmation & Modal Variables
     let pendingDownloadData = null;
     let pendingButton = null;
@@ -836,10 +847,10 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('query').value = params.get('query') || '';
         ['search_in_title', 'search_in_author', 'search_in_narrator', 'search_in_series'].forEach(id => {
             const el = document.getElementById(id);
-            if(el) el.checked = params.has(id);
+            if (el) el.checked = params.has(id);
         });
-        if(params.get('media_type')) document.getElementById('media_type').value = params.get('media_type');
-        if(params.get('language')) document.getElementById('language').value = params.get('language');
+        if (params.get('media_type')) document.getElementById('media_type').value = params.get('media_type');
+        if (params.get('language')) document.getElementById('language').value = params.get('language');
     }
 
     if (searchForm) {
@@ -850,7 +861,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const queryParams = new URLSearchParams(formData);
             const queryString = queryParams.toString();
             const newUrl = `${window.location.pathname}?${queryString}`;
-            
+
             history.pushState({ type: 'search', query: queryString }, '', newUrl);
             performSearch(queryString);
         });
@@ -865,7 +876,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // UI Elements
         const bookModalEl = document.getElementById('bookDetailsModal');
         const bookModal = bootstrap.Modal.getOrCreateInstance(bookModalEl);
-        
+
         const settingsEl = document.getElementById('settingsOffcanvas');
         const settingsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(settingsEl);
 
@@ -878,7 +889,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (event.state.type === 'book_details') {
                 renderBookDetails(event.state.bookData, event.state.coverSrc);
                 bookModal.show();
-            } 
+            }
             // --- STATE: SETTINGS ---
             else if (event.state.type === 'settings') {
                 settingsOffcanvas.show();
@@ -899,7 +910,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // 2. Book Modal: Sync History on Manual Close
-    document.getElementById('bookDetailsModal')?.addEventListener('hide.bs.modal', function() {
+    document.getElementById('bookDetailsModal')?.addEventListener('hide.bs.modal', function () {
         // Only go back if we are currently IN the book_details state.
         // This prevents a double-back loop if the user pressed the Browser Back button.
         if (history.state && history.state.type === 'book_details') {
@@ -911,16 +922,16 @@ document.addEventListener("DOMContentLoaded", function () {
     const settingsEl = document.getElementById('settingsOffcanvas');
     if (settingsEl) {
         // When manually OPENED (clicked the gear icon)
-        settingsEl.addEventListener('show.bs.offcanvas', function(e) {
+        settingsEl.addEventListener('show.bs.offcanvas', function (e) {
             // Prevent pushing state if we are just restoring it from history (popstate)
             if (!e.relatedTarget) return; // bootstrap sets relatedTarget to null if triggered via JS (.show())
-            
+
             // Push state
             history.pushState({ type: 'settings' }, '', '#settings');
         });
 
         // When manually CLOSED (clicked X or backdrop)
-        settingsEl.addEventListener('hide.bs.offcanvas', function() {
+        settingsEl.addEventListener('hide.bs.offcanvas', function () {
             if (history.state && history.state.type === 'settings') {
                 history.back();
             }
@@ -929,7 +940,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Deep Linking (Load search on refresh)
     const initialParams = new URLSearchParams(window.location.search);
-    
+
     // Check if we have a book hash (#book=12345)
     const hash = window.location.hash;
     const deepLinkID = hash.startsWith('#book=') ? hash.split('=')[1] : null;
@@ -940,16 +951,16 @@ document.addEventListener("DOMContentLoaded", function () {
         performSearch(initialParams.toString()).then(() => {
             if (deepLinkID) openDeepLink(deepLinkID);
         });
-    } 
+    }
     else if (deepLinkID) {
         // SCENARIO 2: We have NO search query, but we have a Book ID (Direct Link)
         // We artificially create a search for this specific ID to get the data
         const fakeQuery = new URLSearchParams();
         fakeQuery.set('query', deepLinkID); // Searching the ID usually works on trackers
-        
+
         // Update the search bar visually so the user knows what happened
         document.getElementById('query').value = deepLinkID;
-        
+
         performSearch(fakeQuery.toString()).then(() => {
             openDeepLink(deepLinkID);
         });
@@ -981,22 +992,22 @@ document.addEventListener("DOMContentLoaded", function () {
     // Result Click Handling (Download/Series)
     if (resultsContainer) {
         resultsContainer.addEventListener('click', function (event) {
-            
+
             // CASE A: Clicked the "Download" button
             const button = event.target.closest('.add-to-client-button');
             if (button) {
                 event.preventDefault();
                 event.stopPropagation(); // Prevent opening the details modal
-                
+
                 const resultItem = button.closest('.result-item');
                 initiateDownloadFlow(button, resultItem);
-                return; 
+                return;
             }
 
             // CASE B: Clicked a Dropdown or Link (e.g., Author link)
             // We want default browser behavior, NOT opening the details modal
             if (event.target.closest('select') || event.target.closest('a')) {
-                return; 
+                return;
             }
 
             // CASE C: Clicked the Row (Result Item) -> Open Details Modal
@@ -1004,29 +1015,29 @@ document.addEventListener("DOMContentLoaded", function () {
             if (resultItem) {
                 // Retrieve the full JSON we injected into the HTML
                 const rawJson = resultItem.dataset.json;
-                if(rawJson) {
+                if (rawJson) {
                     try {
                         const data = JSON.parse(rawJson);
                         // Open the modal (make sure openBookDetailsModal is defined in main.js)
-                        openBookDetailsModal(data, resultItem); 
-                    } catch(e) { 
-                        console.error("Error parsing book data", e); 
+                        openBookDetailsModal(data, resultItem);
+                    } catch (e) {
+                        console.error("Error parsing book data", e);
                     }
                 }
             }
         });
     }
 
-        /**
-     * REFACTORED: Handles the download logic. 
-     * Can be called from the main list OR the details modal.
-     * @param {HTMLElement} button - The button clicked (contains data attributes)
-     * @param {HTMLElement} resultItem - The row element (contains the category dropdown)
-     */
+    /**
+ * REFACTORED: Handles the download logic. 
+ * Can be called from the main list OR the details modal.
+ * @param {HTMLElement} button - The button clicked (contains data attributes)
+ * @param {HTMLElement} resultItem - The row element (contains the category dropdown)
+ */
     function initiateDownloadFlow(button, resultItem) {
         const rawSeries = button.dataset.seriesInfo;
         const seriesName = getSeriesName(rawSeries);
-        
+
         // 1. Construct the download payload from the button's data attributes
         const downloadData = {
             torrent_url: button.dataset.torrentUrl,
@@ -1045,7 +1056,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (autoOrganizeEnabled && confirmModal) {
             // --- Auto-Organize Logic (Populate Confirm Modal) ---
-            
+
             const cleanAuthor = sanitizeFilename(downloadData.author);
             const cleanTitle = sanitizeFilename(downloadData.title);
 
@@ -1108,10 +1119,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Push History State so the "Back" button works
         const newUrl = window.location.pathname + window.location.search + `#book=${data.id}`;
-        history.pushState({ 
-            type: 'book_details', 
-            bookData: data, 
-            coverSrc: coverSrc 
+        history.pushState({
+            type: 'book_details',
+            bookData: data,
+            coverSrc: coverSrc
         }, '', newUrl);
 
         // Render & Show
@@ -1137,17 +1148,17 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('detail-authors').textContent = authors;
         document.getElementById('detail-narrators').textContent = narrators;
         document.getElementById('detail-description').innerHTML = data.description || "No description available.";
-        
+
         // Populate Image
         const imgEl = document.getElementById('detail-cover');
         // Reset the error handler (in case it was nulled out previously)
-        imgEl.onerror = function() { handleBookCoverError(this); };
+        imgEl.onerror = function () { handleBookCoverError(this); };
         imgEl.src = coverSrc;
 
         // Dynamic Hero Background (Blurred Image)
         const heroBg = document.getElementById('detail-hero-bg');
         heroBg.style.backgroundImage = `url('${coverSrc}')`;
-        
+
         // RESET styles in case previous book triggered the error handler
         heroBg.style.filter = 'blur(50px)';
         heroBg.style.transform = 'scale(1.2)';
@@ -1165,7 +1176,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // Populate Tags
         const tagsContainer = document.getElementById('detail-tags');
         tagsContainer.innerHTML = '';
-        if(data.tags) {
+        if (data.tags) {
             data.tags.split(',').forEach(tag => {
                 if (!tag.trim()) return;
                 const badge = document.createElement('span');
@@ -1177,7 +1188,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Setup Download Button
         const dlBtn = document.getElementById('detail-download-btn');
-        
+
         // Copy data attributes to the button so initiateDownloadFlow can read them
         dlBtn.dataset.torrentUrl = data.download_link;
         dlBtn.dataset.id = data.id;
@@ -1190,9 +1201,9 @@ document.addEventListener("DOMContentLoaded", function () {
         // Clone button to remove old event listeners (prevents multiple clicks firing)
         const newDlBtn = dlBtn.cloneNode(true);
         dlBtn.parentNode.replaceChild(newDlBtn, dlBtn);
-        
+
         // Add Click Listener
-        newDlBtn.addEventListener('click', function() {
+        newDlBtn.addEventListener('click', function () {
             // Pass null for resultItem because the modal doesn't have the category dropdown
             // The initiateDownloadFlow function handles null gracefully
             initiateDownloadFlow(this, null);
@@ -1237,7 +1248,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function performDownload(downloadData, button) {
         if (button) button.disabled = true;
-        
+
         fetch('/client/add', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1254,11 +1265,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     document.getElementById('modal-recommended-amount').textContent = data.recommended_amount || 0;
                     document.getElementById('modal-recommended-cost').textContent = (data.recommended_cost || 0).toLocaleString();
                     const buyBtn = document.getElementById('modal-buy-recommended');
-                    if(buyBtn) buyBtn.dataset.amount = data.recommended_amount || 0;
-                    
+                    if (buyBtn) buyBtn.dataset.amount = data.recommended_amount || 0;
+
                     window.pendingDownload = downloadData;
                     new bootstrap.Modal(document.getElementById('insufficientBufferModal')).show();
-                    
+
                     if (button) button.disabled = false;
                     return;
                 }
@@ -1270,34 +1281,37 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (data.message) {
                     if (button) button.textContent = 'Added!';
 
-                    // --- CRITICAL FIX START ---
-                    // Try to find the row relative to the button (List View click)
+                    // Find the row
                     let resultItem = button.closest ? button.closest('.result-item') : null;
-
-                    // If null (Modal View click), find the row by ID in the main list
                     if (!resultItem && downloadData.id) {
                         resultItem = document.querySelector(`.result-item[data-torrent-id="${downloadData.id}"]`);
                     }
-                    // --- CRITICAL FIX END ---
 
-                    // Only proceed with UI updates if the result row actually exists
                     if (resultItem) {
-                        const statusContainer = resultItem.querySelector('.torrent-status-container');
-                        if (statusContainer) statusContainer.innerHTML = `<span class="badge bg-info text-wrap">Resolving torrent...</span>`;
+                        // FIX: Select ALL status containers (Desktop & Mobile)
+                        const statusContainers = resultItem.querySelectorAll('.torrent-status-container');
 
-                        // Start Polling for Hash
+                        // FIX: Loop through them to update both
+                        statusContainers.forEach(el => {
+                            el.innerHTML = `<span class="badge bg-info text-wrap">Resolving torrent...</span>`;
+                        });
+
+                        // Start Polling
                         let attempts = 0;
                         const pollInterval = setInterval(async () => {
                             attempts++;
                             const hash = await getTorrentHashByMID(downloadData.id);
-                            
+
                             if (hash) {
                                 clearInterval(pollInterval);
                                 pollTorrentStatus(hash, resultItem);
                                 fetchAndUpdateTorrentStatus(hash, resultItem);
                             } else if (attempts >= 15) {
                                 clearInterval(pollInterval);
-                                if (statusContainer) statusContainer.innerHTML = `<span class="badge bg-warning">Added (pending)</span>`;
+                                // Update all containers again
+                                statusContainers.forEach(el => {
+                                    el.innerHTML = `<span class="badge bg-warning">Added (pending)</span>`;
+                                });
                             }
                         }, 2000);
                     }
@@ -1307,7 +1321,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             })
             .catch(error => {
-                console.error("Download Logic Error:", error); 
+                console.error("Download Logic Error:", error);
                 showToast("Error adding torrent.", 'danger');
                 if (button) button.disabled = false;
             });

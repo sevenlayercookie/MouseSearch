@@ -1,140 +1,244 @@
 {% if error_message %}
-<div class="alert alert-danger text-center" role="alert">
+<div class="alert alert-danger text-center shadow-sm rounded-3" role="alert">
     {{ error_message }}
 </div>
 {% elif not results %}
-<div class="alert alert-warning text-center" role="alert">
+<div class="alert alert-warning text-center shadow-sm rounded-3" role="alert">
     No results found. Please try a different search query.
 </div>
 {% else %}
+
+<style>
+    /* Card Styling */
+    .result-card {
+        background-color: var(--bs-card-bg);
+        border: 1px solid var(--bs-border-color-translucent);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .result-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
+        border-color: var(--bs-primary-border-subtle) !important;
+        cursor: pointer;
+    }
+
+    /* Container Colors */
+    .img-container-adaptive {
+        background-color: var(--bs-body-tertiary);
+    }
+
+    .actions-column-adaptive {
+        background-color: var(--bs-body-tertiary);
+        border-left: 1px solid var(--bs-border-color-translucent);
+    }
+
+    /* Links & Icons */
+    .hover-primary {
+        color: var(--bs-secondary-color) !important;
+        transition: color 0.2s;
+    }
+
+    .hover-primary:hover {
+        color: var(--bs-primary) !important;
+        text-decoration: underline !important;
+    }
+
+    .bi {
+        vertical-align: -0.125em;
+    }
+
+    /* Dark Mode Dropdown Fix */
+    [data-bs-theme="dark"] .form-select-sm {
+        background-color: var(--bs-body-bg);
+        border-color: var(--bs-border-color);
+        color: var(--bs-body-color);
+    }
+
+    /* Ensure badges wrap nicely */
+    .badge-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+</style>
+
+{# --- 1. Define Badges Macro to avoid code duplication --- #}
+{% macro render_badges(result) %}
+{% if result.my_snatched == 1 %}
+<span class="badge bg-success" style="font-size: 0.7rem;">Downloaded</span>
+{% endif %}
+{% if result.vip == 1 %}
+<span class="badge bg-warning text-dark" style="font-size: 0.7rem;">VIP</span>
+{% endif %}
+{% if result.free == 1 or result.personal_freeleech == 1 %}
+<span class="badge bg-info text-dark" style="font-size: 0.7rem;">Freeleech</span>
+{% endif %}
+{% endmacro %}
+
 {% for result in results %}
-<div class="row my-3 mx-0 py-2 pe-lg-0 rounded-1 border shadow-sm result-item cursor-pointer"
-    data-torrent-id="{{ result.id }}" data-snatched="{{ result.my_snatched }}"
-    data-torrent-url="{{ result.download_link | safe }}" data-json="{{ result | tojson | forceescape }}">
-    <div id="cover" class="col-6 col-lg-4 d-flex justify-content-start justify-content-md-center align-items-center">
-        <img class="img-fluid me-2 rounded" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}" alt="Thumbnail"
-            loading="lazy" style="object-fit: contain;"
-            onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
-    </div>
+<div class="card result-card rounded-3 my-3 overflow-hidden result-item" data-torrent-id="{{ result.id }}"
+    data-snatched="{{ result.my_snatched }}" data-torrent-url="{{ result.download_link | safe }}"
+    data-json="{{ result | tojson | forceescape }}">
 
-    <div id="details" class="col-6 col-lg-4 pb-3 mb-0 small lh-sm">
-        <div class="d-flex justify-content-between">
-            <strong class="text-gray-dark fs-6">{{ result.title | safe }}</strong>
+    <div class="row g-0">
+
+        <div class="col-6 col-md-6 col-lg-4 pt-3 px-3 d-flex flex-column justify-content-center">
+            <div>
+                <img class="img-fluid rounded shadow-sm" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}"
+                    alt="Thumbnail" loading="lazy"
+                    style="width: 100%; height: auto; max-height:400px; object-fit: contain;"
+                    onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
+            </div>
         </div>
 
-        <div class="my-2">
-            {% if result.my_snatched == 1 %}
-            <span class="badge bg-success m-1">Downloaded</span>
-            {% endif %}
-            {% if result.vip == 1 %}
-            <span class="badge bg-warning text-dark m-1">VIP</span>
-            {% endif %}
-            {% if result.free == 1 or result.personal_freeleech == 1 %}
-            <span class="badge bg-info text-dark m-1">Freeleech</span>
-            {% endif %}
+        <div class="col-6 col-md-6 col-lg-5 p-3 d-flex flex-column justify-content-center">
+
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="card-title fw-bold mb-0 text-body-emphasis lh-sm" style="font-size: 1rem;">
+                    {{ result.title | safe }}
+                </h5>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="text-body-secondary small mb-2" style="min-width: 0;">
+                    {% if result.series_display %}
+                    <div class="mb-1 text-truncate">
+                        <i class="bi bi-collection-fill text-primary opacity-75 me-1"></i> {{ result.series_display }}
+                    </div>
+                    {% endif %}
+
+                    {% if result.author_info %}
+                    <div class="mb-1 text-truncate">
+                        <i class="bi bi-person-fill opacity-75 me-1"></i> {{ result.author_info }}
+                    </div>
+                    {% endif %}
+
+                    <div class="text-truncate">
+                        <i class="bi bi-mic-fill opacity-75 me-1"></i> {{ result.narrator_info or "N/A" }}
+                    </div>
+                </div>
+            </div>
+
+            <div id="footer"
+                class="d-flex justify-content-between align-items-center border-top border-secondary-subtle pt-2 text-body-secondary small mt-auto w-100">
+
+                <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center">
+
+                    <div
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0">
+                        <i class="bi bi-hdd-fill me-1"></i> {{ result.size.replace('iB', 'B') }}
+                    </div>
+
+                    <div
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0">
+                        <i class="bi bi-file-earmark-music-fill me-1"></i> {{ result.filetype }}
+                    </div>
+
+                    <div class="d-flex align-items-center text-success fw-bold">
+                        <i class="bi bi-arrow-up me-1"></i> {{ result.seeders }}
+                    </div>
+
+                </div>
+
+                <div class="ms-2">
+
+                    <div id="full" class="badge-container d-none d-sm-flex flex-column align-items-end gap-1">
+                        {% if result.my_snatched == 1 %}
+                        <span class="badge bg-success" style="font-size: 0.6rem;">Downloaded</span>
+                        {% endif %}
+                        {% if result.vip == 1 %}
+                        <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">VIP</span>
+                        {% endif %}
+                        {% if result.free == 1 or result.personal_freeleech == 1 %}
+                        <span class="badge bg-info text-dark" style="font-size: 0.6rem;">Freeleech</span>
+                        {% endif %}
+                    </div>
+
+                    <div id="abbreviated" class="badge-container d-flex d-sm-none flex-column align-items-end gap-1">
+
+                        {% if result.my_snatched == 1 %}
+                        <span class="badge bg-success" style="font-size: 0.6rem;" data-bs-toggle="tooltip"
+                            data-bs-placement="left" title="Downloaded">DL</span>
+                        {% endif %}
+
+                        {% if result.vip == 1 %}
+                        <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">VIP</span>
+                        {% endif %}
+
+                        {% if result.free == 1 or result.personal_freeleech == 1 %}
+                        <span class="badge bg-info text-dark" style="font-size: 0.6rem;" data-bs-toggle="tooltip"
+                            data-bs-placement="left" title="Freeleech">FL</span>
+                        {% endif %}
+
+                    </div>
+
+                </div>
+
+            </div>
+
         </div>
 
-        <div class="row g-2 torrent-details">
-            {% if result.series_display %}
-            <div class="col-12" title="Series">
-                <i class="bi bi-collection"></i> {{ result.series_display }}
-            </div>
-            {% endif %}
-            {% if result.author_info %}
-            <div class="col-6" title="Author">
-                <i class="bi bi-person"></i> {{ result.author_info }}
-            </div>
-            {% endif %}
-            <div class="col-6" title="Narrator">
-                <i class="bi bi-mic"></i> {{ result.narrator_info or "N/A" }}
-            </div>
-            <div class="col-6" title="File Type">
-                <i class="bi bi-file-earmark-music"></i> {{ result.filetype }}
-            </div>
-            <div class="col-6" title="Size">
-                {# Replaces 'GiB' with 'GB' and 'MiB' with 'MB' purely for display #}
-                <i class="bi bi-hdd"></i> {{ result.size.replace('iB', 'B') }}
-            </div>
-            <div class="col-6" title="Date Added">
-                <i class="bi bi-calendar3"></i>
-                <span class="render-local-date" data-date="{{ result.added }}">{{ result.added }}</span>
-            </div>
-            <div class="col-6" title="Seeders / Leechers">
-                <i class="bi bi-people"></i> {{ result.seeders }}/{{ result.leechers }}
-            </div>
-            <div class="col-6" title="Relevance Score">
-                <i class="bi bi-star"></i> {{ result.score }}
-            </div>
-        </div>
-    </div>
-    <div id="actions" class="col-12 col-lg-4 py-2 d-flex flex-column justify-content-center">
-        {% if result.download_link %}
-        <div id="download-section" class="d-none d-lg-block">
-            <div class="d-grid gap-2 d-md-block" style="width:100%" {% if CLIENT_STATUS !='CONNECTED'
+        <div class="col-lg-3 d-none d-lg-block actions-column-adaptive p-3 d-flex flex-column justify-content-center">
+            {% if result.download_link %}
+            <div class="d-grid gap-2" style="width:100%" {% if CLIENT_STATUS !='CONNECTED'
                 %}title="Torrent client is not connected." {% endif %}>
-                <button type="button" class="btn btn-primary add-to-client-button" style="width:100%"
+
+                <button type="button" class="btn btn-primary btn-sm w-100 shadow-sm fw-semibold add-to-client-button"
                     data-torrent-url="{{ result.download_link | safe }}" data-author="{{ result.author_info }}"
                     data-title="{{ result.title }}" data-id="{{ result.id }}" data-size="{{ result.size }}"
                     data-main-cat="{{ result.main_cat }}" data-series-info="{{ result.series_info | escape }}" {% if
                     CLIENT_STATUS !='CONNECTED' %}disabled{% endif %}>
-                    Download
+                    <i class="bi bi-cloud-arrow-down-fill me-1"></i> Download
                 </button>
+
+                <div class="form-floating mt-1">
+                    <select name="category" class="form-select form-select-sm shadow-sm category-dropdown"
+                        style="font-size: 0.85rem;" id="catSelect{{ result.id }}">
+                        <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
+                        {% for category_name, category_info in categories.items() %}
+                        <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{%
+                            endif %}>
+                            {{ category_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <label for="catSelect{{ result.id }}" style="font-size: 0.85rem;">Category</label>
+                </div>
             </div>
-            <div class="form-floating mt-2">
-                <select name="category" class="form-select category-dropdown" id="catSelect{{ result.id }}">
-                    <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
-                    {% for category_name, category_info in categories.items() %}
-                    <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{% endif
-                        %}>
-                        {{ category_name }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <label for="catSelect{{ result.id }}">Torrent Category</label>
+            <div class="row g-0 d-none d-lg-flex">
+                <div class="col-12 px-2 pb-3">
+                    <div class="response-message-result mt-1 small"></div>
+                    <div class="torrent-status-container small"></div>
+                </div>
             </div>
 
-            <div class="text-center mt-1 lh-1">
-                <a href="{{ result.download_link | safe }}" class="small text-muted text-decoration-none"
-                    target="_blank">
-                    <i class="bi bi-download" style="font-size: 0.8rem;"></i> Save .torrent file
-                </a>
-            </div>
+            {% else %}
+            <div class="text-center text-muted small">No Link</div>
+            {% endif %}
         </div>
+    </div>
 
-        <div class="response-message-result"></div>
-        <div class="torrent-status-container"></div>
-
-        {% else %}
-        <div class="text-center text-muted small p-2">
-            No torrent file available; check your VIP status.
+    <div class="row g-0 d-lg-none">
+        <div class="col-12 px-2 pb-3">
+            <div class="response-message-result mt-1 small"></div>
+            <div class="torrent-status-container small"></div>
         </div>
-        {% endif %}
     </div>
 </div>
 {% endfor %}
+
 <script>
     (function () {
         document.querySelectorAll('.render-local-date').forEach(function (element) {
-            // Prevent re-processing if this partial is re-rendered or cached
             if (element.dataset.processed) return;
-
             const rawDate = element.getAttribute('data-date');
             if (!rawDate) return;
-
-            // MAM API typically returns "YYYY-MM-DD HH:MM:SS" in UTC.
-            // We replace space with 'T' and add 'Z' to ensure JS parses it as UTC.
-            // If your API returns a different format, adjust the formatting string below.
             const cleanDate = rawDate.replace(" ", "T") + "Z";
             const dateObj = new Date(cleanDate);
-
             if (!isNaN(dateObj)) {
-                // Convert to user's locale
                 element.textContent = dateObj.toLocaleString(undefined, {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
+                    year: 'numeric', month: 'numeric', day: 'numeric'
                 });
                 element.dataset.processed = "true";
             }
