@@ -450,3 +450,14 @@ input:disabled, select:disabled {
     color: white !important;
     box-shadow: none; 
 }
+
+/* --- Fix for Mobile Zoom/Jump --- */
+@media screen and (max-width: 992px) {
+    #nav-search-input {
+        font-size: 16px !important; /* Prevents iOS from zooming in */
+        
+        /* Optional: Adjust padding slightly so the 16px text fits nicely in the small bar */
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+}

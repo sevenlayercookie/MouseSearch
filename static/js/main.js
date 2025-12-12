@@ -1570,5 +1570,4 @@ document.addEventListener("DOMContentLoaded", function () {
             if (mainInput) mainInput.value = this.value;
         });
     }
-    
 });
