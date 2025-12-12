@@ -14,15 +14,15 @@
           <div class="book-hero-overlay position-absolute top-0 start-0 w-100 h-100"></div>
 
           <div class="container position-relative pt-5" style="z-index: 2;">
-            <div class="row align-items-center align-items-md-start">
+            <div class="row">
 
-              <div class="col-12 col-md-6 col-lg-4 mb-4 mb-md-0 text-center text-md-start">
+              <div class="col-12 col-md-4 col-lg-3 mb-4 mb-md-0 text-center text-md-start d-flex justify-content-center align-items-center">
                 <div class="book-cover-wrapper">
                   <img src="" id="detail-cover" class="book-cover-img" alt="Cover" onerror="handleBookCoverError(this)">
                 </div>
               </div>
 
-              <div class="col-12 col-md-6 col-lg-8 d-flex flex-column justify-content-center text-center text-md-start">
+              <div class="col-12 col-md-8 col-lg-9 d-flex flex-column justify-content-start text-center text-md-start">
                 <h1 class="display-5 fw-bold mb-2" id="detail-title">Title</h1>
                 <div
                   class="fs-5 mb-3 text-white-75 d-flex align-items-center justify-content-center justify-content-md-start gap-1"
@@ -31,7 +31,12 @@
                 <div class="mb-1"><strong>By:</strong> <span id="detail-authors">---</span></div>
                 <div class="mb-3"><strong>Narrated by:</strong> <span id="detail-narrators">---</span></div>
 
-                <div class="d-flex gap-3 mt-3 flex-wrap justify-content-center justify-content-md-start">
+              </div>
+            </div>
+            <div class="row align-items-center align-items-md-start">
+              <div class="col-12 col-md-4 col-lg-3 mb-4 mb-md-0 text-center text-md-start d-none d-md-block"></div>
+              <div class="col-12 col-md-8 col-lg-9 d-flex flex-column justify-content-center text-center text-md-start">
+                                <div class="d-flex gap-3 mt-3 flex-wrap justify-content-center justify-content-md-start">
                   <button id="detail-download-btn"
                     class="btn btn-warning btn-lg px-5 fw-bold rounded-pill text-dark border-0">
                     <i class="bi bi-play-fill me-1"></i> Download
