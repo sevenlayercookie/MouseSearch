@@ -245,24 +245,51 @@ input:disabled, select:disabled {
     );
 }
 
-/* --- Cover Art Aspect Ratio Control --- */
+/* --- Wrapper: Holds the image --- */
 .book-cover-wrapper {
-    max-width: 450px;
+    /* 1. Remove the fixed pixel max-width so it can fill the column on desktop */
+    max-width: 100%; 
+    width: 100%;
+    /* 2. Center the image on mobile if the fixed height results in a narrow width */
+    display: flex;
+    justify-content: center; 
     margin: 0 auto;
-    line-height: 0;
-    /* background-color: #212529; */
-    text-align: center;
 }
 
+/* --- Image Styling --- */
 .book-cover-img {
-    width: 100%;
-    height: auto;
-    max-width: 100%;
-    max-height: 55vh;
-    /* display: block; */
+    /* === MOBILE VIEW (Default) === */
+    
+    /* 1. Fixed Height: Set your desired height for phones */
+    height: 55vh; 
+    
+    /* 2. Auto Width: This is the KEY to maintaining aspect ratio. 
+       It tells the browser to calculate width based on the height. */
+    width: auto;   
+    
+    /* 3. Safety: Prevents the image from being wider than the phone screen */
+    max-width: 100%; 
+    
+    /* 4. Visuals */
     border-radius: 8px;
-    /* object-fit: contain; */
     filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+    
+    object-fit: contain; /* Ensures the image is never distorted */
+}
+
+/* === DESKTOP VIEW (Two-Column Layout) === */
+/* Triggered when Bootstrap switches to 'col-md-4' (768px) */
+@media (min-width: 768px) {
+    .book-cover-img {
+        /* 1. Reset Height: Stop using the fixed 300px */
+        height: auto; 
+        
+        /* 2. Force Fill: Make it take up the full space of the column */
+        width: 100%; 
+        
+        /* 3. Reset Limits: Ensure no max-height prevents it from growing */
+        max-height: none; 
+    }
 }
 
 /* Custom Scrollbar for Modal */
