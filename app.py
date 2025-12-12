@@ -79,6 +79,40 @@ class LeakyBucket:
 # 120 requests per 60 seconds (Shared limit)
 mam_autosuggest_limiter = LeakyBucket(120, 60.0)
 
+
+def coerce_bool(val, default: bool) -> bool:
+    # Already a bool? Keep it.
+    if isinstance(val, bool):
+        return val
+
+    # None / empty string => use default (don’t silently flip off)
+    if val is None:
+        return default
+    if isinstance(val, str) and val.strip() == "":
+        return default
+
+    # Int-like values
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        if val == 1:
+            return True
+        if val == 0:
+            return False
+        return default
+
+    # String values
+    s = str(val).strip().lower()
+    true_set = {"true", "1", "t", "yes", "y", "on"}
+    false_set = {"false", "0", "f", "no", "n", "off"}
+
+    if s in true_set:
+        return True
+    if s in false_set:
+        return False
+
+    # Unknown value => default
+    return default
+
+
 @app.before_serving
 async def startup():
     # 1. Load the configuration FIRST
@@ -1087,55 +1121,6 @@ async def mam_buy_upload():
             'error': '; '.join(errors) if errors else "Purchase failed."
         }), 400
         
-
-def coerce_bool(val, default: bool) -> bool:
-    """
-    Converts a given value to a boolean, using a default if the value is ambiguous.
-
-    Parameters:
-        val: The value to coerce to a boolean. Can be of any type.
-        default (bool): The default boolean value to return if `val` cannot be clearly interpreted as True or False.
-
-    Returns:
-        bool: The coerced boolean value.
-
-    Behavior:
-        - If `val` is already a boolean, it is returned as-is.
-        - If `val` is None or an empty string, returns `default`.
-        - If `val` is an integer or float (but not a boolean), returns True for 1, False for 0, otherwise `default`.
-        - If `val` is a string, recognizes common true/false representations (e.g., "yes", "no", "on", "off", "1", "0").
-        - For any unrecognized value, returns `default`.
-    """
-    # Already a bool? Keep it.
-    if isinstance(val, bool):
-        return val
-
-    # None / empty string => use default (don’t silently flip off)
-    if val is None:
-        return default
-    if isinstance(val, str) and val.strip() == "":
-        return default
-
-    # Int-like values
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        if val == 1:
-            return True
-        if val == 0:
-            return False
-        return default
-
-    # String values
-    s = str(val).strip().lower()
-    true_set = {"true", "1", "t", "yes", "y", "on"}
-    false_set = {"false", "0", "f", "no", "n", "off"}
-
-    if s in true_set:
-        return True
-    if s in false_set:
-        return False
-
-    # Unknown value => default
-    return default
 
 # Helper function to clean the specific MAM JSON format
 def parse_mam_metadata(json_str, is_series=False):
