@@ -915,10 +915,10 @@ document.addEventListener("DOMContentLoaded", function () {
             // --- STATE: SEARCH RESULTS ---
             else if (event.state.type === 'search') {
                 restoreFormFromURL(new URLSearchParams(event.state.query));
-                
+
                 // Only perform search if the query has changed or results are missing
                 const resultsEmpty = !document.getElementById('results-container').innerHTML.trim();
-                
+
                 if (event.state.query !== lastPerformedQuery || resultsEmpty) {
                     performSearch(event.state.query, true);
                 } else {
@@ -934,7 +934,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const resultsEmpty = !document.getElementById('results-container').innerHTML.trim();
 
                 if (queryStr !== lastPerformedQuery || resultsEmpty) {
-                     performSearch(queryStr, true);
+                    performSearch(queryStr, true);
                 }
             }
         }
@@ -1147,7 +1147,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function openBookDetailsModal(data, originElement) {
         // 1. Calculate Extensions and URLs
         const ext = getPosterExtension(data.poster_type);
-        
+
         // Use '0' as timestamp to force CDN redirect to latest version
         const highResUrl = `https://cdn.myanonamouse.net/t/p/0/large/${data.id}.${ext}`;
         const lowResUrl = `https://cdn.myanonamouse.net/t/p/small/${data.id}.webp`;
@@ -1158,12 +1158,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Push History State
         const newUrl = window.location.pathname + window.location.search + `#book=${data.id}`;
-        history.pushState({ 
-            type: 'book_details', 
+        history.pushState({
+            type: 'book_details',
             bookData: data,
             // Store both so we can restore them on popstate if needed
             hiResSrc: highResProxy,
-            lowResSrc: lowResProxy 
+            lowResSrc: lowResProxy
         }, '', newUrl);
 
         // Render & Show
@@ -1180,11 +1180,11 @@ document.addEventListener("DOMContentLoaded", function () {
     function renderBookDetails(data, hiResSrc, lowResSrc) {
         // Fallback calculation if called via history popstate
         if (!hiResSrc || !lowResSrc) {
-             const ext = getPosterExtension(data.poster_type);
-             const rawHi = `https://cdn.myanonamouse.net/t/p/0/large/${data.id}.${ext}`;
-             const rawLow = `https://cdn.myanonamouse.net/t/p/small/${data.id}.webp`;
-             hiResSrc = `/proxy_thumbnail?url=${encodeURIComponent(rawHi)}`;
-             lowResSrc = `/proxy_thumbnail?url=${encodeURIComponent(rawLow)}`;
+            const ext = getPosterExtension(data.poster_type);
+            const rawHi = `https://cdn.myanonamouse.net/t/p/0/large/${data.id}.${ext}`;
+            const rawLow = `https://cdn.myanonamouse.net/t/p/small/${data.id}.webp`;
+            hiResSrc = `/proxy_thumbnail?url=${encodeURIComponent(rawHi)}`;
+            lowResSrc = `/proxy_thumbnail?url=${encodeURIComponent(rawLow)}`;
         }
 
         // --- Standard Metadata Rendering ---
@@ -1198,28 +1198,57 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('detail-narrators').textContent = narrators;
         document.getElementById('detail-description').innerHTML = data.description || "No description available.";
 
+        // ============================================================
+        // NEW: BADGE LOGIC START
+        // ============================================================
+        const bDownloaded = document.getElementById('badge-downloaded');
+        const bVip = document.getElementById('badge-vip');
+        const bFree = document.getElementById('badge-freeleech');
+
+        // 1. Reset all to hidden
+        bDownloaded.classList.add('d-none');
+        bVip.classList.add('d-none');
+        bFree.classList.add('d-none');
+
+        // 2. Show if data matches (coercing to int just in case)
+        if (parseInt(data.my_snatched) === 1) {
+            bDownloaded.classList.remove('d-none');
+        }
+        if (parseInt(data.vip) === 1) {
+            bVip.classList.remove('d-none');
+        }
+        if (parseInt(data.free) === 1 || parseInt(data.personal_freeleech) === 1) {
+            bFree.classList.remove('d-none');
+        }
+        // ============================================================
+        // NEW: BADGE LOGIC END
+        // ============================================================
+
+
         // --- PROGRESSIVE IMAGE LOGIC START ---
         const imgEl = document.getElementById('detail-cover');
         const heroBg = document.getElementById('detail-hero-bg');
 
+        // ... (The rest of your function remains exactly the same) ...
+
         // 1. ADD VISUAL CUE & CLICK HANDLER (New Code)
         imgEl.style.cursor = 'zoom-in';
-        
+
         // Remove old listeners to prevent stacking if function runs multiple times
         const newImgEl = imgEl.cloneNode(true);
         imgEl.parentNode.replaceChild(newImgEl, imgEl);
-        
-        newImgEl.onclick = function() {
+
+        newImgEl.onclick = function () {
             const lightboxImg = document.getElementById('lightbox-img');
             // Use the hiResSrc we calculated for the modal
-            lightboxImg.src = hiResSrc; 
-            
+            lightboxImg.src = hiResSrc;
+
             const lightboxModal = new bootstrap.Modal(document.getElementById('coverLightboxModal'));
             lightboxModal.show();
         };
 
         // Reset reference for the rest of the logic
-        const activeImgEl = newImgEl; 
+        const activeImgEl = newImgEl;
 
         // 2. Reset Background Styles
         heroBg.style.filter = 'blur(50px)';
@@ -1227,7 +1256,7 @@ document.addEventListener("DOMContentLoaded", function () {
         heroBg.style.opacity = '0.5';
 
         // 3. Attach Error Handler
-        activeImgEl.onerror = function() { handleBookCoverError(this); };
+        activeImgEl.onerror = function () { handleBookCoverError(this); };
 
         // 4. Set Initial State
         activeImgEl.src = lowResSrc;
@@ -1237,12 +1266,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const hiResLoader = new Image();
         hiResLoader.src = hiResSrc;
 
-        hiResLoader.onload = function() {
+        hiResLoader.onload = function () {
             const currentSrc = activeImgEl.src;
             if (activeImgEl && (currentSrc.includes(lowResSrc) || currentSrc.includes('no_cover.png'))) {
                 activeImgEl.src = hiResSrc;
                 heroBg.style.backgroundImage = `url('${hiResSrc}')`;
-                
+
                 if (currentSrc.includes('no_cover.png')) {
                     heroBg.style.filter = 'blur(50px)';
                     heroBg.style.transform = 'scale(1.2)';
@@ -1250,10 +1279,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
         };
-        // We do NOT need an onerror for hiResLoader. 
-        // If High Res fails, the user simply keeps seeing the Low Res version (which is already there).
-        // --- PROGRESSIVE IMAGE LOGIC END ---
-
 
         // --- Rest of Rendering (Metadata, Tags, etc.) ---
         document.getElementById('detail-category').innerHTML = data.catname;
@@ -1287,8 +1312,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const newDlBtn = dlBtn.cloneNode(true);
         dlBtn.parentNode.replaceChild(newDlBtn, dlBtn);
-        
-        newDlBtn.addEventListener('click', function() {
+
+        newDlBtn.addEventListener('click', function () {
             initiateDownloadFlow(this, null);
         });
 
