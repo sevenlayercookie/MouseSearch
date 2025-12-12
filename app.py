@@ -2,6 +2,7 @@
 from quart import Quart, request, render_template, Response, jsonify, send_file
 import httpx
 import json
+import html
 import argparse
 import os
 import time
@@ -870,6 +871,34 @@ async def mam_buy_upload():
             'success': False, 
             'error': '; '.join(errors) if errors else "Purchase failed."
         }), 400
+        
+# Helper function to clean the specific MAM JSON format
+def parse_mam_metadata(json_str, is_series=False):
+    if not json_str:
+        return ""
+    try:
+        data = json.loads(json_str)
+        if not data:
+            return ""
+        
+        items = []
+        # Series format: {"id": ["Series Name", "Book Number", Total]}
+        if is_series:
+            for val in data.values():
+                if isinstance(val, list) and len(val) >= 2:
+                    # Formats as "Artemis Fowl #05"
+                    items.append(f"{val[0]} #{val[1]}")
+        
+        # Author/Narrator format: {"id": "Name"}
+        else:
+            for val in data.values():
+                items.append(str(val))
+                
+        # Join multiple (e.g. multiple authors) and unescape HTML
+        return html.unescape(", ".join(items))
+    except (json.JSONDecodeError, TypeError):
+        # Fallback if it's not JSON, just return unescaped string
+        return html.unescape(str(json_str))
 
 async def fetch_mam_json_load():
     """
@@ -1355,27 +1384,44 @@ async def mam_search():
             response.raise_for_status()
             json_data = response.json()
             results = json_data.get("data", [])
+            
+            # --- STEP 1: Rank Results FIRST ---
+            # We must rank BEFORE cleaning because rank_results expects raw JSON strings
+            ranked = rank_results(results)
+            
             base_dl_url = f"{app.config['MAM_API_URL']}/tor/download.php/"
-            for item in results:
-                if dl_hash := item.get('dl'): item['download_link'] = base_dl_url + dl_hash
-                else: item['download_link'] = '' 
+            
+            # --- STEP 2: Clean Data for Display ---
+            # Now we decode HTML entities and fix formatting on the sorted list
+            for item in ranked:
+                # 1. Handle Download Links
+                if dl_hash := item.get('dl'): 
+                    item['download_link'] = base_dl_url + dl_hash
+                else: 
+                    item['download_link'] = '' 
 
-                # Only set if thumbnail is missing
+                # 2. Handle Thumbnails
                 if not item.get('thumbnail'):
-                    # Optimistically assume the CDN link works to save time
-                    # You can add logic here: if item['id'] is missing, go straight to category
                     if item.get('id'):
                         item['thumbnail'] = f"https://cdn.myanonamouse.net/t/p/small/{item['id']}.webp"
                     else:
                         cat = item.get('category', '')
                         item['thumbnail'] = f"https://static.myanonamouse.net/pic/cats/3/{cat}.png"
 
-            ranked = rank_results(results)
+                # 3. Decode Metadata (Author, Narrator, Series)
+                # Note: rank_results may have already partially parsed these into strings.
+                # parse_mam_metadata handles both JSON strings AND plain strings safely.
+                item['author_info'] = parse_mam_metadata(item.get('author_info', ''))
+                item['narrator_info'] = parse_mam_metadata(item.get('narrator_info', ''))
+                
+                # Overwrite series_display with our cleaner, HTML-decoded version
+                item['series_display'] = parse_mam_metadata(item.get('series_info', ''), is_series=True)
+
+            # ... Rest of your function ...
             client_status_data = await torrent_client.get_status() if torrent_client else {"status": "error"}
             client_connected = client_status_data.get("status") == "success"
             categories = await torrent_client.get_categories() if client_connected else {}
             
-            # Fetch torrents with metadata and build MID-to-hash mapping
             mid_to_hash = {}
             if client_connected and torrent_client:
                 try:
@@ -1383,46 +1429,38 @@ async def mam_search():
                     for torrent in all_torrents:
                         comment = torrent.get('comment', '')
                         if comment:
-                            # Parse MID from comment using regex: MID=(\d+)
                             mid_match = re.search(r'MID=(\d+)', comment)
                             if mid_match:
                                 mid = mid_match.group(1)
                                 torrent_hash = torrent.get('hash', '')
                                 if torrent_hash:
                                     mid_to_hash[mid] = torrent_hash
-                    app.logger.debug(f"Built MID-to-hash mapping with {len(mid_to_hash)} entries")
                 except Exception as e:
                     app.logger.warning(f"Failed to fetch torrents with metadata: {e}")
             
-            # Mark results as downloaded if MID matches
             for item in ranked:
                 item_id = str(item.get('id', ''))
                 if item_id in mid_to_hash:
                     item['my_snatched'] = 1
             
-            # Add snatched results to database.json with 'unknown' status
             metadata = load_database()
             for item in ranked:
                 if item.get('my_snatched') == 1:
                     item_id = str(item.get('id', ''))
                     torrent_hash = mid_to_hash.get(item_id)
-                    
-                    # Only add if hash is available and not already in database
                     if torrent_hash and torrent_hash not in metadata:
                         metadata[torrent_hash] = {
                             "mid": item_id,
-                            "author": item.get('author_info', ''),
+                            "author": item.get('author_info', ''), 
                             "title": item.get('title', ''),
                             "added_on": datetime.now().isoformat(),
                             "status": "unknown",
                             "retry_count": 0,
-                            "series_info": parse_series_info(item.get('series_info', '')),
+                            "series_info": item.get('series_display', ''), 
                             "category": get_category_name(item.get('main_cat', '')),
                             "download_link": item.get('download_link', '')
                         }
-                        app.logger.info(f"Added snatched torrent to database: {item.get('title')} (MID: {item_id}, hash: {torrent_hash})")
             
-            # Save updated metadata if any snatched torrents were added
             if any(item.get('my_snatched') == 1 for item in ranked):
                 save_database(metadata)
             
