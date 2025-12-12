@@ -83,9 +83,9 @@
 
     <div class="row g-0">
 
-        <div class="col-6 col-md-6 col-lg-4 pt-3 px-3 d-flex flex-column justify-content-center">
+        <div class="col-6 col-md-6 col-lg-4 pt-3 px-3 pb-0 pb-md-3 d-flex flex-column justify-content-center">
             <div>
-                <img class="img-fluid rounded shadow-sm" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}"
+                <img class="img-fluid results-thumb rounded" src="{{ url_for('proxy_thumbnail', url=result.thumbnail) }}"
                     alt="Thumbnail" loading="lazy"
                     style="width: 100%; height: auto; max-height:400px; object-fit: contain;"
                     onerror="this.onerror=null; this.src='/static/icons/no_cover.png';">
