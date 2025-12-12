@@ -1655,13 +1655,15 @@ function initAutosuggest(inputId) {
                     : '';
                 
                 const seederHtml = `<span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill ms-auto" style="font-size: 0.65rem;">${item.seeders} <i class="bi bi-arrow-up-short"></i></span>`;
-
-                a.innerHTML = `
-                    <img src="${item.thumbnail || '/static/icons/no_cover.png'}" 
+                let thumbnailEl = `<img src="${item.thumbnail || '/static/icons/no_cover.png'}" 
                          class="rounded object-fit-cover" 
                          width="40" height="40" 
                          alt="Cover"
-                         onerror="this.src='/static/icons/no_cover.png'">
+                         onerror="this.src='/static/icons/no_cover.png'">`
+
+                thumbnailEl = `` // disable thumbnails to reduce MAM load
+                a.innerHTML = `
+                    ${thumbnailEl}
                     <div class="overflow-hidden flex-grow-1">
                         <div class="fw-bold text-truncate text-sm">${item.title}</div>
                         <div class="text-xs text-body-secondary text-truncate">${item.author}</div>

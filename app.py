@@ -89,6 +89,12 @@ async def startup():
         app.logger.debug("Cache cleanup task started")
         app.add_background_task(cleanup_cache_task)
     
+    if app.config.get("AUTO_BUY_VIP"):
+        interval_hours = int(app.config.get("AUTO_BUY_VIP_INTERVAL_HOURS", 24))
+        scheduler.add_job(auto_buy_vip, 'interval', hours=interval_hours, id='vip_buy_job', replace_existing=True)
+        scheduler.add_job(auto_buy_vip, 'date', run_date=datetime.now() + timedelta(seconds=10), id='initial_vip_buy_job')
+        app.logger.info("AUTO_BUY_VIP started")
+    
     if not scheduler.running:
         scheduler.start()
         app.logger.debug("AsyncIOScheduler started")
@@ -619,10 +625,7 @@ async def auto_buy_vip():
         except Exception as e:
             app.logger.error(f"[AUTO-VIP] Error during scheduled VIP purchase: {e}")
 
-if app.config.get("AUTO_BUY_VIP"):
-    interval_hours = int(app.config.get("AUTO_BUY_VIP_INTERVAL_HOURS", 24))
-    scheduler.add_job(auto_buy_vip, 'interval', hours=interval_hours, id='vip_buy_job', replace_existing=True)
-    scheduler.add_job(auto_buy_vip, 'date', run_date=datetime.now() + timedelta(seconds=10), id='initial_vip_buy_job')
+
 
 # --- UPLOAD CREDIT AUTO-BUY SCHEDULER ---
 async def check_and_buy_upload():
