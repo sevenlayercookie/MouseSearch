@@ -863,9 +863,53 @@ document.addEventListener("DOMContentLoaded", function () {
     const personalFlBtn = document.getElementById('use-personal-fl-btn');
     const freeleechIndicator = document.getElementById('confirm-freeleech-indicator');
 
-    // Used to prevent repeated MID resolve calls while the confirm modal is open.
-    const torrentInClientByMid = new Map(); // mid(string) -> boolean
-    const torrentInClientCheckInFlight = new Set();
+    // Used to prevent repeated MID resolve/info calls while the confirm modal is open.
+    // mid(string) -> { inClient: boolean, hash?: string, progress?: number, state?: string, isComplete?: boolean, isStarted?: boolean }
+    const torrentClientStatusByMid = new Map();
+    const torrentClientCheckInFlight = new Set();
+
+    function classifyClientTorrentInfo(info) {
+        const state = String(info?.state || 'unknown');
+        const progress = Number(info?.progress ?? 0);
+
+        // These align with the normalized states emitted by our client adapters.
+        const seedingStates = ['uploading', 'stalledUP', 'checkingUP', 'forcedUP', 'pausedUP', 'queuedUP'];
+        const downloadingStates = ['downloading', 'metaDL', 'stalledDL', 'checkingDL', 'forcedDL', 'allocating', 'moving', 'checkingResumeData', 'queuedDL', 'pausedDL'];
+
+        const isComplete = progress >= 1 || seedingStates.includes(state);
+        const isStarted = isComplete || progress > 0 || downloadingStates.includes(state);
+
+        return { state, progress, isComplete, isStarted };
+    }
+
+    async function primeTorrentClientStatusForMid(mid) {
+        if (!mid) return;
+        if (torrentClientStatusByMid.has(mid)) return;
+        if (torrentClientCheckInFlight.has(mid)) return;
+
+        torrentClientCheckInFlight.add(mid);
+        try {
+            const hash = await getTorrentHashByMID(mid);
+            if (!hash) {
+                torrentClientStatusByMid.set(mid, { inClient: false });
+                return;
+            }
+
+            let info = null;
+            try {
+                const response = await fetch(`/client/info/${hash}`, { cache: 'no-store' });
+                if (response.ok) info = await response.json();
+            } catch (_) {
+                // If info fails, still treat as in-client; we just won't know complete vs downloading.
+            }
+
+            const classified = classifyClientTorrentInfo(info || {});
+            torrentClientStatusByMid.set(mid, { inClient: true, hash, ...classified });
+        } finally {
+            torrentClientCheckInFlight.delete(mid);
+            updateConfirmModalFreeleechUI();
+        }
+    }
 
     function markTorrentPersonalFreeleech(torrentId) {
         try {
@@ -1000,28 +1044,18 @@ document.addEventListener("DOMContentLoaded", function () {
                     : 'This torrent is already Freeleech';
             } else if (parseInt(pendingDownloadData?.my_snatched ?? 0) === 1) {
                 disabledReason = 'You have already downloaded this torrent';
-            } else if (torrentInClientByMid.get(mid) === true) {
-                disabledReason = 'This torrent is already in your torrent client';
-            } else if (torrentInClientByMid.has(mid) === false) {
-                // Not present; keep enabled.
+            } else if (torrentClientStatusByMid.get(mid)?.inClient === true) {
+                const status = torrentClientStatusByMid.get(mid);
+                if (status?.isComplete) {
+                    disabledReason = 'You have already snatched this torrent.';
+                } else {
+                    disabledReason = 'This torrent is already in your torrent client';
+                }
+            } else if (torrentClientStatusByMid.get(mid)?.inClient === false) {
                 disabledReason = null;
             } else {
-                // Unknown yet: kick off a resolve_mid check once, and disable while checking.
-                if (!torrentInClientCheckInFlight.has(mid)) {
-                    torrentInClientCheckInFlight.add(mid);
-                    getTorrentHashByMID(mid)
-                        .then(hash => {
-                            torrentInClientByMid.set(mid, !!hash);
-                        })
-                        .catch(() => {
-                            // If resolve fails, treat as unknown -> allow wedge rather than blocking.
-                            torrentInClientByMid.delete(mid);
-                        })
-                        .finally(() => {
-                            torrentInClientCheckInFlight.delete(mid);
-                            updateConfirmModalFreeleechUI();
-                        });
-                }
+                // Unknown yet: kick off a resolve/info check once, and disable while checking.
+                primeTorrentClientStatusForMid(mid);
                 disabledReason = 'Checking torrent status…';
             }
 
