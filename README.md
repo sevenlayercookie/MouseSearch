@@ -22,7 +22,9 @@ MouseSearch is a self-hosted web application that provides a clean, fast search 
     * Auto-purchase when upload buffer (uploaded - downloaded) is too low
     * Pre-download buffer check - prevents downloads larger than available buffer and prompts for upload credit purchase
     * Manual purchase interface with preset amounts (1 GB to 100 GB) or max affordable option
-* **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time. Designates previously downloaded torrents as "Downloaded".
+* **Freeleech Tools:** VIP Freeleech awareness in search results plus a personal Freeleech wedge button in the download confirmation dialog.
+* **Enhanced Results UI:** Responsive cards, improved book details layout, and a high-res cover lightbox.
+* **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time in results and the book details modal. Designates previously downloaded torrents as "Downloaded".
 * **[BETA] Auto-Organization:** (See details below) Automatically hard-links completed audiobooks from your download folder to a clean, organized library structure (e.g., `Author/Title/file.m4b`).
 
 ## Technology Stack
