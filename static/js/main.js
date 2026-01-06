@@ -885,16 +885,28 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!confirmModalEl) return;
 
         const state = computeTorrentFreeleechState(pendingDownloadData);
-        if (freeleechIndicator) {
+        const downloadBtn = document.getElementById('confirm-download-btn');
+
+        // 1. Handle Start Download Button Tooltip
+        if (downloadBtn) {
             if (state.isFreeleech) {
-                freeleechIndicator.classList.remove('d-none');
-                freeleechIndicator.setAttribute('title', `This download will be Freeleech${state.reason ? ` (${state.reason})` : ''}`);
-                refreshTooltip(freeleechIndicator);
+                // Set the tooltip text and refresh
+                downloadBtn.setAttribute('title', 'This download will be Freeleech');
+                // We ensure the data-bs-toggle is present
+                downloadBtn.setAttribute('data-bs-toggle', 'tooltip');
+                refreshTooltip(downloadBtn);
             } else {
-                freeleechIndicator.classList.add('d-none');
+                // Remove tooltip entirely if not freeleech
+                const existing = bootstrap.Tooltip.getInstance(downloadBtn);
+                if (existing) {
+                    existing.dispose();
+                }
+                downloadBtn.removeAttribute('title');
+                downloadBtn.removeAttribute('data-bs-toggle');
             }
         }
 
+        // 2. Handle Personal FL Button (Wedge)
         if (personalFlBtn) {
             const hasTorrentId = !!(pendingDownloadData && pendingDownloadData.id);
             const canUsePersonal = hasTorrentId && !state.isFreeleech;
@@ -905,6 +917,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 : state.isFreeleech
                     ? 'Already Freeleech for you'
                     : 'Spend one Freeleech Wedge on this torrent';
+
             personalFlBtn.setAttribute('title', tooltip);
             refreshTooltip(personalFlBtn);
         }
@@ -914,7 +927,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!pendingDownloadData?.id) return;
         const originalHtml = this.innerHTML;
         this.disabled = true;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Applying...';
+        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
         fetch('/mam/buy_personal_fl', {
             method: 'POST',
@@ -1777,10 +1790,10 @@ function initAutosuggest(inputId) {
                 a.className = 'list-group-item list-group-item-action d-flex align-items-center gap-3 py-2';
                 a.href = '#';
 
-                const seriesHtml = item.series 
-                    ? `<div class="text-xs text-body-secondary text-truncate"><i class="bi bi-collection me-1"></i>${item.series}</div>` 
+                const seriesHtml = item.series
+                    ? `<div class="text-xs text-body-secondary text-truncate"><i class="bi bi-collection me-1"></i>${item.series}</div>`
                     : '';
-                
+
                 const seederHtml = `<span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill ms-auto" style="font-size: 0.65rem;">${item.seeders} <i class="bi bi-arrow-up-short"></i></span>`;
                 let thumbnailEl = `<img src="${item.thumbnail || '/static/icons/no_cover.png'}" 
                          class="rounded object-fit-cover" 
@@ -1806,7 +1819,7 @@ function initAutosuggest(inputId) {
                     clearTimeout(debounceTimer);
 
                     input.value = `${item.title} ${item.author}`;
-                    
+
                     const mainQuery = document.getElementById('query');
                     if (mainQuery && input.id !== 'query') {
                         mainQuery.value = input.value;
@@ -1835,7 +1848,7 @@ function initAutosuggest(inputId) {
     input.addEventListener('input', (e) => {
         clearTimeout(debounceTimer); // Clear previous timer
         const val = e.target.value.trim();
-        
+
         // Wait 300ms before searching
         debounceTimer = setTimeout(() => {
             performSearch(val);
