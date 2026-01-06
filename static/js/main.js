@@ -1496,7 +1496,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const narrators = parseMamJson(data.narrator_info) || "N/A";
         const series = parseMamJson(data.series_info);
 
-        document.getElementById('detail-title').innerHTML = data.title;
+        const titleLinkEl = document.getElementById('detail-title-link');
+        if (titleLinkEl) {
+            titleLinkEl.textContent = data.title || '';
+            titleLinkEl.href = data?.id ? `https://www.myanonamouse.net/t/${data.id}` : '#';
+        } else {
+            // Fallback for older templates
+            document.getElementById('detail-title').textContent = data.title || '';
+        }
         document.getElementById('detail-subtitle').innerHTML = series ? `<span class="badge bg-secondary opacity-75">Series</span> ${series}` : '';
         document.getElementById('detail-authors').textContent = authors;
         document.getElementById('detail-narrators').textContent = narrators;
