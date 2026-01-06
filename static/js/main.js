@@ -16,6 +16,7 @@ let lastPerformedQuery = null;
 window.currentVipUntil = null;
 window.currentBonusPoints = 0;
 window.isVipActive = false;
+window.appliedPersonalFreeleechIds = window.appliedPersonalFreeleechIds || new Set();
 // Validation for upload purchase amounts
 window.VALID_UPLOAD_AMOUNTS = [10, 50, 100, 500, 1000];
 
@@ -862,6 +863,76 @@ document.addEventListener("DOMContentLoaded", function () {
     const personalFlBtn = document.getElementById('use-personal-fl-btn');
     const freeleechIndicator = document.getElementById('confirm-freeleech-indicator');
 
+    function markTorrentPersonalFreeleech(torrentId) {
+        try {
+            if (!torrentId) return;
+            const tid = String(torrentId);
+            window.appliedPersonalFreeleechIds.add(tid);
+
+            // 1) Update search result row (dataset + badge) if present
+            // Torrent IDs are numeric, so no special CSS escaping should be needed.
+            const resultItem = document.querySelector(`.result-item[data-torrent-id="${tid}"]`);
+            if (resultItem) {
+                // Update embedded JSON used by row-click modal open
+                try {
+                    const rawJson = resultItem.dataset.json;
+                    if (rawJson) {
+                        const obj = JSON.parse(rawJson);
+                        obj.personal_freeleech = 1;
+                        resultItem.dataset.json = JSON.stringify(obj);
+                    }
+                } catch (e) {
+                    // Ignore parse errors; UI still updates via set + badges below
+                }
+
+                // Update download button dataset so confirm modal reopen reflects freeleech
+                const dlBtn = resultItem.querySelector('.add-to-client-button');
+                if (dlBtn) {
+                    dlBtn.dataset.personalFreeleech = '1';
+                }
+
+                // Ensure a Freeleech badge exists and reflects Personal Freeleech
+                const containers = resultItem.querySelectorAll('.badge-container');
+                containers.forEach(container => {
+                    const isAbbrev = container.classList.contains('d-sm-none');
+                    const label = isAbbrev ? 'FL' : 'Freeleech';
+                    let badge = Array.from(container.querySelectorAll('span.badge')).find(s => (s.textContent || '').trim() === label);
+
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'badge bg-info text-dark';
+                        badge.style.fontSize = '0.6rem';
+                        badge.textContent = label;
+                        container.appendChild(badge);
+                    }
+
+                    badge.setAttribute('data-bs-toggle', 'tooltip');
+                    badge.setAttribute('data-bs-placement', 'left');
+                    badge.setAttribute('title', 'Personal Freeleech');
+                    badge.setAttribute('data-bs-original-title', 'Personal Freeleech');
+                    refreshTooltip(badge);
+                });
+            }
+
+            // 2) Update book details modal badge if currently showing this torrent
+            const bookModalEl = document.getElementById('bookDetailsModal');
+            const detailBtn = document.getElementById('detail-download-btn');
+            if (bookModalEl && bookModalEl.classList.contains('show') && detailBtn && String(detailBtn.dataset.id) === tid) {
+                const bFree = document.getElementById('badge-freeleech');
+                if (bFree) {
+                    bFree.classList.remove('d-none');
+                    bFree.setAttribute('title', 'Personal Freeleech');
+                    bFree.setAttribute('data-bs-original-title', 'Personal Freeleech');
+                    const existing = bootstrap.Tooltip.getInstance(bFree);
+                    if (existing) existing.dispose();
+                    new bootstrap.Tooltip(bFree);
+                }
+            }
+        } catch (e) {
+            console.error('markTorrentPersonalFreeleech failed', e);
+        }
+    }
+
     function refreshTooltip(el) {
         if (!el) return;
         const existing = bootstrap.Tooltip.getInstance(el);
@@ -871,7 +942,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function computeTorrentFreeleechState(data) {
         const free = parseInt(data?.free ?? 0) === 1;
-        const personal = parseInt(data?.personal_freeleech ?? 0) === 1;
+        const forcedPersonal = data?.id && window.appliedPersonalFreeleechIds?.has(String(data.id));
+        const personal = forcedPersonal || parseInt(data?.personal_freeleech ?? 0) === 1;
         const flVip = parseInt(data?.fl_vip ?? 0) === 1;
         const vipFree = flVip && window.isVipActive === true;
 
@@ -938,6 +1010,7 @@ document.addEventListener("DOMContentLoaded", function () {
             .then(data => {
                 if (data && data.success) {
                     pendingDownloadData.personal_freeleech = 1;
+                    markTorrentPersonalFreeleech(pendingDownloadData.id);
                     showToast(`Freeleech Wedge applied. FL left: ${data.FLleft ?? 'N/A'}`, 'success');
                     loadMamUserData();
                     updateConfirmModalFreeleechUI();
@@ -979,6 +1052,14 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (existing) existing.dispose();
                         new bootstrap.Tooltip(el);
                     });
+
+                // If we've applied any personal FL wedges this session, the server-rendered
+                // results won't know about them. Re-apply to the newly-rendered rows.
+                if (window.appliedPersonalFreeleechIds && window.appliedPersonalFreeleechIds.size) {
+                    for (const tid of window.appliedPersonalFreeleechIds) {
+                        markTorrentPersonalFreeleech(tid);
+                    }
+                }
 
                 const count = resultsContainer.querySelectorAll('.result-item').length;
                 if (resultsTitle) resultsTitle.textContent = `Results (${count})`;
@@ -1224,6 +1305,11 @@ document.addEventListener("DOMContentLoaded", function () {
             fl_vip: button.dataset.flVip ?? 0,
         };
 
+        // If we've applied a wedge in this session, prefer that state.
+        if (downloadData.id && window.appliedPersonalFreeleechIds?.has(String(downloadData.id))) {
+            downloadData.personal_freeleech = 1;
+        }
+
         // 2. Check if Auto-Organize is enabled
         const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
 
@@ -1371,7 +1457,7 @@ document.addEventListener("DOMContentLoaded", function () {
             bVip.classList.remove('d-none');
         }
         const isPublicFree = parseInt(data.free) === 1;
-        const isPersonalFree = parseInt(data.personal_freeleech) === 1;
+        const isPersonalFree = (data?.id && window.appliedPersonalFreeleechIds?.has(String(data.id))) || (parseInt(data.personal_freeleech) === 1);
         const isVipFree = parseInt(data.fl_vip) === 1 && window.isVipActive === true;
         const isFreeleech = isPublicFree || isPersonalFree || isVipFree;
 
@@ -1464,6 +1550,13 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const dlBtn = document.getElementById('detail-download-btn');
+
+        // Reset button state in case a previous book download changed it (e.g. "Added!" + disabled)
+        if (dlBtn) {
+            dlBtn.disabled = false;
+            dlBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Download';
+        }
+
         dlBtn.dataset.torrentUrl = data.download_link;
         dlBtn.dataset.id = data.id;
         dlBtn.dataset.author = authors;
