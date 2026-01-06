@@ -17,8 +17,33 @@ window.currentVipUntil = null;
 window.currentBonusPoints = 0;
 window.isVipActive = false;
 window.appliedPersonalFreeleechIds = window.appliedPersonalFreeleechIds || new Set();
+const UPLOAD_AMOUNT_STEP = 50;
+const UPLOAD_AMOUNT_MIN = 50;
+const UPLOAD_AMOUNT_MAX = 200;
+const UPLOAD_COST_PER_GB = 500;
 // Validation for upload purchase amounts
-window.VALID_UPLOAD_AMOUNTS = [10, 50, 100, 500, 1000];
+if (!window.VALID_UPLOAD_AMOUNTS || window.VALID_UPLOAD_AMOUNTS.length === 0) {
+    window.VALID_UPLOAD_AMOUNTS = [50, 100, 150, 200];
+}
+
+function updateMaxUploadPurchaseDisplay() {
+    const maxButton = document.getElementById('upload-max-button');
+    const maxAmount = document.getElementById('upload-max-amount');
+    const maxCost = document.getElementById('upload-max-cost');
+    if (!maxButton || !maxAmount || !maxCost) return;
+
+    const maxAffordableRaw = Math.floor(window.currentBonusPoints / UPLOAD_COST_PER_GB / UPLOAD_AMOUNT_MIN) * UPLOAD_AMOUNT_MIN;
+    const maxAffordable = Math.min(maxAffordableRaw, UPLOAD_AMOUNT_MAX);
+    if (maxAffordable >= UPLOAD_AMOUNT_MIN) {
+        maxAmount.textContent = maxAffordable.toLocaleString();
+        maxCost.textContent = (maxAffordable * UPLOAD_COST_PER_GB).toLocaleString();
+        maxButton.disabled = false;
+    } else {
+        maxAmount.textContent = 'Need';
+        maxCost.textContent = (UPLOAD_AMOUNT_MIN * UPLOAD_COST_PER_GB).toLocaleString();
+        maxButton.disabled = true;
+    }
+}
 
 /**
  * Global helper to toggle switch when header is clicked.
@@ -251,6 +276,10 @@ function initializeEventStream() {
                         const element = document.getElementById(elementId);
                         if (element) element.textContent = userData[dataKey] || userData['seedbonus'] || 'N/A';
                     }
+                    if (userData.seedbonus !== undefined) {
+                        window.currentBonusPoints = parseFloat(userData.seedbonus || 0);
+                        updateMaxUploadPurchaseDisplay();
+                    }
                     break;
                 case 'vip_purchase':
                     if (data.success) {
@@ -260,7 +289,13 @@ function initializeEventStream() {
                     break;
                 case 'upload_purchase':
                     if (data.success) {
-                        const reason = data.reason === 'ratio' ? 'low ratio' : data.reason === 'buffer' ? 'low buffer' : 'manual';
+                        const reason = data.reason === 'ratio'
+                            ? 'low ratio'
+                            : data.reason === 'buffer'
+                                ? 'low buffer'
+                                : data.reason === 'bonus'
+                                    ? 'bonus points'
+                                    : 'manual';
                         showToast(`Upload credit purchased (${reason}): Added ${data.amount} GB.`, 'success');
                         loadMamUserData();
                     }
@@ -463,6 +498,7 @@ function loadMamUserData() {
 
             window.currentVipUntil = data.vip_until;
             window.currentBonusPoints = parseFloat(data.seedbonus || 0);
+            updateMaxUploadPurchaseDisplay();
 
             // VIP status is used for VIP Freeleech (fl_vip) torrents.
             window.isVipActive = false;
@@ -603,7 +639,8 @@ document.addEventListener("DOMContentLoaded", function () {
             { trigger: 'ENABLE_DYNAMIC_IP_UPDATE', target: 'DYNAMIC_IP_UPDATE_INTERVAL_HOURS' },
             { trigger: 'AUTO_BUY_VIP', target: 'AUTO_BUY_VIP_INTERVAL_HOURS' },
             { trigger: 'AUTO_BUY_UPLOAD_ON_RATIO', target: ['AUTO_BUY_UPLOAD_RATIO_THRESHOLD', 'AUTO_BUY_UPLOAD_RATIO_AMOUNT'] },
-            { trigger: 'AUTO_BUY_UPLOAD_ON_BUFFER', target: ['AUTO_BUY_UPLOAD_BUFFER_THRESHOLD', 'AUTO_BUY_UPLOAD_BUFFER_AMOUNT'] }
+            { trigger: 'AUTO_BUY_UPLOAD_ON_BUFFER', target: ['AUTO_BUY_UPLOAD_BUFFER_THRESHOLD', 'AUTO_BUY_UPLOAD_BUFFER_AMOUNT'] },
+            { trigger: 'AUTO_BUY_UPLOAD_ON_BONUS', target: ['AUTO_BUY_UPLOAD_BONUS_THRESHOLD', 'AUTO_BUY_UPLOAD_BONUS_AMOUNT'] }
         ];
 
         config.forEach(item => {
@@ -618,13 +655,14 @@ document.addEventListener("DOMContentLoaded", function () {
         // Upload Check Interval Logic
         const ratioOn = isChecked('AUTO_BUY_UPLOAD_ON_RATIO');
         const bufferOn = isChecked('AUTO_BUY_UPLOAD_ON_BUFFER');
+        const bonusOn = isChecked('AUTO_BUY_UPLOAD_ON_BONUS');
         const uploadContainer = document.getElementById('upload-check-interval-container');
         const uploadInput = document.getElementById('AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS');
 
         if (uploadContainer) {
-            uploadContainer.classList.toggle('d-none', !ratioOn && !bufferOn);
+            uploadContainer.classList.toggle('d-none', !ratioOn && !bufferOn && !bonusOn);
         }
-        if (uploadInput) uploadInput.disabled = (!ratioOn && !bufferOn);
+        if (uploadInput) uploadInput.disabled = (!ratioOn && !bufferOn && !bonusOn);
 
         // Auto Organize Path Logic
         const organizeOnAdd = isChecked('AUTO_ORGANIZE_ON_ADD');
@@ -666,25 +704,20 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // Upload Amount Validation
-    function findNearestValidAmount(value) {
-        if (!window.VALID_UPLOAD_AMOUNTS || window.VALID_UPLOAD_AMOUNTS.length === 0) return value;
+    function normalizeUploadAmount(value) {
         const numValue = parseFloat(value);
-        if (isNaN(numValue) || numValue < 1) return window.VALID_UPLOAD_AMOUNTS[0];
-        if (window.VALID_UPLOAD_AMOUNTS.includes(numValue)) return numValue;
-        let nearest = window.VALID_UPLOAD_AMOUNTS[0];
-        let minDiff = Math.abs(numValue - nearest);
-        for (const validAmount of window.VALID_UPLOAD_AMOUNTS) {
-            const diff = Math.abs(numValue - validAmount);
-            if (diff < minDiff) { minDiff = diff; nearest = validAmount; }
-        }
-        return nearest;
+        if (isNaN(numValue)) return UPLOAD_AMOUNT_MIN;
+        const rounded = Math.round(numValue / UPLOAD_AMOUNT_STEP) * UPLOAD_AMOUNT_STEP;
+        return Math.min(UPLOAD_AMOUNT_MAX, Math.max(UPLOAD_AMOUNT_MIN, rounded));
     }
     document.querySelectorAll('.upload-amount-input').forEach(input => {
         input.addEventListener('blur', function () {
-            const valid = findNearestValidAmount(this.value);
+            const valid = normalizeUploadAmount(this.value);
             if (parseFloat(this.value) !== valid) this.value = valid;
         });
     });
+
+    updateMaxUploadPurchaseDisplay();
 
     // --- B. Button Handlers (Save, VIP, Upload) ---
 
@@ -740,16 +773,21 @@ document.addEventListener("DOMContentLoaded", function () {
             maxBtn.disabled = false;
             maxBtn.classList.remove('btn-secondary');
 
-            if (purchaseWeeks < 0.1) {
+            if (purchaseWeeks < 1) {
                 maxTitle.textContent = "Top Up Max";
-                maxSubtitle.textContent = "Already at limit";
-                maxCostBadge.textContent = "0 BP";
+                maxSubtitle.textContent = "Minimum 1 week";
+                maxCostBadge.textContent = `${VIP_COST_PER_WEEK.toLocaleString()} BP`;
+                maxBtn.disabled = true;
+                maxBtn.classList.remove('btn-success');
+                maxBtn.classList.add('btn-secondary');
             } else {
                 const purchaseCost = Math.ceil(purchaseWeeks * VIP_COST_PER_WEEK);
                 maxTitle.textContent = `Top Up +${purchaseWeeks.toFixed(1)} Weeks`;
                 maxSubtitle.textContent = weeksAffordable < weeksToCap ? "Limited by points" : "Reach 12.8 week limit";
                 maxCostBadge.textContent = `${purchaseCost.toLocaleString()} BP`;
                 maxBtn.classList.add('btn-success');
+                maxBtn.disabled = false;
+                maxBtn.classList.remove('btn-secondary');
             }
 
             document.querySelectorAll('.vip-buy-btn[data-duration="4"], .vip-buy-btn[data-duration="8"]').forEach(btn => {

@@ -20,8 +20,9 @@ MouseSearch is a self-hosted web application that provides a clean, fast search 
 * **Upload Credit Auto-Buy:** Intelligent upload credit management with multiple modes:
     * Auto-purchase when ratio falls below threshold (configurable, MAM minimum is 1.0)
     * Auto-purchase when upload buffer (uploaded - downloaded) is too low
+    * Auto-purchase when bonus points exceed a threshold (continues until below threshold)
     * Pre-download buffer check - prevents downloads larger than available buffer and prompts for upload credit purchase
-    * Manual purchase interface with preset amounts (1 GB to 100 GB) or max affordable option
+    * Manual purchase interface with preset amounts (50 GB, 100 GB), custom multiples of 50 GB up to 200 GB, or max affordable option (rounded down to the nearest 50 GB)
 * **Freeleech Tools:** VIP Freeleech awareness in search results plus a personal Freeleech wedge button in the download confirmation dialog.
 * **Enhanced Results UI:** Responsive cards, improved book details layout, and a high-res cover lightbox.
 * **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time in results and the book details modal. Designates previously downloaded torrents as "Downloaded".
@@ -162,11 +163,14 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `AUTO_BUY_VIP_INTERVAL_HOURS` | No | Number of hours between automatic VIP purchases (only applies if `AUTO_BUY_VIP` is `true`). Defaults to `24`. |
 | `AUTO_BUY_UPLOAD_ON_RATIO` | No | Set to `true` to enable automatic upload credit purchase when ratio falls below threshold. Defaults to `false`. |
 | `AUTO_BUY_UPLOAD_RATIO_THRESHOLD` | No | If ratio falls below this value, automatically purchase upload credit. MAM requires minimum 1.0 ratio. Defaults to `1.5`. |
-| `AUTO_BUY_UPLOAD_RATIO_AMOUNT` | No | Amount of upload credit (in GB) to purchase when ratio threshold is hit. Defaults to `10`. |
+| `AUTO_BUY_UPLOAD_RATIO_AMOUNT` | No | Amount of upload credit (in GB) to purchase when ratio threshold is hit (multiples of 50 only). Defaults to `50`. |
 | `AUTO_BUY_UPLOAD_ON_BUFFER` | No | Set to `true` to enable automatic upload credit purchase when buffer is too low. Defaults to `false`. |
 | `AUTO_BUY_UPLOAD_BUFFER_THRESHOLD` | No | If upload buffer (uploaded - downloaded) falls below this many GB, automatically purchase upload credit. Defaults to `10`. |
-| `AUTO_BUY_UPLOAD_BUFFER_AMOUNT` | No | Amount of upload credit (in GB) to purchase when buffer threshold is hit. Defaults to `10`. |
-| `AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS` | No | Number of hours between ratio/buffer checks (only applies if auto-buy upload is enabled). Defaults to `6`. |
+| `AUTO_BUY_UPLOAD_BUFFER_AMOUNT` | No | Amount of upload credit (in GB) to purchase when buffer threshold is hit (multiples of 50 only). Defaults to `50`. |
+| `AUTO_BUY_UPLOAD_ON_BONUS` | No | Set to `true` to enable automatic upload credit purchase when bonus points exceed a threshold. Defaults to `false`. |
+| `AUTO_BUY_UPLOAD_BONUS_THRESHOLD` | No | If bonus points are at or above this value, auto-purchase upload credit until below threshold. Defaults to `5000`. |
+| `AUTO_BUY_UPLOAD_BONUS_AMOUNT` | No | Amount of upload credit (in GB) to purchase per bonus-threshold check (multiples of 50 only). Defaults to `50`. |
+| `AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS` | No | Number of hours between ratio/buffer/bonus checks (only applies if auto-buy upload is enabled). Defaults to `6`. |
 | `BLOCK_DOWNLOAD_ON_LOW_BUFFER` | No | Set to `true` to prevent downloads when torrent size exceeds available buffer (prompts user to purchase upload credit). Defaults to `true`. |
 | `AUTO_ORGANIZE_ON_ADD` | No | Set to `true` to enable auto-organization when torrents are added. Defaults to `false`. |
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |

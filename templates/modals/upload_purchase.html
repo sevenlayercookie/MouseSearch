@@ -10,34 +10,26 @@
         <div class="modal-body">
           <p>Select amount of upload credit to purchase:</p>
           <div class="list-group" id="upload-amount-options">
-            <button type="button" class="list-group-item list-group-item-action" data-amount="1">
-              1 GB <span class="badge bg-secondary float-end">500 BP</span>
-            </button>
-            <button type="button" class="list-group-item list-group-item-action" data-amount="2.5">
-              2.5 GB <span class="badge bg-secondary float-end">1,250 BP</span>
-            </button>
-            <button type="button" class="list-group-item list-group-item-action" data-amount="5">
-              5 GB <span class="badge bg-secondary float-end">2,500 BP</span>
-            </button>
-            <button type="button" class="list-group-item list-group-item-action" data-amount="10">
-              10 GB <span class="badge bg-secondary float-end">5,000 BP</span>
-            </button>
-            <button type="button" class="list-group-item list-group-item-action" data-amount="20">
-              20 GB <span class="badge bg-secondary float-end">10,000 BP</span>
+            <button type="button" class="list-group-item list-group-item-action" data-amount="50">
+              50 GB <span class="badge bg-secondary float-end">25,000 BP</span>
             </button>
             <button type="button" class="list-group-item list-group-item-action" data-amount="100">
               100 GB <span class="badge bg-secondary float-end">50,000 BP</span>
             </button>
-            <button type="button" class="list-group-item list-group-item-action" data-amount="max">
-              Max Affordable <span class="badge bg-secondary float-end">All BP</span>
+            <button type="button" class="list-group-item list-group-item-action" data-amount="max"
+              id="upload-max-button">
+              Max Affordable
+              <span class="badge bg-secondary float-end">
+                <span id="upload-max-amount">0</span> GB / <span id="upload-max-cost">0</span> BP
+              </span>
             </button>
           </div>
 
           <div class="mt-3">
-            <label for="custom-upload-amount" class="form-label">Or enter custom amount (GB):</label>
+            <label for="custom-upload-amount" class="form-label">Or enter custom amount (GB, multiples of 50):</label>
             <div class="input-group">
               <input type="number" class="form-control upload-amount-input" id="custom-upload-amount" placeholder=""
-                min="1" step="0.5" autocomplete="off">
+                min="50" max="200" step="50" autocomplete="off">
               <button class="btn btn-primary" type="button" id="buy-custom-upload-button">
                 Buy Custom Amount
               </button>
