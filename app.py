@@ -80,6 +80,27 @@ class LeakyBucket:
 # 120 requests per 60 seconds (Shared limit)
 mam_autosuggest_limiter = LeakyBucket(120, 60.0)
 
+RESULT_DISPLAY_FIELDS = [
+    "date_uploaded",
+    "file_type",
+    "file_size",
+    "snatches",
+    "seeders",
+    "category",
+    "language",
+]
+LANGUAGE_BY_ID = {str(value): name for name, value in language_dict.items()}
+
+def normalize_result_display_fields(value, fallback):
+    allowed = set(RESULT_DISPLAY_FIELDS)
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return [item for item in items if item in allowed]
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return [item for item in items if item in allowed] if items else fallback
+    return fallback
+
 
 def coerce_bool(val, default: bool) -> bool:
     # Already a bool? Keep it.
@@ -245,7 +266,8 @@ FALLBACK_CONFIG = {
     "AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS": 6,
     "BLOCK_DOWNLOAD_ON_LOW_BUFFER": True,
     "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": True,
-    "THUMBNAIL_CACHE_MAX_SIZE_MB": 500
+    "THUMBNAIL_CACHE_MAX_SIZE_MB": 500,
+    "RESULTS_DISPLAY_FIELDS": ["file_size", "file_type", "seeders"]
 }
 
 # Set up data directory and paths
@@ -341,6 +363,11 @@ def load_config():
         if not isinstance(val, bool):
             # Check against common string representations of True
             config[key] = str(val).lower() in ('true', '1', 't', 'yes', 'on')
+
+    config["RESULTS_DISPLAY_FIELDS"] = normalize_result_display_fields(
+        config.get("RESULTS_DISPLAY_FIELDS"),
+        FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
+    )
 
     return config
 
@@ -1795,10 +1822,24 @@ def rank_results(results):
 @app.route('/mam/search', methods=['GET'])
 async def mam_search():
     if not await login_mam(): 
-        return await render_template("partials/results.html", error_message="Login failed")
+        return await render_template(
+            "partials/results.html",
+            error_message="Login failed",
+            RESULTS_DISPLAY_FIELDS=app.config.get(
+                "RESULTS_DISPLAY_FIELDS",
+                FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
+            ),
+        )
     query = request.args.get("query", "")
     if not query: 
-        return await render_template("partials/results.html", results=[])
+        return await render_template(
+            "partials/results.html",
+            results=[],
+            RESULTS_DISPLAY_FIELDS=app.config.get(
+                "RESULTS_DISPLAY_FIELDS",
+                FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
+            ),
+        )
 
     # Used by templates to decide whether VIP Freeleech applies (fl_vip).
     is_vip_active = False
@@ -1866,6 +1907,12 @@ async def mam_search():
                 # Overwrite series_display with our cleaner, HTML-decoded version
                 item['series_display'] = parse_mam_metadata(item.get('series_info', ''), is_series=True)
 
+                language_id = str(item.get("language", "")).strip()
+                language_name = LANGUAGE_BY_ID.get(language_id)
+                if not language_name:
+                    language_name = item.get("lang_code") or item.get("language") or "Unknown"
+                item["language_name"] = language_name
+
             # ... Rest of your function ...
             client_status_data = await torrent_client.get_status() if torrent_client else {"status": "error"}
             client_connected = client_status_data.get("status") == "success"
@@ -1920,9 +1967,20 @@ async def mam_search():
                 categories=categories,
                 TORRENT_CLIENT_CATEGORY=app.config.get("TORRENT_CLIENT_CATEGORY", ""),
                 IS_VIP_ACTIVE=is_vip_active,
+                RESULTS_DISPLAY_FIELDS=app.config.get(
+                    "RESULTS_DISPLAY_FIELDS",
+                    FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
+                ),
             )
     except Exception as e:
-        return await render_template("partials/results.html", error_message=f"Error: {e}")
+        return await render_template(
+            "partials/results.html",
+            error_message=f"Error: {e}",
+            RESULTS_DISPLAY_FIELDS=app.config.get(
+                "RESULTS_DISPLAY_FIELDS",
+                FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
+            ),
+        )
 
 @app.route("/")
 async def index():
@@ -2165,6 +2223,20 @@ async def update_settings():
         "message": "Settings updated!",
         "client_display_name": display_name 
     })
+
+@app.route("/update_result_display_fields", methods=["POST"])
+async def update_result_display_fields():
+    payload = await request.get_json(silent=True) or {}
+    fields = payload.get("fields")
+    if fields is None:
+        return jsonify({"status": "error", "message": "Missing fields."}), 400
+
+    normalized = normalize_result_display_fields(fields, [])
+    config_to_update = app.config.copy()
+    config_to_update["RESULTS_DISPLAY_FIELDS"] = normalized
+    save_config(config_to_update)
+    app.config["RESULTS_DISPLAY_FIELDS"] = normalized
+    return jsonify({"status": "success", "fields": normalized})
 
 
 # --- ORGANIZE LOGIC ---

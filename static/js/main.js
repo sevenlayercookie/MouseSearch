@@ -889,6 +889,64 @@ document.addEventListener("DOMContentLoaded", function () {
     const searchButton = document.getElementById("searchButton");
     const wrapper = document.getElementById('results-container-wrapper');
     const resultsTitle = document.getElementById('results-title');
+    const resultDisplayOptions = document.querySelectorAll('.result-display-option');
+
+    const allowedResultFields = new Set([
+        'date_uploaded',
+        'file_type',
+        'file_size',
+        'snatches',
+        'seeders',
+        'category',
+        'language'
+    ]);
+
+    function getSelectedResultFields() {
+        return [...resultDisplayOptions]
+            .filter(option => option.checked && allowedResultFields.has(option.value))
+            .map(option => option.value);
+    }
+
+    function applyResultDisplayFields(fields, scope = document) {
+        const active = new Set(fields);
+        scope.querySelectorAll('[data-result-field]').forEach(el => {
+            const field = el.dataset.resultField;
+            el.classList.toggle('d-none', !active.has(field));
+        });
+    }
+
+    function saveResultDisplayFields(fields) {
+        return fetch('/update_result_display_fields', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    throw new Error(data.message || 'Failed to save display settings.');
+                }
+                return data.fields;
+            });
+    }
+
+    const initialResultFields = Array.isArray(window.resultDisplayFields)
+        ? window.resultDisplayFields.filter(field => allowedResultFields.has(field))
+        : getSelectedResultFields();
+    window.resultDisplayFields = initialResultFields;
+
+    if (resultDisplayOptions.length) {
+        resultDisplayOptions.forEach(option => {
+            option.addEventListener('change', () => {
+                const fields = getSelectedResultFields();
+                window.resultDisplayFields = fields;
+                applyResultDisplayFields(fields, resultsContainer || document);
+                saveResultDisplayFields(fields).catch(() => {
+                    showToast('Failed to save result display settings.', 'danger');
+                });
+            });
+        });
+    }
 
     // Download Confirmation & Modal Variables
     let pendingDownloadData = null;
@@ -1155,6 +1213,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 resultsContainer.innerHTML = html;
                 lastPerformedQuery = queryString;
                 localizeDates(resultsContainer);
+                applyResultDisplayFields(window.resultDisplayFields || getSelectedResultFields(), resultsContainer);
 
                 // Tooltips are created on DOMContentLoaded, but search results are injected later.
                 [...resultsContainer.querySelectorAll('[data-bs-toggle="tooltip"]')]

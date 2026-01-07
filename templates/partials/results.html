@@ -63,6 +63,8 @@
     }
 </style>
 
+{% set enabled_fields = RESULTS_DISPLAY_FIELDS or [] %}
+
 {# --- 1. Define Badges Macro to avoid code duplication --- #}
 {% macro render_badges(result) %}
 {% if result.my_snatched == 1 %}
@@ -130,20 +132,48 @@
             <div id="footer"
                 class="d-flex justify-content-between align-items-center border-top border-secondary-subtle pt-2 text-body-secondary small mt-auto w-100">
 
-                <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center">
+                <div class="d-flex flex-column flex-lg-row flex-wrap align-items-start align-items-lg-center">
 
                     <div
-                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0">
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0 result-meta{% if 'file_size' not in enabled_fields %} d-none{% endif %}"
+                        data-result-field="file_size">
                         <i class="bi bi-hdd-fill me-1"></i> {{ result.size.replace('iB', 'B') }}
                     </div>
 
                     <div
-                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0">
-                        <i class="bi bi-file-earmark-music-fill me-1"></i> {{ result.filetype }}
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0 result-meta{% if 'file_type' not in enabled_fields %} d-none{% endif %}"
+                        data-result-field="file_type">
+                        <i class="bi bi-file-earmark-music-fill me-1"></i> {{ result.filetype or result.filetypes or "Unknown" }}
                     </div>
 
-                    <div class="d-flex align-items-center text-success fw-bold">
+                    <div
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0 result-meta{% if 'date_uploaded' not in enabled_fields %} d-none{% endif %}"
+                        data-result-field="date_uploaded">
+                        <i class="bi bi-calendar3 me-1"></i> {{ result.added or "Unknown" }}
+                    </div>
+
+                    <div
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0 result-meta{% if 'snatches' not in enabled_fields %} d-none{% endif %}"
+                        data-result-field="snatches">
+                        <i class="bi bi-download me-1"></i> {{ result.times_completed or 0 }}
+                    </div>
+
+                    <div
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0 result-meta{% if 'seeders' not in enabled_fields %} d-none{% endif %} text-success fw-bold"
+                        data-result-field="seeders">
                         <i class="bi bi-arrow-up me-1"></i> {{ result.seeders }}
+                    </div>
+
+                    <div
+                        class="d-flex align-items-center border-lg-end border-secondary-subtle pe-lg-2 me-lg-2 mb-1 mb-lg-0 result-meta text-truncate{% if 'category' not in enabled_fields %} d-none{% endif %}"
+                        data-result-field="category" title="{{ result.catname }}">
+                        <i class="bi bi-tag-fill me-1"></i> {{ result.catname or "Unknown" }}
+                    </div>
+
+                    <div
+                        class="d-flex align-items-center mb-1 mb-lg-0 result-meta{% if 'language' not in enabled_fields %} d-none{% endif %}"
+                        data-result-field="language">
+                        <i class="bi bi-translate me-1"></i> {{ result.language_name or "Unknown" }}
                     </div>
 
                 </div>

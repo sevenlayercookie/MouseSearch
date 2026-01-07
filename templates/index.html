@@ -337,9 +337,54 @@
 
     <div class="my-3 px-1 py-3 p-sm-3 bg-body rounded shadow-sm results-container-wrapper"
       id="results-container-wrapper" style="display: none;">
-      <div class="bg-body-tertiary p-2 rounded mb-3 d-flex align-items-center justify-content-center border">
+      <div class="bg-body-tertiary p-2 rounded mb-3 d-flex align-items-center justify-content-between border gap-2">
 
-        <h4 class="mb-0 fw-bold text-body-secondary">Results</h4>
+        <h4 class="mb-0 fw-bold text-body-secondary" id="results-title">Results</h4>
+
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+            id="results-display-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-sliders me-1"></i> Customize
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-3 shadow-sm" aria-labelledby="results-display-toggle">
+            <h6 class="dropdown-header px-0">Show in results</h6>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="date_uploaded"
+                id="result-display-date" {% if 'date_uploaded' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-date">Date uploaded</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="file_type"
+                id="result-display-file-type" {% if 'file_type' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-file-type">File type</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="file_size"
+                id="result-display-file-size" {% if 'file_size' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-file-size">File size</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="snatches"
+                id="result-display-snatches" {% if 'snatches' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-snatches"># of snatches</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="seeders"
+                id="result-display-seeders" {% if 'seeders' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-seeders"># of current seeders</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="category"
+                id="result-display-category" {% if 'category' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-category">Category name</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input result-display-option" type="checkbox" value="language"
+                id="result-display-language" {% if 'language' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+              <label class="form-check-label" for="result-display-language">Language</label>
+            </div>
+          </div>
+        </div>
 
       </div>
       <div id="results-container">
@@ -356,6 +401,9 @@
 
   <script src="static/bootstrap/js/bootstrap.bundle.min.js">import "bootstrap";</script>
   <script src="static/categoryDefinitions.js"></script>
+  <script>
+    window.resultDisplayFields = {{ RESULTS_DISPLAY_FIELDS | tojson }};
+  </script>
   <script src="static/js/main.js"></script>
 
 
