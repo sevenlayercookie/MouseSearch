@@ -166,6 +166,28 @@
 
           <hr class="border-secondary-subtle my-4">
 
+          <h6 class="text-uppercase mb-3">File Operation Mode</h6>
+
+          <div class="card mb-3 border-secondary-subtle">
+            <div
+              class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              onclick="toggleCardSwitch('AUTO_ORGANIZE_USE_COPY')">
+              <span class="d-flex small fw-bold">
+                <i class="bi bi-files me-2"></i> Copy Files (instead of hardlink)
+              </span>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" id="AUTO_ORGANIZE_USE_COPY" name="AUTO_ORGANIZE_USE_COPY"
+                  {% if AUTO_ORGANIZE_USE_COPY %}checked{% endif %} onclick="event.stopPropagation()">
+              </div>
+            </div>
+            <div class="card-body pt-2 pb-2 small text-body-secondary">
+              <p class="mb-1"><strong>Hardlink (default):</strong> Fast, saves space, but files must be on same filesystem. Editing one location affects both.</p>
+              <p class="mb-0"><strong>Copy:</strong> Works across filesystems, allows independent file editing, but uses more disk space.</p>
+            </div>
+          </div>
+
+          <hr class="border-secondary-subtle my-4">
+
           <div id="path-configuration-container">
             <h6 class="text-uppercase mb-3">Path Configuration</h6>
 

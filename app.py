@@ -9,6 +9,7 @@ import time
 import hashlib
 import collections
 import math
+import shutil
 
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -252,6 +253,7 @@ FALLBACK_CONFIG = {
     "AUTO_ORGANIZE_ON_ADD": False,
     "AUTO_ORGANIZE_ON_SCHEDULE": False,
     "AUTO_ORGANIZE_INTERVAL_HOURS": 1,
+    "AUTO_ORGANIZE_USE_COPY": False,
     "ENABLE_DYNAMIC_IP_UPDATE": False,
     "DYNAMIC_IP_UPDATE_INTERVAL_HOURS": 3,
     "AUTO_BUY_VIP": False,
@@ -352,6 +354,7 @@ def load_config():
     for key in [
         "AUTO_ORGANIZE_ON_ADD",
         "AUTO_ORGANIZE_ON_SCHEDULE",
+        "AUTO_ORGANIZE_USE_COPY",
         "ENABLE_DYNAMIC_IP_UPDATE",
         "AUTO_BUY_VIP",
         "AUTO_BUY_UPLOAD_ON_RATIO",
@@ -2182,7 +2185,7 @@ async def proxy_thumbnail():
 async def update_settings():
     form = await request.form
     config_to_update = app.config.copy()
-    boolean_fields = {"AUTO_ORGANIZE_ON_ADD", "AUTO_ORGANIZE_ON_SCHEDULE", "ENABLE_DYNAMIC_IP_UPDATE", "AUTO_BUY_VIP", "AUTO_BUY_UPLOAD_ON_RATIO", "AUTO_BUY_UPLOAD_ON_BUFFER", "AUTO_BUY_UPLOAD_ON_BONUS", "BLOCK_DOWNLOAD_ON_LOW_BUFFER"}
+    boolean_fields = {"AUTO_ORGANIZE_ON_ADD", "AUTO_ORGANIZE_ON_SCHEDULE", "AUTO_ORGANIZE_USE_COPY", "ENABLE_DYNAMIC_IP_UPDATE", "AUTO_BUY_VIP", "AUTO_BUY_UPLOAD_ON_RATIO", "AUTO_BUY_UPLOAD_ON_BUFFER", "AUTO_BUY_UPLOAD_ON_BONUS", "BLOCK_DOWNLOAD_ON_LOW_BUFFER"}
     for key in FALLBACK_CONFIG.keys():
         if key in boolean_fields: config_to_update[key] = key in form
         elif key in form: config_to_update[key] = form[key]
@@ -2315,7 +2318,7 @@ async def _perform_organization(hash_val: str) -> tuple[bool, str]:
     
     for source_file in source_files:
         if source_file.is_file():
-            # NO FILTERING: Link everything found in the torrent
+            # NO FILTERING: Link/copy everything found in the torrent
             rel_path = source_file.relative_to(base_path)
             dest_file = dest_path / rel_path
             dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -2323,12 +2326,18 @@ async def _perform_organization(hash_val: str) -> tuple[bool, str]:
                 files_exist += 1
                 app.logger.debug(f"[ORGANIZE] Exists: {dest_file}")
             else:
-                try: 
-                    os.link(source_file, dest_file)
-                    files_linked += 1
-                    app.logger.debug(f"[ORGANIZE] Linked: {source_file} -> {dest_file}")
+                try:
+                    if app.config.get("AUTO_ORGANIZE_USE_COPY", False):
+                        shutil.copy2(source_file, dest_file)
+                        files_linked += 1
+                        app.logger.debug(f"[ORGANIZE] Copied: {source_file} -> {dest_file}")
+                    else:
+                        os.link(source_file, dest_file)
+                        files_linked += 1
+                        app.logger.debug(f"[ORGANIZE] Linked: {source_file} -> {dest_file}")
                 except Exception as e:
-                    app.logger.error(f"[ORGANIZE] Link error {source_file}: {e}")
+                    operation = "Copy" if app.config.get("AUTO_ORGANIZE_USE_COPY", False) else "Link"
+                    app.logger.error(f"[ORGANIZE] {operation} error {source_file}: {e}")
 
     total = files_linked + files_exist
     if total == 0:
