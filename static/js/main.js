@@ -1463,7 +1463,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const downloadData = {
             torrent_url: button.dataset.torrentUrl,
             // Try to find the dropdown in the resultItem; default to empty if not found
-            category: resultItem ? (resultItem.querySelector('.category-dropdown')?.value || '') : '',
+            category: resultItem ? (resultItem.querySelector('.category-dropdown')?.value || '') : (document.getElementById('detail-cat-select')?.value || ''),
             id: button.dataset.id,
             author: button.dataset.author || "Unknown",
             title: button.dataset.title || "Unknown",

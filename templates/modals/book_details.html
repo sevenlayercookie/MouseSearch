@@ -64,6 +64,20 @@
                     class="btn btn-outline-adaptive btn-lg px-4 rounded-pill border">
                     <i class="bi bi-file-earmark-arrow-down"></i> Save .torrent
                   </a>
+
+                  <div class="form-floating text-dark">
+                    <select name="category" class="form-select shadow-sm category-dropdown"
+                        style="font-size: 0.85rem; min-width: 140px;" id="detail-cat-select">
+                        <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
+                        {% for category_name, category_info in categories.items() %}
+                        <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{%
+                            endif %}>
+                            {{ category_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <label for="detail-cat-select" style="font-size: 0.85rem;">Category</label>
+                  </div>
                 </div>
               </div>
             </div>

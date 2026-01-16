@@ -1996,10 +1996,21 @@ async def index():
     # NEW: Get list of all registered clients
     available_clients = get_available_clients()
 
+    # Fetch categories for the modal
+    categories = {}
+    if torrent_client:
+        try:
+            status = await torrent_client.get_status()
+            if status.get("status") == "success":
+                categories = await torrent_client.get_categories()
+        except Exception:
+            pass
+
     return await render_template(
         "index.html", 
         CLIENT_DISPLAY_NAME=display_name,
         AVAILABLE_CLIENTS=available_clients, # Pass the list here
+        categories=categories,
         **app.config
     )
     
