@@ -1420,9 +1420,22 @@ async def get_user_stats():
             elif 'KIB' in unit or 'KB' in unit: return value / (1024 * 1024)
             return value
         
+        # Parse ratio safely - handle infinity symbol (∞) for users with no downloads
+        def parse_ratio(ratio_str):
+            if not ratio_str:
+                return 0.0
+            ratio_str = str(ratio_str).strip()
+            # Check for infinity symbol or 'inf' string
+            if ratio_str in ('∞', 'inf', 'Inf', 'INF'):
+                return float('inf')
+            try:
+                return float(ratio_str)
+            except ValueError:
+                return 0.0
+        
         uploaded_gb = parse_size(data.get('uploaded', '0 GiB'))
         downloaded_gb = parse_size(data.get('downloaded', '0 GiB'))
-        ratio = float(data.get('ratio', 0))
+        ratio = parse_ratio(data.get('ratio', 0))
         seedbonus = float(data.get('seedbonus', 0))
         
         return {
