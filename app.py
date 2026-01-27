@@ -1442,7 +1442,22 @@ async def get_user_stats():
         
         uploaded_gb = parse_size(data.get('uploaded', '0 GiB'))
         downloaded_gb = parse_size(data.get('downloaded', '0 GiB'))
-        ratio = float(data.get('ratio', 0))
+        
+        raw_ratio = str(data.get('ratio', '0')).strip()
+        try:
+            # Handle specific symbols for Infinity found in logs
+            if '∞' in raw_ratio or 'inf' in raw_ratio.lower():
+                ratio = float('inf')
+            elif 'nan' in raw_ratio.lower() or '---' in raw_ratio:
+                ratio = 0.0
+            else:
+                # Remove commas just in case (e.g., 1,234.56)
+                ratio = float(raw_ratio.replace(',', ''))
+        except (ValueError, TypeError):
+            # Fallback to 0.0 if parsing fails completely to prevent crash
+            app.logger.warning(f"Could not parse ratio '{raw_ratio}', defaulting to 0.0")
+            ratio = 0.0
+
         seedbonus = float(data.get('seedbonus', 0))
         
         return {
