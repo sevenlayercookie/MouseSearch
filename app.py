@@ -2339,7 +2339,8 @@ async def _perform_organization(hash_val: str) -> tuple[bool, str]:
             else:
                 try:
                     if app.config.get("AUTO_ORGANIZE_USE_COPY", False):
-                        shutil.copy2(source_file, dest_file)
+                        # Run copy in a separate thread to prevent blocking
+                        await asyncio.to_thread(shutil.copy2, source_file, dest_file)
                         files_linked += 1
                         app.logger.debug(f"[ORGANIZE] Copied: {source_file} -> {dest_file}")
                     else:
