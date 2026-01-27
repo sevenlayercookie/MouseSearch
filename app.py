@@ -237,6 +237,23 @@ scheduler = AsyncIOScheduler()
 
 load_dotenv()
 
+# --- VERSIONING HELPER ---
+def get_app_version():
+    """Reads the version from version.txt in the root directory."""
+    try:
+        version_file = Path("version.txt")
+        if version_file.exists():
+            with open(version_file, "r") as f:
+                return f.read().strip()
+    except Exception as e:
+        app.logger.warning(f"Could not read version.txt: {e}")
+    return "dev" # Default fallback
+
+# Inject APP_VERSION into all templates
+@app.context_processor
+def inject_version():
+    return dict(APP_VERSION=get_app_version())
+    
 # Define fallback values
 FALLBACK_CONFIG = {
     "QUART_SECRET_KEY": os.urandom(24).hex(),

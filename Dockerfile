@@ -19,6 +19,8 @@ COPY static ./static
 COPY templates ./templates
 COPY clients ./clients
 
+COPY version.txt ./version.txt
+
 # remove this if becomes obsolete
 COPY hashing.py ./
 
