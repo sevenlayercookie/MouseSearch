@@ -1426,12 +1426,35 @@ async def get_user_stats():
         return None
         
     try:
-        # Parse uploaded and downloaded (format: "123.45 GiB")
+        # --- ROBUST NUMBER PARSER ---
+        def safe_float(val):
+            """Safely converts strings to float, handling commas, Infinity, and NaN."""
+            if val is None: return 0.0
+            if isinstance(val, (int, float)): return float(val)
+            
+            # Clean string: remove commas, whitespace
+            s = str(val).strip().replace(',', '')
+            
+            # Handle Infinity / NaN
+            if '∞' in s or 'inf' in s.lower():
+                return float('inf')
+            if 'nan' in s.lower() or '---' in s:
+                return 0.0
+                
+            try:
+                return float(s)
+            except (ValueError, TypeError):
+                app.logger.warning(f"Could not parse stat '{val}', defaulting to 0.0")
+                return 0.0
+
+        # Parse uploaded and downloaded (format: "1,234.45 GiB")
         def parse_size(size_str):
             if not size_str: return 0.0
             parts = size_str.split()
             if len(parts) != 2: return 0.0
-            value = float(parts[0])
+            
+            # Use safe_float here to handle commas in "1,234.56"
+            value = safe_float(parts[0])
             unit = parts[1].upper()
             
             if 'TIB' in unit or 'TB' in unit: return value * 1024
@@ -1443,22 +1466,9 @@ async def get_user_stats():
         uploaded_gb = parse_size(data.get('uploaded', '0 GiB'))
         downloaded_gb = parse_size(data.get('downloaded', '0 GiB'))
         
-        raw_ratio = str(data.get('ratio', '0')).strip()
-        try:
-            # Handle specific symbols for Infinity found in logs
-            if '∞' in raw_ratio or 'inf' in raw_ratio.lower():
-                ratio = float('inf')
-            elif 'nan' in raw_ratio.lower() or '---' in raw_ratio:
-                ratio = 0.0
-            else:
-                # Remove commas just in case (e.g., 1,234.56)
-                ratio = float(raw_ratio.replace(',', ''))
-        except (ValueError, TypeError):
-            # Fallback to 0.0 if parsing fails completely to prevent crash
-            app.logger.warning(f"Could not parse ratio '{raw_ratio}', defaulting to 0.0")
-            ratio = 0.0
-
-        seedbonus = float(data.get('seedbonus', 0))
+        # Now safe to use safe_float on these fields too
+        ratio = safe_float(data.get('ratio', 0))
+        seedbonus = safe_float(data.get('seedbonus', 0))
         
         return {
             'uploaded_gb': uploaded_gb,
