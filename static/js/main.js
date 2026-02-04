@@ -1203,6 +1203,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const confirmModal = confirmModalEl ? new bootstrap.Modal(confirmModalEl) : null;
     const confirmInput = document.getElementById('confirm-path-input');
     const previewSpan = document.getElementById('full-path-preview');
+    const autoOrganizeSection = document.getElementById('auto-organize-section');
+    const confirmDownloadOnly = document.getElementById('confirm-download-only');
 
     const personalFlBtn = document.getElementById('use-personal-fl-btn');
     const freeleechIndicator = document.getElementById('confirm-freeleech-indicator');
@@ -1722,56 +1724,69 @@ document.addEventListener("DOMContentLoaded", function () {
         // 2. Check if Auto-Organize is enabled
         const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
 
-        if (autoOrganizeEnabled && confirmModal) {
-            // --- Auto-Organize Logic (Populate Confirm Modal) ---
+        // Save data to global vars for the "Confirm" button to use later
+        pendingDownloadData = downloadData;
+        pendingButton = button;
 
-            const cleanAuthor = sanitizeFilename(downloadData.author);
-            const cleanTitle = sanitizeFilename(downloadData.title);
-            const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
-            const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
-            const templateHasSeries = relTemplate.includes('{Series}');
-
-            // Set default path from template
-            const relativePath = buildRelativePathFromTemplate(relTemplate, {
-                author: cleanAuthor,
-                series: cleanSeries,
-                title: cleanTitle
-            });
-            confirmInput.value = relativePath;
-            previewSpan.textContent = relativePath;
-            const pathHintEl = document.getElementById('path-format-hint');
-            if (pathHintEl) pathHintEl.textContent = `Template: ${relTemplate}`;
-
-            // Logic for the "+ Series" button inside the modal
-            const addSeriesBtn = document.getElementById('add-series-btn');
-            const seriesPreviewEl = document.getElementById('series-name-preview');
-
-            if (addSeriesBtn) {
-                // Reset button state
-                addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
-                addSeriesBtn.dataset.cleanTitle = cleanTitle;
-                addSeriesBtn.dataset.cleanSeries = cleanSeries;
-                addSeriesBtn.dataset.templateWithSeries = templateHasSeries
-                    ? relTemplate
-                    : insertSeriesTokenIntoTemplate(relTemplate);
-                addSeriesBtn.dataset.templateWithoutSeries = stripSeriesTokenFromTemplate(relTemplate);
-                setSeriesToggleButtonState(addSeriesBtn, templateHasSeries);
-
-                if (seriesName) {
-                    addSeriesBtn.disabled = false;
-                    if (seriesPreviewEl) {
-                        seriesPreviewEl.textContent = `"${cleanSeries}"`;
-                        seriesPreviewEl.style.display = 'inline';
-                    }
-                } else {
-                    addSeriesBtn.disabled = true;
-                    if (seriesPreviewEl) seriesPreviewEl.style.display = 'none';
-                }
+        if (confirmModal) {
+            if (autoOrganizeSection) {
+                autoOrganizeSection.classList.toggle('d-none', !autoOrganizeEnabled);
+            }
+            if (confirmDownloadOnly) {
+                confirmDownloadOnly.classList.toggle('d-none', autoOrganizeEnabled);
             }
 
-            // Save data to global vars for the "Confirm" button to use later
-            pendingDownloadData = downloadData;
-            pendingButton = button;
+            if (autoOrganizeEnabled) {
+                // --- Auto-Organize Logic (Populate Confirm Modal) ---
+                const cleanAuthor = sanitizeFilename(downloadData.author);
+                const cleanTitle = sanitizeFilename(downloadData.title);
+                const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
+                const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
+                const templateHasSeries = relTemplate.includes('{Series}');
+
+                // Set default path from template
+                const relativePath = buildRelativePathFromTemplate(relTemplate, {
+                    author: cleanAuthor,
+                    series: cleanSeries,
+                    title: cleanTitle
+                });
+                if (confirmInput) confirmInput.value = relativePath;
+                if (previewSpan) previewSpan.textContent = relativePath;
+                const pathHintEl = document.getElementById('path-format-hint');
+                if (pathHintEl) pathHintEl.textContent = `Template: ${relTemplate}`;
+
+                // Logic for the "+ Series" button inside the modal
+                const addSeriesBtn = document.getElementById('add-series-btn');
+                const seriesPreviewEl = document.getElementById('series-name-preview');
+
+                if (addSeriesBtn) {
+                    // Reset button state
+                    addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
+                    addSeriesBtn.dataset.cleanTitle = cleanTitle;
+                    addSeriesBtn.dataset.cleanSeries = cleanSeries;
+                    addSeriesBtn.dataset.templateWithSeries = templateHasSeries
+                        ? relTemplate
+                        : insertSeriesTokenIntoTemplate(relTemplate);
+                    addSeriesBtn.dataset.templateWithoutSeries = stripSeriesTokenFromTemplate(relTemplate);
+                    setSeriesToggleButtonState(addSeriesBtn, templateHasSeries);
+
+                    if (seriesName) {
+                        addSeriesBtn.disabled = false;
+                        if (seriesPreviewEl) {
+                            seriesPreviewEl.textContent = `"${cleanSeries}"`;
+                            seriesPreviewEl.style.display = 'inline';
+                        }
+                    } else {
+                        addSeriesBtn.disabled = true;
+                        if (seriesPreviewEl) seriesPreviewEl.style.display = 'none';
+                    }
+                }
+            } else {
+                if (confirmInput) confirmInput.value = '';
+                if (previewSpan) previewSpan.textContent = '';
+                const pathHintEl = document.getElementById('path-format-hint');
+                if (pathHintEl) pathHintEl.textContent = 'Format: Author / Title';
+            }
 
             // Sync Freeleech UI
             updateConfirmModalFreeleechUI();
@@ -2026,7 +2041,12 @@ document.addEventListener("DOMContentLoaded", function () {
     // Confirm Download Modal Action
     document.getElementById('confirm-download-btn')?.addEventListener('click', function () {
         if (!pendingDownloadData) return;
-        pendingDownloadData.custom_relative_path = confirmInput.value;
+        const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
+        if (autoOrganizeEnabled && confirmInput) {
+            pendingDownloadData.custom_relative_path = confirmInput.value;
+        } else {
+            delete pendingDownloadData.custom_relative_path;
+        }
         confirmModal.hide();
         performDownload(pendingDownloadData, pendingButton);
     });
