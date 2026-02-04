@@ -205,6 +205,66 @@ function sanitizeFilename(name) {
     return name.replace(/[<>:"/\\|?*]/g, '').trim();
 }
 
+const DEFAULT_REL_PATH_TEMPLATE = "{Author}/{Title}";
+let savedRelPathTemplate = DEFAULT_REL_PATH_TEMPLATE;
+
+function setSavedRelPathTemplate(value) {
+    const normalized = normalizeRelPathTemplate(value || DEFAULT_REL_PATH_TEMPLATE);
+    savedRelPathTemplate = normalized || DEFAULT_REL_PATH_TEMPLATE;
+}
+
+function normalizeRelPathTemplate(template) {
+    return String(template || "").replace(/\\/g, '/');
+}
+
+function stripSeriesTokenFromTemplate(template) {
+    let cleaned = normalizeRelPathTemplate(template).split('{Series}').join('');
+    cleaned = cleaned.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
+    return cleaned || DEFAULT_REL_PATH_TEMPLATE;
+}
+
+function insertSeriesTokenIntoTemplate(template) {
+    const normalized = normalizeRelPathTemplate(template);
+    if (!normalized) return "{Author}/{Series}/{Title}";
+    if (normalized.includes('{Series}')) return normalized;
+    if (normalized.includes('{Author}') && normalized.includes('{Title}')) {
+        return normalized.replace('{Author}', '{Author}/{Series}');
+    }
+    return normalized.endsWith('/') ? `${normalized}{Series}` : `${normalized}/{Series}`;
+}
+
+function buildRelativePathFromTemplate(template, values) {
+    let output = normalizeRelPathTemplate(template);
+    const replacements = {
+        '{Author}': values.author || '',
+        '{Series}': values.series || '',
+        '{Title}': values.title || ''
+    };
+    for (const [token, value] of Object.entries(replacements)) {
+        output = output.split(token).join(value);
+    }
+    output = output.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
+    return output;
+}
+
+function getRelPathTemplateValue() {
+    return savedRelPathTemplate || DEFAULT_REL_PATH_TEMPLATE;
+}
+
+function setSeriesToggleButtonState(button, isActive) {
+    if (!button) return;
+    button.dataset.active = isActive ? "true" : "false";
+    if (isActive) {
+        button.innerHTML = '<i class="bi bi-dash-lg"></i> Series';
+        button.classList.replace('btn-outline-secondary', 'btn-secondary');
+        button.classList.add('text-white');
+    } else {
+        button.innerHTML = '<i class="bi bi-plus-lg"></i> Series';
+        button.classList.replace('btn-secondary', 'btn-outline-secondary');
+        button.classList.remove('text-white');
+    }
+}
+
 function getSeriesName(seriesJsonStr) {
     try {
         if (!seriesJsonStr) return null;
@@ -750,6 +810,122 @@ document.addEventListener("DOMContentLoaded", function () {
 
     updateDependentFields();
 
+    // --- Settings Snapshot & Revert Logic ---
+    const settingsForm = document.getElementById('settings-form');
+    const settingsOffcanvasEl = document.getElementById('settingsOffcanvas');
+    let settingsSnapshot = null;
+    let settingsDirty = false;
+    let isRestoringSettings = false;
+
+    function captureSettingsSnapshot() {
+        if (!settingsForm) return;
+        settingsSnapshot = {};
+        settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
+            if (!el.name) return;
+            if (el.type === 'checkbox') {
+                settingsSnapshot[el.name] = el.checked;
+            } else {
+                settingsSnapshot[el.name] = el.value;
+            }
+        });
+        settingsDirty = false;
+        setSavedRelPathTemplate(settingsSnapshot.REL_PATH_TEMPLATE || DEFAULT_REL_PATH_TEMPLATE);
+    }
+
+    function restoreSettingsSnapshot() {
+        if (!settingsForm || !settingsSnapshot) return;
+        isRestoringSettings = true;
+        settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
+            if (!el.name || !(el.name in settingsSnapshot)) return;
+            if (el.type === 'checkbox') {
+                el.checked = !!settingsSnapshot[el.name];
+            } else {
+                el.value = settingsSnapshot[el.name];
+            }
+        });
+        isRestoringSettings = false;
+        settingsDirty = false;
+        updateDependentFields();
+        setSavedRelPathTemplate(settingsSnapshot.REL_PATH_TEMPLATE || DEFAULT_REL_PATH_TEMPLATE);
+        const relTemplateInput = document.getElementById('REL_PATH_TEMPLATE');
+        if (relTemplateInput) relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    if (settingsForm) {
+        settingsForm.addEventListener('input', () => {
+            if (isRestoringSettings) return;
+            settingsDirty = true;
+        });
+        settingsForm.addEventListener('change', () => {
+            if (isRestoringSettings) return;
+            settingsDirty = true;
+        });
+    }
+
+    if (settingsOffcanvasEl) {
+        settingsOffcanvasEl.addEventListener('show.bs.offcanvas', () => {
+            captureSettingsSnapshot();
+        });
+        settingsOffcanvasEl.addEventListener('hide.bs.offcanvas', () => {
+            if (settingsDirty) {
+                restoreSettingsSnapshot();
+            }
+        });
+    }
+
+    if (settingsForm) {
+        captureSettingsSnapshot();
+    }
+
+    // --- Directory Structure Logic ---
+    const relTemplateInput = document.getElementById('REL_PATH_TEMPLATE');
+    const previewOutput = document.getElementById('structure-preview-output');
+    const resetTemplateBtn = document.getElementById('reset-template-btn');
+
+    if (relTemplateInput && previewOutput) {
+        const previewData = {
+            '{Author}': 'J.K. Rowling',
+            '{Series}': 'Harry Potter',
+            '{Title}': "Harry Potter and the Sorcerer's Stone"
+        };
+
+        const updatePathPreview = () => {
+            const template = relTemplateInput.value?.trim() || DEFAULT_REL_PATH_TEMPLATE;
+            let preview = template;
+
+            for (const [token, value] of Object.entries(previewData)) {
+                preview = preview.split(token).join(value);
+            }
+
+            preview = preview.replace(/\/+/g, '/');
+            previewOutput.textContent = preview;
+        };
+
+        relTemplateInput.addEventListener('input', updatePathPreview);
+
+        document.querySelectorAll('.insert-token-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const token = btn.dataset.token;
+                if (!token) return;
+                let currentVal = relTemplateInput.value || '';
+
+                if (currentVal.length > 0 && !currentVal.endsWith('/') && token !== '/') {
+                    currentVal += '/';
+                }
+
+                relTemplateInput.value = currentVal + token;
+                relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+        });
+
+        resetTemplateBtn?.addEventListener('click', () => {
+            relTemplateInput.value = DEFAULT_REL_PATH_TEMPLATE;
+            relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+
+        updatePathPreview();
+    }
+
     // --- Client Type Change Listener ---
     const clientTypeSelect = document.getElementById('TORRENT_CLIENT_TYPE');
     const settingsCatSelect = document.getElementById('TORRENT_CLIENT_CATEGORY');
@@ -797,6 +973,7 @@ document.addEventListener("DOMContentLoaded", function () {
             .then(data => {
                 showToast(data.message, data.status === 'success' ? 'success' : 'danger');
                 if (data.status === 'success') {
+                    captureSettingsSnapshot();
                     const catDropdown = document.getElementById('TORRENT_CLIENT_CATEGORY');
                     if (catDropdown) catDropdown.dataset.currentValue = catDropdown.value;
 
@@ -1550,11 +1727,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const cleanAuthor = sanitizeFilename(downloadData.author);
             const cleanTitle = sanitizeFilename(downloadData.title);
+            const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
+            const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
+            const templateHasSeries = relTemplate.includes('{Series}');
 
-            // Set default path: Author / Title
-            confirmInput.value = `${cleanAuthor}/${cleanTitle}`;
-            previewSpan.textContent = confirmInput.value;
-            document.getElementById('path-format-hint').textContent = "Format: Author / Title";
+            // Set default path from template
+            const relativePath = buildRelativePathFromTemplate(relTemplate, {
+                author: cleanAuthor,
+                series: cleanSeries,
+                title: cleanTitle
+            });
+            confirmInput.value = relativePath;
+            previewSpan.textContent = relativePath;
+            const pathHintEl = document.getElementById('path-format-hint');
+            if (pathHintEl) pathHintEl.textContent = `Template: ${relTemplate}`;
 
             // Logic for the "+ Series" button inside the modal
             const addSeriesBtn = document.getElementById('add-series-btn');
@@ -1564,21 +1750,20 @@ document.addEventListener("DOMContentLoaded", function () {
                 // Reset button state
                 addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
                 addSeriesBtn.dataset.cleanTitle = cleanTitle;
-                addSeriesBtn.dataset.active = "false";
-                addSeriesBtn.classList.replace('btn-secondary', 'btn-outline-secondary');
-                addSeriesBtn.classList.remove('text-white');
-                addSeriesBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Series';
+                addSeriesBtn.dataset.cleanSeries = cleanSeries;
+                addSeriesBtn.dataset.templateWithSeries = templateHasSeries
+                    ? relTemplate
+                    : insertSeriesTokenIntoTemplate(relTemplate);
+                addSeriesBtn.dataset.templateWithoutSeries = stripSeriesTokenFromTemplate(relTemplate);
+                setSeriesToggleButtonState(addSeriesBtn, templateHasSeries);
 
                 if (seriesName) {
-                    const cleanSeries = sanitizeFilename(seriesName);
-                    addSeriesBtn.dataset.cleanSeries = cleanSeries;
                     addSeriesBtn.disabled = false;
                     if (seriesPreviewEl) {
                         seriesPreviewEl.textContent = `"${cleanSeries}"`;
                         seriesPreviewEl.style.display = 'inline';
                     }
                 } else {
-                    addSeriesBtn.dataset.cleanSeries = "";
                     addSeriesBtn.disabled = true;
                     if (seriesPreviewEl) seriesPreviewEl.style.display = 'none';
                 }
@@ -1850,24 +2035,19 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById('add-series-btn')?.addEventListener('click', function () {
         const input = document.getElementById('confirm-path-input');
         const hintEl = document.getElementById('path-format-hint');
-        const { cleanAuthor, cleanTitle, cleanSeries, active } = this.dataset;
+        const { cleanAuthor, cleanTitle, cleanSeries, active, templateWithSeries, templateWithoutSeries } = this.dataset;
         const isActive = active === "true";
+        const nextTemplate = isActive
+            ? (templateWithoutSeries || DEFAULT_REL_PATH_TEMPLATE)
+            : (templateWithSeries || templateWithoutSeries || DEFAULT_REL_PATH_TEMPLATE);
 
-        if (!isActive) {
-            input.value = `${cleanAuthor}/${cleanSeries}/${cleanTitle}`;
-            if (hintEl) hintEl.textContent = "Format: Author / Series / Title";
-            this.innerHTML = '<i class="bi bi-dash-lg"></i> Series';
-            this.classList.replace('btn-outline-secondary', 'btn-secondary');
-            this.classList.add('text-white');
-            this.dataset.active = "true";
-        } else {
-            input.value = `${cleanAuthor}/${cleanTitle}`;
-            if (hintEl) hintEl.textContent = "Format: Author / Title";
-            this.innerHTML = '<i class="bi bi-plus-lg"></i> Series';
-            this.classList.replace('btn-secondary', 'btn-outline-secondary');
-            this.classList.remove('text-white');
-            this.dataset.active = "false";
-        }
+        input.value = buildRelativePathFromTemplate(nextTemplate, {
+            author: cleanAuthor || '',
+            series: cleanSeries || '',
+            title: cleanTitle || ''
+        });
+        if (hintEl) hintEl.textContent = `Template: ${nextTemplate}`;
+        setSeriesToggleButtonState(this, !isActive);
         input.dispatchEvent(new Event('input'));
     });
 

@@ -12,7 +12,7 @@ import math
 import shutil
 
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from httpx import Limits, Timeout, AsyncHTTPTransport
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -237,6 +237,8 @@ scheduler = AsyncIOScheduler()
 
 load_dotenv()
 
+DEFAULT_RELATIVE_PATH_TEMPLATE = os.getenv("DEFAULT_RELATIVE_PATH_TEMPLATE", "{Author}/{Title}")
+
 # --- VERSIONING HELPER ---
 def get_app_version():
     """Reads the version from version.txt in the root directory."""
@@ -267,6 +269,7 @@ FALLBACK_CONFIG = {
     "DATA_PATH": "./data",
     "ORGANIZED_PATH": "/downloads/organized",
     "TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
+    "REL_PATH_TEMPLATE": DEFAULT_RELATIVE_PATH_TEMPLATE,
     "AUTO_ORGANIZE_ON_ADD": False,
     "AUTO_ORGANIZE_ON_SCHEDULE": False,
     "AUTO_ORGANIZE_INTERVAL_HOURS": 1,
@@ -307,6 +310,7 @@ VIP_MIN_WEEKS = 1
 CONFIG_FILE = DATA_PATH / "config.json"
 DATABASE_FILE = DATA_PATH / "database.json"
 IP_STATE_FILE = DATA_PATH / "ip_state.json"
+ENV_FILE = Path(".env")
 
 
 # --- Setup:thumbnail cache ---
@@ -397,6 +401,40 @@ def save_config(config):
     config_to_save = {key: config.get(key) for key in FALLBACK_CONFIG.keys()}
     with open(CONFIG_FILE, "w") as f:
         json.dump(config_to_save, f, indent=4)
+
+def read_env_values():
+    if not ENV_FILE.exists():
+        return {}
+    return dotenv_values(ENV_FILE)
+
+def update_env_value(key: str, value: str):
+    key = str(key)
+    value = str(value)
+    line = f"{key}={value}"
+
+    if not ENV_FILE.exists():
+        ENV_FILE.write_text(line + "\n")
+        return
+
+    lines = ENV_FILE.read_text().splitlines()
+    updated = False
+    new_lines = []
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#") and "=" in raw:
+            current_key = raw.split("=", 1)[0].strip()
+            if current_key == key:
+                new_lines.append(line)
+                updated = True
+                continue
+        new_lines.append(raw)
+
+    if not updated:
+        if new_lines and new_lines[-1] != "":
+            new_lines.append("")
+        new_lines.append(line)
+
+    ENV_FILE.write_text("\n".join(new_lines) + "\n")
 
 def initialize_config():
     if not CONFIG_FILE.exists():
@@ -2233,6 +2271,34 @@ async def proxy_thumbnail():
         response = Response(body(), status=r.status_code, headers=passthrough)
         response.headers["X-mousesearch-Cache-Status"] = "MISS" if cache_enabled else "DISABLED"
         return response
+
+@app.route("/api/settings", methods=["GET", "POST"])
+async def api_settings():
+    if request.method == "GET":
+        env_values = read_env_values()
+        default_template = env_values.get("DEFAULT_RELATIVE_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"]
+        return jsonify({
+            "DEFAULT_RELATIVE_PATH_TEMPLATE": default_template,
+            "REL_PATH_TEMPLATE": app.config.get("REL_PATH_TEMPLATE", FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
+        })
+
+    payload = await request.get_json(silent=True) or {}
+    template_value = payload.get("DEFAULT_RELATIVE_PATH_TEMPLATE") or payload.get("REL_PATH_TEMPLATE")
+    if template_value is None:
+        return jsonify({"status": "error", "message": "Missing DEFAULT_RELATIVE_PATH_TEMPLATE"}), 400
+
+    update_env_value("DEFAULT_RELATIVE_PATH_TEMPLATE", template_value)
+    os.environ["DEFAULT_RELATIVE_PATH_TEMPLATE"] = str(template_value)
+
+    config_to_update = app.config.copy()
+    config_to_update["REL_PATH_TEMPLATE"] = template_value
+    save_config(config_to_update)
+    await load_new_app_config()
+
+    return jsonify({
+        "status": "success",
+        "DEFAULT_RELATIVE_PATH_TEMPLATE": template_value
+    })
 
 @app.route("/update_settings", methods=["POST"])
 async def update_settings():

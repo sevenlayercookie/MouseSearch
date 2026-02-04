@@ -188,6 +188,53 @@
 
           <hr class="border-secondary-subtle my-4">
 
+          <h6 class="text-uppercase mb-3">Directory Structure</h6>
+
+          <div class="card mb-3 border-secondary-subtle">
+            <div class="card-body">
+              <div class="mb-3">
+                <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold">Default Relative Path</label>
+                <div class="input-group mb-2">
+                  <input type="text" class="form-control font-monospace" id="REL_PATH_TEMPLATE"
+                    name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
+                    placeholder="e.g. {Author}/{Series}/{Title}">
+                  <button class="btn btn-outline-secondary" type="button" id="reset-template-btn"
+                    title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
+                </div>
+                
+                <div class="d-flex gap-2 mb-3 flex-wrap">
+                  <span class="small text-muted align-self-center me-1">Insert:</span>
+                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                    data-token="{Author}">
+                    <i class="bi bi-person-fill"></i> Author
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                    data-token="{Series}">
+                    <i class="bi bi-collection-fill"></i> Series
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                    data-token="{Title}">
+                    <i class="bi bi-book-fill"></i> Title
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill insert-token-btn"
+                    data-token="/">
+                    / (Folder)
+                  </button>
+                </div>
+
+                <div class="alert alert-light border small m-0">
+                  <div class="d-flex justify-content-between">
+                    <span class="text-muted text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Preview</span>
+                  </div>
+                  <div class="text-primary fw-bold text-break font-monospace mt-1" id="structure-preview-output">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <hr class="border-secondary-subtle my-4">
+
           <div id="path-configuration-container">
             <h6 class="text-uppercase mb-3">Path Configuration</h6>
 
