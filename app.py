@@ -1089,6 +1089,44 @@ async def mam_autosuggest():
     wildcard_query = " ".join(wildcard_words)
     # ------------------------------
 
+    def get_nonempty_list(name):
+        return [v for v in request.args.getlist(name) if v]
+
+    lang_ids = get_nonempty_list("language_ids") or get_nonempty_list("language_ids[]")
+    if not lang_ids:
+        lang_value = request.args.get("language", "English")
+        if lang_value.isdigit():
+            lang_ids = [lang_value]
+        else:
+            lang_ids = [str(language_dict.get(lang_value, 1))]
+
+    search_field_names = [
+        "search_in_title",
+        "search_in_author",
+        "search_in_series",
+        "search_in_narrator",
+    ]
+    has_search_param = any(request.args.get(name) is not None for name in search_field_names)
+    default_search_fields = {
+        "search_in_title": True,
+        "search_in_author": True,
+        "search_in_series": True,
+        "search_in_narrator": False,
+    }
+
+    def checkbox_state(name):
+        val = request.args.get(name)
+        if val is None:
+            return default_search_fields.get(name, False) if not has_search_param else False
+        return val in ("true", "on", "1", "yes")
+
+    title_on = checkbox_state("search_in_title")
+    author_on = checkbox_state("search_in_author")
+    series_on = checkbox_state("search_in_series")
+    narrator_on = checkbox_state("search_in_narrator")
+    if author_on and not title_on:
+        title_on = True
+
     # Construct parameters to match the main search filters
     params = {
         "tor[text]": wildcard_query,
@@ -1097,18 +1135,22 @@ async def mam_autosuggest():
         "thumbnail": "true",
         
         # Dynamic Filters from URL params
-        "tor[browse_lang][]": language_dict.get(request.args.get("language", "English"), 1),
-        "tor[srchIn][title]": "on" if request.args.get("search_in_title") == "true" else "off",
-        "tor[srchIn][author]": "on" if request.args.get("search_in_author") == "true" else "off",
-        "tor[srchIn][narrator]": "on" if request.args.get("search_in_narrator") == "true" else "off",
-        "tor[srchIn][series]": "on" if request.args.get("search_in_series") == "true" else "off",
+        "tor[browse_lang][]": lang_ids,
+        "tor[srchIn][title]": "on" if title_on else "off",
+        "tor[srchIn][author]": "on" if author_on else "off",
+        "tor[srchIn][narrator]": "on" if narrator_on else "off",
+        "tor[srchIn][series]": "on" if series_on else "off",
         "tor[searchType]": "all"
     }
 
     # Apply Category Filter
-    media_type = request.args.get("media_type", "13")
-    if media_type != "all":
-        params["tor[main_cat][]"] = media_type
+    main_cats = [m for m in request.args.getlist("main_cat") if m]
+    if not main_cats:
+        main_cats = [m for m in request.args.getlist("media_type") if m]
+    if not main_cats:
+        main_cats = ["13"]
+    if "all" not in main_cats:
+        params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
 
     try:
         async with httpx.AsyncClient() as client:
@@ -1937,19 +1979,110 @@ async def mam_search():
     except Exception:
         is_vip_active = False
 
+    def get_nonempty_list(name):
+        return [v for v in request.args.getlist(name) if v]
+
+    search_field_names = [
+        "search_in_title",
+        "search_in_author",
+        "search_in_series",
+        "search_in_narrator",
+        "search_in_description",
+        "search_in_tags",
+        "search_in_filenames",
+    ]
+    has_search_param = any(request.args.get(name) is not None for name in search_field_names)
+    default_search_fields = {
+        "search_in_title": True,
+        "search_in_author": True,
+        "search_in_series": True,
+        "search_in_narrator": False,
+        "search_in_description": False,
+        "search_in_tags": False,
+        "search_in_filenames": False,
+    }
+
+    def checkbox_state(name):
+        val = request.args.get(name)
+        if val is None:
+            return default_search_fields.get(name, False) if not has_search_param else False
+        return val in ("true", "on", "1", "yes")
+
+    title_on = checkbox_state("search_in_title")
+    author_on = checkbox_state("search_in_author")
+    series_on = checkbox_state("search_in_series")
+    narrator_on = checkbox_state("search_in_narrator")
+    description_on = checkbox_state("search_in_description")
+    tags_on = checkbox_state("search_in_tags")
+    filenames_on = checkbox_state("search_in_filenames")
+    if author_on and not title_on:
+        title_on = True
+
+    lang_ids = get_nonempty_list("language_ids") or get_nonempty_list("language_ids[]")
+    if not lang_ids:
+        lang_value = request.args.get("language", "English")
+        if lang_value.isdigit():
+            lang_ids = [lang_value]
+        else:
+            lang_ids = [str(language_dict.get(lang_value, 1))]
+
     params = {
         "tor[text]": query,
         "tor[sortType]": "default", "perpage": 50, "thumbnail": "true", "dlLink": "true",
-        "tor[browse_lang][]": language_dict.get(request.args.get("language", "English"), 1),
-        "tor[srchIn][title]": "on" if request.args.get("search_in_title") else "off",
-        "tor[srchIn][author]": "on" if request.args.get("search_in_author") else "off",
-        "tor[srchIn][narrator]": "on" if request.args.get("search_in_narrator") else "off",
-        "tor[srchIn][series]": "on" if request.args.get("search_in_series") else "off",
+        "tor[browse_lang][]": lang_ids,
+        "tor[srchIn][title]": "on" if title_on else "off",
+        "tor[srchIn][author]": "on" if author_on else "off",
+        "tor[srchIn][narrator]": "on" if narrator_on else "off",
+        "tor[srchIn][series]": "on" if series_on else "off",
+        "tor[srchIn][description]": "on" if description_on else "off",
+        "tor[srchIn][tags]": "on" if tags_on else "off",
+        "tor[srchIn][filenames]": "on" if filenames_on else "off",
         "tor[searchType]": request.args.get("searchType", "all"),
         "isbn": "true", "description": "true", "mediaInfo": "true"
     }
-    if (media_type := request.args.get("media_type", "13")) != "all":
-        params["tor[main_cat][]"] = media_type
+    main_cats = [m for m in request.args.getlist("main_cat") if m]
+    if not main_cats:
+        main_cats = [m for m in request.args.getlist("media_type") if m]
+    if not main_cats:
+        main_cats = ["13"]
+    if "all" not in main_cats:
+        params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
+
+    if search_scope := request.args.get("search_scope"):
+        params["tor[searchIn]"] = search_scope
+
+    if category_ids := get_nonempty_list("category_ids") or get_nonempty_list("category_ids[]"):
+        params["tor[cat][]"] = category_ids
+
+    if flag_ids := get_nonempty_list("flag_ids") or get_nonempty_list("flag_ids[]"):
+        params["tor[browseFlags][]"] = flag_ids
+        params["tor[browseFlagsHideVsShow]"] = request.args.get("flags_mode", "0")
+
+    if start_date := request.args.get("start_date"):
+        params["tor[startDate]"] = start_date
+    if end_date := request.args.get("end_date"):
+        params["tor[endDate]"] = end_date
+
+    min_size = request.args.get("min_size")
+    max_size = request.args.get("max_size")
+    if min_size:
+        params["tor[minSize]"] = min_size
+    if max_size:
+        params["tor[maxSize]"] = max_size
+    if (min_size or max_size) and (size_unit := request.args.get("size_unit")):
+        params["tor[unit]"] = size_unit
+
+    stat_mappings = {
+        "min_seeders": "tor[minSeeders]",
+        "max_seeders": "tor[maxSeeders]",
+        "min_leechers": "tor[minLeechers]",
+        "max_leechers": "tor[maxLeechers]",
+        "min_snatched": "tor[minSnatched]",
+        "max_snatched": "tor[maxSnatched]"
+    }
+    for arg_name, tor_name in stat_mappings.items():
+        if value := request.args.get(arg_name):
+            params[tor_name] = value
 
     headers = {"Cookie": "; ".join([f"{k}={v}" for k, v in mam_session_cookies.items()])}
     try:
@@ -2086,11 +2219,16 @@ async def index():
         except Exception:
             pass
 
+    language_choices = sorted(language_dict.items(), key=lambda item: item[0].lower())
+
     return await render_template(
-        "index.html", 
+        "index.html",
         CLIENT_DISPLAY_NAME=display_name,
-        AVAILABLE_CLIENTS=available_clients, # Pass the list here
+        AVAILABLE_CLIENTS=available_clients,  # Pass the list here
         categories=categories,
+        LANGUAGE_CHOICES=language_choices,
+        LANGUAGE_MAP=language_dict,
+        DEFAULT_LANGUAGE_ID=language_dict.get("English", 1),
         **app.config
     )
     

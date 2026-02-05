@@ -17,6 +17,15 @@ window.currentVipUntil = null;
 window.currentBonusPoints = 0;
 window.isVipActive = false;
 window.appliedPersonalFreeleechIds = window.appliedPersonalFreeleechIds || new Set();
+let langTomSelect = null;
+let catTomSelect = null;
+let mainCatPrimaryTomSelect = null;
+let mainCatFilterTomSelect = null;
+let legacyCategoryData = null;
+let legacyCategoryPromise = null;
+let categoryMainCatMap = new Map();
+let mainCatSelectSyncing = false;
+let categoryAllowedMainCats = null;
 const UPLOAD_AMOUNT_STEP = 50;
 const UPLOAD_AMOUNT_MIN = 50;
 const UPLOAD_AMOUNT_MAX = 200;
@@ -24,6 +33,72 @@ const UPLOAD_COST_PER_GB = 500;
 // Validation for upload purchase amounts
 if (!window.VALID_UPLOAD_AMOUNTS || window.VALID_UPLOAD_AMOUNTS.length === 0) {
     window.VALID_UPLOAD_AMOUNTS = [50, 100, 150, 200];
+}
+
+function getTomSelectValues(instance) {
+    if (!instance) return [];
+    const value = instance.getValue();
+    if (Array.isArray(value)) return value;
+    if (!value) return [];
+    if (typeof value === 'string') {
+        const delimiter = instance.settings?.delimiter || ',';
+        return value.split(delimiter).filter(Boolean);
+    }
+    return [String(value)];
+}
+
+function loadLegacyCategoryDefinitions() {
+    if (legacyCategoryData) return Promise.resolve(legacyCategoryData);
+    if (legacyCategoryPromise) return legacyCategoryPromise;
+
+    const legacyUrl = window.LEGACY_CATEGORY_URL || '/static/categoryDefinitionsLegacy.json';
+    legacyCategoryPromise = fetch(legacyUrl, { cache: 'no-store' })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to load legacy categories');
+            return response.json();
+        })
+        .then(data => {
+            legacyCategoryData = data;
+            return data;
+        })
+        .catch(err => {
+            console.error('Unable to load legacy category definitions', err);
+            return null;
+        });
+
+    return legacyCategoryPromise;
+}
+
+const DEFAULT_MAIN_CATS = ['13'];
+
+function normalizeMainCatValues(values) {
+    const uniqueValues = [...new Set(values.map(String).filter(Boolean))];
+    if (uniqueValues.includes('all')) {
+        return ['all'];
+    }
+    return uniqueValues;
+}
+
+function isMainCatAllowed(mainCat) {
+    if (!mainCat) return true;
+    if (!categoryAllowedMainCats || !categoryAllowedMainCats.size) return true;
+    return categoryAllowedMainCats.has(String(mainCat));
+}
+
+function decorateCategoryOptions() {
+    if (!catTomSelect?.dropdown_content) return;
+    const optionNodes = catTomSelect.dropdown_content.querySelectorAll('.option');
+    optionNodes.forEach(node => {
+        const value = node.getAttribute('data-value');
+        const mainCat = categoryMainCatMap.get(String(value));
+        const allowed = isMainCatAllowed(mainCat);
+        node.classList.toggle('ts-option-disabled', !allowed);
+        if (allowed) {
+            node.removeAttribute('aria-disabled');
+        } else {
+            node.setAttribute('aria-disabled', 'true');
+        }
+    });
 }
 
 function updateMaxUploadPurchaseDisplay() {
@@ -713,7 +788,7 @@ async function fetchPublicIP() {
 //  3. MAIN DOM EVENT LISTENERS
 // ============================================================
 
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", async function () {
     initializeEventStream();
 
     // Init Tooltips
@@ -1136,6 +1211,311 @@ document.addEventListener("DOMContentLoaded", function () {
     const wrapper = document.getElementById('results-container-wrapper');
     const resultsTitle = document.getElementById('results-title');
     const resultDisplayOptions = document.querySelectorAll('.result-display-option');
+    const advancedOffcanvasEl = document.getElementById('advancedSearchOffcanvas');
+    const filterBadge = document.getElementById('filter-count');
+
+    const DEFAULT_SEARCH_TYPE = 'all';
+    const DEFAULT_SEARCH_SCOPE = 'torrents';
+    const DEFAULT_LANGUAGE_ID = window.DEFAULT_LANGUAGE_ID ? String(window.DEFAULT_LANGUAGE_ID) : '1';
+    const DEFAULT_LANGUAGE_SET = new Set([DEFAULT_LANGUAGE_ID]);
+    const DEFAULT_MAIN_CAT_SET = new Set(DEFAULT_MAIN_CATS);
+    const DEFAULT_SEARCH_FIELDS = {
+        search_in_title: true,
+        search_in_author: true,
+        search_in_series: true,
+        search_in_narrator: false,
+        search_in_description: false,
+        search_in_tags: false,
+        search_in_filenames: false
+    };
+
+    const setsEqual = (a, b) => {
+        if (a.size !== b.size) return false;
+        for (const val of a) {
+            if (!b.has(val)) return false;
+        }
+        return true;
+    };
+
+    function updateMirroredCheckboxes() {
+        const mirrors = document.querySelectorAll('[data-sync-target]');
+        mirrors.forEach(mirror => {
+            const targetId = mirror.dataset.syncTarget;
+            const target = document.getElementById(targetId);
+            if (!target) return;
+            mirror.checked = target.checked;
+        });
+    }
+
+    function setupSyncedCheckboxes() {
+        const mirrors = document.querySelectorAll('[data-sync-target]');
+        mirrors.forEach(mirror => {
+            const targetId = mirror.dataset.syncTarget;
+            const target = document.getElementById(targetId);
+            if (!target) return;
+
+            mirror.checked = target.checked;
+
+            mirror.addEventListener('change', () => {
+                target.checked = mirror.checked;
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            target.addEventListener('change', () => {
+                mirror.checked = target.checked;
+            });
+        });
+    }
+
+    const getSelectedMainCats = () => {
+        if (mainCatPrimaryTomSelect) {
+            return normalizeMainCatValues(getTomSelectValues(mainCatPrimaryTomSelect));
+        }
+        if (mainCatFilterTomSelect) {
+            return normalizeMainCatValues(getTomSelectValues(mainCatFilterTomSelect));
+        }
+        const selectEl = document.getElementById('main_cat');
+        if (!selectEl) return [];
+        return normalizeMainCatValues([...selectEl.selectedOptions].map(opt => opt.value));
+    };
+
+    function applyCategoryMainCatFilter() {
+        if (!catTomSelect || !categoryMainCatMap.size) return;
+        const selectedMainCats = getSelectedMainCats();
+        const allowAll = !selectedMainCats.length || selectedMainCats.includes('all');
+        const allowedSet = allowAll ? null : new Set(selectedMainCats);
+        categoryAllowedMainCats = allowedSet;
+
+        if (!allowAll) {
+            const selectedCats = getTomSelectValues(catTomSelect);
+            selectedCats.forEach(catId => {
+                const mainCat = categoryMainCatMap.get(catId);
+                if (mainCat && !allowedSet.has(mainCat)) {
+                    catTomSelect.removeItem(catId, true);
+                }
+            });
+        }
+
+        catTomSelect.refreshOptions(false);
+        decorateCategoryOptions();
+    }
+
+    function handleMainCatSelectChange(source) {
+        if (mainCatSelectSyncing) return;
+        mainCatSelectSyncing = true;
+
+        const rawValues = source ? getTomSelectValues(source) : [];
+        let normalized = normalizeMainCatValues(rawValues);
+        if (!normalized.length) {
+            normalized = DEFAULT_MAIN_CATS.slice();
+        }
+
+        if (source) {
+            const rawSet = new Set(rawValues.map(String));
+            const normalizedSet = new Set(normalized);
+            const needsUpdate = rawSet.size !== normalizedSet.size || [...normalizedSet].some(val => !rawSet.has(val));
+            if (needsUpdate) {
+                source.setValue(normalized, true);
+            }
+        }
+
+        if (mainCatPrimaryTomSelect && source !== mainCatPrimaryTomSelect) {
+            mainCatPrimaryTomSelect.setValue(normalized, true);
+        }
+        if (mainCatFilterTomSelect && source !== mainCatFilterTomSelect) {
+            mainCatFilterTomSelect.setValue(normalized, true);
+        }
+
+        mainCatSelectSyncing = false;
+        applyCategoryMainCatFilter();
+        updateFilterBadge();
+    }
+
+    function setMainCatSelection(values, silent = true) {
+        const normalized = normalizeMainCatValues(values);
+        const finalValues = normalized.length ? normalized : DEFAULT_MAIN_CATS.slice();
+
+        if (mainCatPrimaryTomSelect) {
+            mainCatPrimaryTomSelect.setValue(finalValues, silent);
+        }
+        if (mainCatFilterTomSelect) {
+            mainCatFilterTomSelect.setValue(finalValues, silent);
+        }
+        applyCategoryMainCatFilter();
+        updateFilterBadge();
+        return finalValues;
+    }
+
+    async function initTomSelects() {
+        const langSelect = document.getElementById('langSelect');
+        if (langSelect) {
+            langTomSelect = new TomSelect(langSelect, {
+                plugins: ['remove_button', 'checkbox_options'],
+                create: false,
+                maxItems: null,
+                maxOptions: 1000
+            });
+
+            if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_ID) {
+                langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+            }
+
+            langTomSelect.on('change', () => {
+                if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_ID) {
+                    langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+                }
+                updateFilterBadge();
+            });
+        }
+
+        const mainCatSelectPrimary = document.getElementById('main_cat');
+        if (mainCatSelectPrimary) {
+            mainCatPrimaryTomSelect = new TomSelect(mainCatSelectPrimary, {
+                plugins: ['remove_button', 'checkbox_options', 'clear_button'],
+                create: false,
+                maxItems: null
+            });
+            mainCatPrimaryTomSelect.on('change', () => handleMainCatSelectChange(mainCatPrimaryTomSelect));
+        }
+
+        const mainCatSelect = document.getElementById('mainCatSelect');
+        if (mainCatSelect) {
+            mainCatFilterTomSelect = new TomSelect(mainCatSelect, {
+                plugins: ['remove_button', 'checkbox_options', 'clear_button'],
+                create: false,
+                maxItems: null
+            });
+            mainCatFilterTomSelect.on('change', () => handleMainCatSelectChange(mainCatFilterTomSelect));
+        }
+
+        if (mainCatPrimaryTomSelect || mainCatFilterTomSelect) {
+            const initialValues = mainCatPrimaryTomSelect
+                ? getTomSelectValues(mainCatPrimaryTomSelect)
+                : getTomSelectValues(mainCatFilterTomSelect);
+            setMainCatSelection(initialValues, true);
+        }
+
+        const legacyDefinitions = await loadLegacyCategoryDefinitions();
+        const catSelect = document.getElementById('catSelect');
+        if (catSelect && legacyDefinitions?.categories?.length) {
+            categoryMainCatMap = new Map();
+            catSelect.innerHTML = '';
+
+            legacyDefinitions.categories.forEach(mainCat => {
+                const group = document.createElement('optgroup');
+                group.label = mainCat.name;
+
+                (mainCat.subcategories || []).forEach(subcat => {
+                    const option = document.createElement('option');
+                    option.value = String(subcat.category);
+                    option.textContent = subcat.name;
+                    group.appendChild(option);
+                    categoryMainCatMap.set(String(subcat.category), String(mainCat.main_cat));
+                });
+
+                catSelect.appendChild(group);
+            });
+
+            catTomSelect = new TomSelect(catSelect, {
+                plugins: ['remove_button', 'checkbox_options', 'clear_button'],
+                create: false,
+                maxItems: null,
+                maxOptions: 1000
+            });
+
+            Object.entries(catTomSelect.options).forEach(([value, option]) => {
+                option.mainCat = categoryMainCatMap.get(value);
+            });
+
+            catTomSelect.on('change', updateFilterBadge);
+            catTomSelect.on('dropdown_open', decorateCategoryOptions);
+            catTomSelect.on('type', decorateCategoryOptions);
+            catTomSelect.on('item_add', (value) => {
+                const mainCat = categoryMainCatMap.get(String(value));
+                if (!isMainCatAllowed(mainCat)) {
+                    catTomSelect.removeItem(value, true);
+                }
+            });
+            applyCategoryMainCatFilter();
+        }
+    }
+
+    function updateFilterBadge() {
+        if (!filterBadge) return;
+        let count = 0;
+
+        const searchType = document.querySelector('input[name="searchType"]:checked')?.value || DEFAULT_SEARCH_TYPE;
+        if (searchType !== DEFAULT_SEARCH_TYPE) count++;
+
+        const searchScope = document.querySelector('input[name="search_scope"]:checked')?.value || DEFAULT_SEARCH_SCOPE;
+        if (searchScope !== DEFAULT_SEARCH_SCOPE) count++;
+
+        const fieldDiff = Object.entries(DEFAULT_SEARCH_FIELDS).some(([id, defVal]) => {
+            const el = document.getElementById(id);
+            return el ? el.checked !== defVal : false;
+        });
+        if (fieldDiff) count++;
+
+        if (langTomSelect) {
+            const selected = new Set(getTomSelectValues(langTomSelect));
+            if (!setsEqual(selected, DEFAULT_LANGUAGE_SET)) count++;
+        }
+
+        const selectedMainCats = new Set(getSelectedMainCats());
+        if (selectedMainCats.size && !setsEqual(selectedMainCats, DEFAULT_MAIN_CAT_SET)) count++;
+
+        if (catTomSelect && getTomSelectValues(catTomSelect).length) count++;
+        if (document.querySelectorAll('.flag-checkbox:checked').length) count++;
+
+        const getValue = (selector) => document.querySelector(selector)?.value?.trim();
+        if (getValue('input[name="start_date"]') || getValue('input[name="end_date"]')) count++;
+        if (getValue('input[name="min_size"]') || getValue('input[name="max_size"]')) count++;
+
+        const statFields = ['min_seeders', 'max_seeders', 'min_leechers', 'max_leechers', 'min_snatched', 'max_snatched'];
+        if (statFields.some(name => getValue(`input[name="${name}"]`))) count++;
+
+        filterBadge.textContent = count;
+        filterBadge.style.display = count ? 'inline-block' : 'none';
+    }
+
+    if (searchForm) {
+        setupSyncedCheckboxes();
+        try {
+            await initTomSelects();
+        } catch (err) {
+            console.error('Tom Select initialization failed', err);
+        }
+        updateFilterBadge();
+
+        searchForm.addEventListener('change', updateFilterBadge);
+        searchForm.addEventListener('input', updateFilterBadge);
+
+        if (advancedOffcanvasEl) {
+            advancedOffcanvasEl.querySelectorAll('input, select, textarea').forEach(el => {
+                el.addEventListener('change', updateFilterBadge);
+                el.addEventListener('input', updateFilterBadge);
+            });
+        }
+
+        searchForm.addEventListener('reset', () => {
+            setTimeout(() => {
+                updateMirroredCheckboxes();
+                if (langTomSelect) {
+                    langTomSelect.clear(true);
+                    if (DEFAULT_LANGUAGE_ID) {
+                        langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+                    }
+                }
+                if (mainCatPrimaryTomSelect || mainCatFilterTomSelect) {
+                    setMainCatSelection(DEFAULT_MAIN_CATS, true);
+                }
+                if (catTomSelect) {
+                    catTomSelect.clear(true);
+                }
+                updateFilterBadge();
+            }, 0);
+        });
+    }
 
     const allowedResultFields = new Set([
         'date_uploaded',
@@ -1500,19 +1880,117 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function restoreFormFromURL(params) {
-        document.getElementById('query').value = params.get('query') || '';
-        ['search_in_title', 'search_in_author', 'search_in_narrator', 'search_in_series'].forEach(id => {
+        const queryInput = document.getElementById('query');
+        if (queryInput) queryInput.value = params.get('query') || '';
+
+        const searchFields = [
+            'search_in_title',
+            'search_in_author',
+            'search_in_narrator',
+            'search_in_series',
+            'search_in_description',
+            'search_in_tags',
+            'search_in_filenames'
+        ];
+        searchFields.forEach(id => {
             const el = document.getElementById(id);
-            if (el) el.checked = params.has(id);
+            if (!el) return;
+            if (params.has(id)) {
+                el.checked = true;
+            } else {
+                el.checked = DEFAULT_SEARCH_FIELDS[id] ?? false;
+            }
         });
-        if (params.get('media_type')) document.getElementById('media_type').value = params.get('media_type');
-        if (params.get('language')) document.getElementById('language').value = params.get('language');
+
+        let mainCatValues = params.getAll('main_cat');
+        if (!mainCatValues.length) {
+            mainCatValues = params.getAll('media_type');
+        }
+        setMainCatSelection(mainCatValues.length ? mainCatValues : DEFAULT_MAIN_CATS, true);
+
+        const setRadioValue = (name, value, fallback) => {
+            const radios = document.querySelectorAll(`input[name="${name}"]`);
+            if (!radios.length) return;
+            if (value) {
+                radios.forEach(radio => {
+                    radio.checked = radio.value === value;
+                });
+            } else if (fallback) {
+                radios.forEach(radio => {
+                    radio.checked = radio.value === fallback;
+                });
+            }
+        };
+
+        setRadioValue('searchType', params.get('searchType'), DEFAULT_SEARCH_TYPE);
+        setRadioValue('search_scope', params.get('search_scope'), DEFAULT_SEARCH_SCOPE);
+        setRadioValue('flags_mode', params.get('flags_mode'), '0');
+
+        if (langTomSelect) {
+            let langValues = params.getAll('language_ids');
+            const legacyLang = params.get('language');
+            if (!langValues.length && legacyLang) {
+                if (/^\d+$/.test(legacyLang)) {
+                    langValues = [legacyLang];
+                } else if (window.LANGUAGE_MAP && window.LANGUAGE_MAP[legacyLang]) {
+                    langValues = [String(window.LANGUAGE_MAP[legacyLang])];
+                }
+            }
+
+            if (langValues.length) {
+                langTomSelect.setValue(langValues, true);
+            } else if (DEFAULT_LANGUAGE_ID) {
+                langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+            }
+        }
+
+        if (catTomSelect) {
+            const catValues = params.getAll('category_ids');
+            if (catValues.length) {
+                catTomSelect.setValue(catValues, true);
+            } else {
+                catTomSelect.clear(true);
+            }
+        }
+        applyCategoryMainCatFilter();
+
+        const flagValues = new Set(params.getAll('flag_ids'));
+        document.querySelectorAll('.flag-checkbox').forEach(cb => {
+            cb.checked = flagValues.has(cb.value);
+        });
+
+        const textFields = [
+            'start_date',
+            'end_date',
+            'min_size',
+            'max_size',
+            'min_seeders',
+            'max_seeders',
+            'min_leechers',
+            'max_leechers',
+            'min_snatched',
+            'max_snatched'
+        ];
+        textFields.forEach(name => {
+            const el = document.querySelector(`[name="${name}"]`);
+            if (el) el.value = params.get(name) || '';
+        });
+
+        const sizeUnit = params.get('size_unit');
+        const sizeUnitSelect = document.querySelector('select[name="size_unit"]');
+        if (sizeUnit && sizeUnitSelect) sizeUnitSelect.value = sizeUnit;
+
+        updateMirroredCheckboxes();
+        updateFilterBadge();
     }
 
     if (searchForm) {
         searchForm.addEventListener("submit", function (e) {
             e.preventDefault();
             document.getElementById('query').blur();
+            if (advancedOffcanvasEl && advancedOffcanvasEl.classList.contains('show')) {
+                bootstrap.Offcanvas.getOrCreateInstance(advancedOffcanvasEl).hide();
+            }
             const formData = new FormData(searchForm);
             const queryParams = new URLSearchParams(formData);
             const queryString = queryParams.toString();
@@ -2296,13 +2774,26 @@ function initAutosuggest(inputId) {
 
             const params = new URLSearchParams({
                 q: val,
-                language: getVal('language') || 'English',
-                media_type: getVal('media_type') || '13',
                 search_in_title: getCheck('search_in_title'),
                 search_in_author: getCheck('search_in_author'),
                 search_in_narrator: getCheck('search_in_narrator'),
                 search_in_series: getCheck('search_in_series')
             });
+
+            const mainCatValues = mainCatPrimaryTomSelect ? getTomSelectValues(mainCatPrimaryTomSelect) : [];
+            const normalizedMainCats = normalizeMainCatValues(
+                mainCatValues.length ? mainCatValues : DEFAULT_MAIN_CATS
+            );
+            if (normalizedMainCats.length) {
+                normalizedMainCats.forEach(id => params.append('main_cat', id));
+            }
+
+            const langIds = langTomSelect ? getTomSelectValues(langTomSelect) : [];
+            if (langIds.length) {
+                langIds.forEach(id => params.append('language_ids', id));
+            } else if (window.DEFAULT_LANGUAGE_ID) {
+                params.append('language_ids', String(window.DEFAULT_LANGUAGE_ID));
+            }
 
             // 2. Fetch with AbortSignal
             const res = await fetch(`/mam/autosuggest?${params.toString()}`, {

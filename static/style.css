@@ -597,3 +597,77 @@ input:disabled, select:disabled {
 .transition-transform {
     transition: transform 0.2s ease-in-out;
 }
+
+/* --- Advanced Search Offcanvas --- */
+@media (min-width: 768px) {
+    .advanced-search-offcanvas {
+        width: 500px;
+    }
+}
+
+.advanced-search-offcanvas .offcanvas-footer {
+    margin-top: auto;
+}
+
+.filter-section-title {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--bs-secondary);
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    padding-bottom: 0.25rem;
+}
+
+.input-group > .form-floating {
+    flex: 1 1 auto;
+    width: 1%;
+    min-width: 0;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--bs-secondary);
+    border-radius: 10px;
+}
+
+/* --- Tom Select Dark Mode Overrides --- */
+[data-bs-theme="dark"] .ts-wrapper .ts-control,
+[data-bs-theme="dark"] .ts-wrapper .ts-control input {
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border-color: var(--bs-border-color);
+}
+[data-bs-theme="dark"] .ts-wrapper.multi .ts-control > div {
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+}
+[data-bs-theme="dark"] .ts-dropdown {
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border-color: var(--bs-border-color);
+}
+[data-bs-theme="dark"] .ts-dropdown .option {
+    color: var(--bs-body-color);
+}
+[data-bs-theme="dark"] .ts-dropdown .active {
+    background-color: var(--bs-primary);
+    color: #fff;
+}
+[data-bs-theme="dark"] .ts-dropdown .optgroup-header {
+    color: var(--bs-secondary);
+    background-color: var(--bs-tertiary-bg);
+}
+[data-bs-theme="dark"] .ts-dropdown .option.ts-option-disabled {
+    color: var(--bs-secondary);
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
