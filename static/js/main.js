@@ -35,6 +35,60 @@ if (!window.VALID_UPLOAD_AMOUNTS || window.VALID_UPLOAD_AMOUNTS.length === 0) {
     window.VALID_UPLOAD_AMOUNTS = [50, 100, 150, 200];
 }
 
+const HAPTIC_PATTERNS = Object.freeze({
+    tap: 15,
+    light: 10,
+    search: [20, 35, 20],
+    accordion: 12,
+    menu: 20,
+    tab: 12,
+    save: [20, 45, 20],
+    modal: [25],
+    download: [30, 40, 20]
+});
+let hapticsEnabled = true;
+
+function setHapticsEnabled(value) {
+    hapticsEnabled = !!value;
+}
+
+function canVibrate() {
+    return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+}
+
+function triggerFallbackHaptic() {
+    if (!document.body) return;
+
+    const wrapper = document.createElement('div');
+    const inputId = `haptic-fallback-${Math.random().toString(36).slice(2)}`;
+
+    wrapper.innerHTML = `<input type="checkbox" id="${inputId}" switch /><label for="${inputId}"></label>`;
+    wrapper.setAttribute('style', 'display:none !important;opacity:0 !important;visibility:hidden !important;position:absolute !important;pointer-events:none !important;');
+    document.body.appendChild(wrapper);
+
+    const label = wrapper.querySelector('label');
+    if (label) label.click();
+
+    setTimeout(() => {
+        wrapper.remove();
+    }, 300);
+}
+
+function triggerHaptic(pattern = 'tap') {
+    if (!hapticsEnabled) return;
+
+    const selectedPattern = HAPTIC_PATTERNS[pattern] ?? pattern ?? HAPTIC_PATTERNS.tap;
+    try {
+        if (canVibrate()) {
+            navigator.vibrate(selectedPattern);
+        } else {
+            triggerFallbackHaptic();
+        }
+    } catch (_) {
+        // Ignore haptic errors so UI interactions are never blocked.
+    }
+}
+
 function getTomSelectValues(instance) {
     if (!instance) return [];
     const value = instance.getValue();
@@ -118,7 +172,10 @@ function updateMaxUploadPurchaseDisplay() {
  */
 window.toggleCardSwitch = function (checkboxId) {
     const checkbox = document.getElementById(checkboxId);
-    if (checkbox) checkbox.click();
+    if (checkbox) {
+        triggerHaptic('accordion');
+        checkbox.click();
+    }
 };
 
 /**
@@ -793,6 +850,48 @@ document.addEventListener("DOMContentLoaded", async function () {
     checkClientStatus();
     loadMamUserData();
 
+    const hapticsToggle = document.getElementById('HAPTICS_ENABLED');
+    const syncHapticsState = () => {
+        const enabled = hapticsToggle ? !!hapticsToggle.checked : true;
+        setHapticsEnabled(enabled);
+    };
+
+    syncHapticsState();
+
+    if (hapticsToggle) {
+        hapticsToggle.addEventListener('change', function () {
+            setHapticsEnabled(this.checked);
+            if (this.checked) {
+                triggerHaptic('light');
+            }
+        });
+    }
+
+    const settingsMenuButton = document.querySelector('.navbar-toggler[data-bs-target="#settingsOffcanvas"]');
+    if (settingsMenuButton) {
+        settingsMenuButton.addEventListener('click', () => {
+            triggerHaptic('menu');
+        });
+    }
+
+    document.querySelectorAll('.accordion .accordion-button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            triggerHaptic('accordion');
+        });
+    });
+
+    document.addEventListener('click', (event) => {
+        if (event.target.closest('#mediainfo-tree-container summary')) {
+            triggerHaptic('accordion');
+        }
+    });
+
+    document.querySelectorAll('#settingTabs [data-bs-toggle="tab"]').forEach(tabButton => {
+        tabButton.addEventListener('click', () => {
+            triggerHaptic('tab');
+        });
+    });
+
     // --- A. Settings & Toggle Logic ---
     const toggleInputs = document.querySelectorAll('.form-check-input[data-collapse-target]');
 
@@ -914,6 +1013,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         settingsDirty = false;
         updateDependentFields();
         setSavedRelPathTemplate(settingsSnapshot.REL_PATH_TEMPLATE || DEFAULT_REL_PATH_TEMPLATE);
+        syncHapticsState();
         const relTemplateInput = document.getElementById('REL_PATH_TEMPLATE');
         if (relTemplateInput) relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
@@ -1035,6 +1135,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     // Save Settings
     document.getElementById('save-settings-button')?.addEventListener('click', function () {
+        triggerHaptic('save');
         fetch('/update_settings', { method: 'POST', body: new FormData(document.getElementById('settings-form')) })
             .then(response => response.json())
             .then(data => {
@@ -2281,6 +2382,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (searchForm) {
         searchForm.addEventListener("submit", function (e) {
             e.preventDefault();
+            triggerHaptic('search');
             document.getElementById('query').blur();
             if (advancedOffcanvasEl && advancedOffcanvasEl.classList.contains('show')) {
                 bootstrap.Offcanvas.getOrCreateInstance(advancedOffcanvasEl).hide();
@@ -2431,6 +2533,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             if (button) {
                 event.preventDefault();
                 event.stopPropagation(); // Prevent opening the details modal
+                triggerHaptic('download');
 
                 const resultItem = button.closest('.result-item');
                 initiateDownloadFlow(button, resultItem);
@@ -2450,6 +2553,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const rawJson = resultItem.dataset.json;
                 if (rawJson) {
                     try {
+                        triggerHaptic('modal');
                         const data = JSON.parse(rawJson);
                         // Open the modal (make sure openBookDetailsModal is defined in main.js)
                         openBookDetailsModal(data, resultItem);
@@ -2785,6 +2889,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         dlBtn.parentNode.replaceChild(newDlBtn, dlBtn);
 
         newDlBtn.addEventListener('click', function () {
+            triggerHaptic('download');
             initiateDownloadFlow(this, null);
         });
 
@@ -2814,6 +2919,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Confirm Download Modal Action
     document.getElementById('confirm-download-btn')?.addEventListener('click', function () {
         if (!pendingDownloadData) return;
+        triggerHaptic('download');
         const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
         if (autoOrganizeEnabled && confirmInput) {
             pendingDownloadData.custom_relative_path = confirmInput.value;

@@ -498,6 +498,7 @@ FALLBACK_CONFIG = {
     "AUTO_ORGANIZE_ON_SCHEDULE": False,
     "AUTO_ORGANIZE_INTERVAL_HOURS": 1,
     "AUTO_ORGANIZE_USE_COPY": False,
+    "HAPTICS_ENABLED": True,
     "ENABLE_DYNAMIC_IP_UPDATE": False,
     "DYNAMIC_IP_UPDATE_INTERVAL_HOURS": 3,
     "AUTO_BUY_VIP": False,
@@ -606,6 +607,7 @@ def load_config():
         "AUTO_ORGANIZE_ON_ADD",
         "AUTO_ORGANIZE_ON_SCHEDULE",
         "AUTO_ORGANIZE_USE_COPY",
+        "HAPTICS_ENABLED",
         "ENABLE_DYNAMIC_IP_UPDATE",
         "AUTO_BUY_VIP",
         "AUTO_BUY_UPLOAD_ON_RATIO",
@@ -2731,7 +2733,7 @@ async def api_settings():
 async def update_settings():
     form = await request.form
     config_to_update = app.config.copy()
-    boolean_fields = {"AUTO_ORGANIZE_ON_ADD", "AUTO_ORGANIZE_ON_SCHEDULE", "AUTO_ORGANIZE_USE_COPY", "ENABLE_DYNAMIC_IP_UPDATE", "AUTO_BUY_VIP", "AUTO_BUY_UPLOAD_ON_RATIO", "AUTO_BUY_UPLOAD_ON_BUFFER", "AUTO_BUY_UPLOAD_ON_BONUS", "BLOCK_DOWNLOAD_ON_LOW_BUFFER"}
+    boolean_fields = {"AUTO_ORGANIZE_ON_ADD", "AUTO_ORGANIZE_ON_SCHEDULE", "AUTO_ORGANIZE_USE_COPY", "HAPTICS_ENABLED", "ENABLE_DYNAMIC_IP_UPDATE", "AUTO_BUY_VIP", "AUTO_BUY_UPLOAD_ON_RATIO", "AUTO_BUY_UPLOAD_ON_BUFFER", "AUTO_BUY_UPLOAD_ON_BONUS", "BLOCK_DOWNLOAD_ON_LOW_BUFFER"}
     for key in FALLBACK_CONFIG.keys():
         if key in boolean_fields: config_to_update[key] = key in form
         elif key in form: config_to_update[key] = form[key]
