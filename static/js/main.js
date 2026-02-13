@@ -1380,7 +1380,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                 plugins: ['remove_button', 'checkbox_options'],
                 create: false,
                 maxItems: null,
-                maxOptions: 1000
+                maxOptions: 1000,
+                hidePlaceholder: true
             });
 
             if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_ID) {
@@ -1447,7 +1448,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                 plugins: ['remove_button', 'checkbox_options', 'clear_button'],
                 create: false,
                 maxItems: null,
-                maxOptions: 1000
+                maxOptions: 1000,
+                hidePlaceholder: true
             });
 
             Object.entries(catTomSelect.options).forEach(([value, option]) => {

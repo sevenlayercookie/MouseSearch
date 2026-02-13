@@ -98,7 +98,6 @@
                 </option>
                 {% endfor %}
               </select>
-              <div class="form-text text-muted small mt-1">Type to search languages.</div>
             </div>
           </div>
         </div>
@@ -193,7 +192,7 @@
           </div>
         </div>
 
-        <!-- SECTION 4: Categories -->
+        <!-- SECTION 4: Main Categories & Subcategories -->
         <div class="accordion-item">
           <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
@@ -214,10 +213,11 @@
                 <option value="15">Musicology</option>
                 <option value="16">Radio</option>
               </select>
+              <label class="form-label small fw-semibold" for="catSelect">Subcategories</label>
               <select id="catSelect" class="form-select" name="category_ids" multiple
-                placeholder="Select categories..." autocomplete="off" form="search-form">
+                placeholder=""" autocomplete="off" form="search-form"
+                aria-label="Subcategories">
               </select>
-              <div class="form-text text-muted small mt-1">Type to search categories.</div>
             </div>
           </div>
         </div>
