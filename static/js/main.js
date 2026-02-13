@@ -69,14 +69,10 @@ function loadLegacyCategoryDefinitions() {
     return legacyCategoryPromise;
 }
 
-const DEFAULT_MAIN_CATS = [];
+let DEFAULT_MAIN_CATS = [];
 
 function normalizeMainCatValues(values) {
-    const uniqueValues = [...new Set(values.map(String).filter(Boolean))];
-    if (uniqueValues.includes('all')) {
-        return ['all'];
-    }
-    return uniqueValues;
+    return [...new Set(values.map(String).filter(Boolean))];
 }
 
 function isMainCatAllowed(mainCat) {
@@ -1218,11 +1214,28 @@ document.addEventListener("DOMContentLoaded", async function () {
         ranges: document.getElementById('filter-count-ranges')
     };
 
-    const DEFAULT_SEARCH_TYPE = 'all';
-    const DEFAULT_SEARCH_SCOPE = 'torrents';
     const DEFAULT_LANGUAGE_ID = window.DEFAULT_LANGUAGE_ID ? String(window.DEFAULT_LANGUAGE_ID) : '1';
-    const DEFAULT_LANGUAGE_SET = new Set([DEFAULT_LANGUAGE_ID]);
-    const DEFAULT_SEARCH_FIELDS = {
+    let DEFAULT_SEARCH_TYPE = 'all';
+    let DEFAULT_SEARCH_SCOPE = 'torrents';
+    let DEFAULT_FLAGS_MODE = '0';
+    let DEFAULT_LANGUAGE_VALUES = [DEFAULT_LANGUAGE_ID];
+    let DEFAULT_LANGUAGE_SET = new Set(DEFAULT_LANGUAGE_VALUES);
+    let DEFAULT_CATEGORY_IDS = [];
+    let DEFAULT_FLAG_IDS = [];
+    let DEFAULT_RANGE_FILTERS = {
+        start_date: '',
+        end_date: '',
+        min_size: '',
+        max_size: '',
+        size_unit: '1048576',
+        min_seeders: '',
+        max_seeders: '',
+        min_leechers: '',
+        max_leechers: '',
+        min_snatched: '',
+        max_snatched: ''
+    };
+    let DEFAULT_SEARCH_FIELDS = {
         search_in_title: true,
         search_in_author: true,
         search_in_series: true,
@@ -1231,6 +1244,148 @@ document.addEventListener("DOMContentLoaded", async function () {
         search_in_tags: false,
         search_in_filenames: false
     };
+
+    const FILTER_TEXT_FIELDS = [
+        'start_date',
+        'end_date',
+        'min_size',
+        'max_size',
+        'min_seeders',
+        'max_seeders',
+        'min_leechers',
+        'max_leechers',
+        'min_snatched',
+        'max_snatched'
+    ];
+
+    function uniqueStringValues(value) {
+        if (Array.isArray(value)) {
+            return [...new Set(value.map(item => String(item).trim()).filter(Boolean))];
+        }
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed ? [trimmed] : [];
+        }
+        return [];
+    }
+
+    function normalizeSearchFilterDefaults(rawDefaults) {
+        const defaults = {
+            searchType: 'all',
+            search_scope: 'torrents',
+            search_in_title: true,
+            search_in_author: true,
+            search_in_series: true,
+            search_in_narrator: false,
+            search_in_description: false,
+            search_in_tags: false,
+            search_in_filenames: false,
+            language_ids: [DEFAULT_LANGUAGE_ID],
+            main_cat: [],
+            category_ids: [],
+            flags_mode: '0',
+            flag_ids: [],
+            start_date: '',
+            end_date: '',
+            min_size: '',
+            max_size: '',
+            size_unit: '1048576',
+            min_seeders: '',
+            max_seeders: '',
+            min_leechers: '',
+            max_leechers: '',
+            min_snatched: '',
+            max_snatched: ''
+        };
+        if (!rawDefaults || typeof rawDefaults !== 'object') {
+            return defaults;
+        }
+
+        const boolFields = [
+            'search_in_title',
+            'search_in_author',
+            'search_in_series',
+            'search_in_narrator',
+            'search_in_description',
+            'search_in_tags',
+            'search_in_filenames'
+        ];
+        boolFields.forEach(field => {
+            if (typeof rawDefaults[field] === 'boolean') {
+                defaults[field] = rawDefaults[field];
+            }
+        });
+
+        const searchType = String(rawDefaults.searchType || '').trim();
+        if (searchType) defaults.searchType = searchType;
+
+        const searchScope = String(rawDefaults.search_scope || '').trim();
+        if (searchScope) defaults.search_scope = searchScope;
+
+        const flagsMode = String(rawDefaults.flags_mode || '').trim();
+        if (flagsMode === '0' || flagsMode === '1') {
+            defaults.flags_mode = flagsMode;
+        }
+
+        const languageIds = uniqueStringValues(rawDefaults.language_ids);
+        defaults.language_ids = languageIds.length ? languageIds : [DEFAULT_LANGUAGE_ID];
+
+        const mainCats = normalizeMainCatValues(uniqueStringValues(rawDefaults.main_cat));
+        defaults.main_cat = mainCats.includes('all') ? ['all'] : mainCats;
+        defaults.category_ids = uniqueStringValues(rawDefaults.category_ids);
+        defaults.flag_ids = uniqueStringValues(rawDefaults.flag_ids);
+
+        FILTER_TEXT_FIELDS.forEach(field => {
+            if (rawDefaults[field] !== undefined && rawDefaults[field] !== null) {
+                defaults[field] = String(rawDefaults[field]).trim();
+            }
+        });
+
+        if (rawDefaults.size_unit !== undefined && rawDefaults.size_unit !== null) {
+            const unit = String(rawDefaults.size_unit).trim();
+            defaults.size_unit = unit || defaults.size_unit;
+        }
+
+        return defaults;
+    }
+
+    function applySearchFilterDefaults(rawDefaults) {
+        const normalized = normalizeSearchFilterDefaults(rawDefaults);
+
+        DEFAULT_SEARCH_TYPE = normalized.searchType;
+        DEFAULT_SEARCH_SCOPE = normalized.search_scope;
+        DEFAULT_FLAGS_MODE = normalized.flags_mode;
+        DEFAULT_SEARCH_FIELDS = {
+            search_in_title: normalized.search_in_title,
+            search_in_author: normalized.search_in_author,
+            search_in_series: normalized.search_in_series,
+            search_in_narrator: normalized.search_in_narrator,
+            search_in_description: normalized.search_in_description,
+            search_in_tags: normalized.search_in_tags,
+            search_in_filenames: normalized.search_in_filenames
+        };
+        DEFAULT_LANGUAGE_VALUES = normalized.language_ids.length ? normalized.language_ids : [DEFAULT_LANGUAGE_ID];
+        DEFAULT_LANGUAGE_SET = new Set(DEFAULT_LANGUAGE_VALUES);
+        DEFAULT_MAIN_CATS = normalizeMainCatValues(normalized.main_cat);
+        DEFAULT_CATEGORY_IDS = [...normalized.category_ids];
+        DEFAULT_FLAG_IDS = [...normalized.flag_ids];
+        DEFAULT_RANGE_FILTERS = {
+            start_date: normalized.start_date,
+            end_date: normalized.end_date,
+            min_size: normalized.min_size,
+            max_size: normalized.max_size,
+            size_unit: normalized.size_unit,
+            min_seeders: normalized.min_seeders,
+            max_seeders: normalized.max_seeders,
+            min_leechers: normalized.min_leechers,
+            max_leechers: normalized.max_leechers,
+            min_snatched: normalized.min_snatched,
+            max_snatched: normalized.max_snatched
+        };
+        return normalized;
+    }
+
+    applySearchFilterDefaults(window.DEFAULT_SEARCH_FILTERS || {});
 
     const setsEqual = (a, b) => {
         if (a.size !== b.size) return false;
@@ -1308,7 +1463,18 @@ document.addEventListener("DOMContentLoaded", async function () {
         mainCatSelectSyncing = true;
 
         const rawValues = source ? getTomSelectValues(source) : [];
-        const normalized = normalizeMainCatValues(rawValues);
+        let normalized = normalizeMainCatValues(rawValues);
+        if (normalized.includes('all') && normalized.length > 1) {
+            const lastAdded = source?._lastAddedMainCat;
+            if (lastAdded === 'all') {
+                normalized = ['all'];
+            } else {
+                normalized = normalized.filter(val => val !== 'all');
+            }
+        }
+        if (source) {
+            source._lastAddedMainCat = null;
+        }
 
         if (source) {
             const rawSet = new Set(rawValues.map(String));
@@ -1329,6 +1495,13 @@ document.addEventListener("DOMContentLoaded", async function () {
         mainCatSelectSyncing = false;
         applyCategoryMainCatFilter();
         updateFilterBadge();
+    }
+
+    function handleMainCatItemAdd(source, value) {
+        if (!source) return;
+        const addedValue = String(value);
+        source._lastAddedMainCat = addedValue;
+        handleMainCatSelectChange(source);
     }
 
     function setMainCatSelection(values, silent = true) {
@@ -1384,13 +1557,13 @@ document.addEventListener("DOMContentLoaded", async function () {
                 hidePlaceholder: true
             });
 
-            if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_ID) {
-                langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+            if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_VALUES.length) {
+                langTomSelect.setValue(DEFAULT_LANGUAGE_VALUES, true);
             }
 
             langTomSelect.on('change', () => {
-                if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_ID) {
-                    langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+                if (!getTomSelectValues(langTomSelect).length && DEFAULT_LANGUAGE_VALUES.length) {
+                    langTomSelect.setValue(DEFAULT_LANGUAGE_VALUES, true);
                 }
                 updateFilterBadge();
             });
@@ -1404,6 +1577,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 maxItems: null
             });
             mainCatPrimaryTomSelect.on('change', () => handleMainCatSelectChange(mainCatPrimaryTomSelect));
+            mainCatPrimaryTomSelect.on('item_add', (value) => handleMainCatItemAdd(mainCatPrimaryTomSelect, value));
         }
 
         const mainCatSelect = document.getElementById('mainCatSelect');
@@ -1414,6 +1588,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 maxItems: null
             });
             mainCatFilterTomSelect.on('change', () => handleMainCatSelectChange(mainCatFilterTomSelect));
+            mainCatFilterTomSelect.on('item_add', (value) => handleMainCatItemAdd(mainCatFilterTomSelect, value));
         }
 
         if (mainCatPrimaryTomSelect || mainCatFilterTomSelect) {
@@ -1498,33 +1673,43 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
 
         let categoriesCount = 0;
-        const selectedMainCats = new Set(getSelectedMainCats());
-        const mainCatFilterCount = selectedMainCats.has('all') ? 0 : selectedMainCats.size;
-        if (mainCatFilterCount) {
-            categoriesCount += mainCatFilterCount;
-        }
-        if (catTomSelect) {
-            categoriesCount += getTomSelectValues(catTomSelect).length;
+        const selectedMainCatValues = getSelectedMainCats();
+        const selectedMainCats = new Set(selectedMainCatValues);
+        const defaultMainCats = new Set(DEFAULT_MAIN_CATS);
+        if (!setsEqual(selectedMainCats, defaultMainCats)) {
+            categoriesCount += selectedMainCats.has('all') ? 0 : selectedMainCats.size;
         }
 
-        const selectedFlagsCount = document.querySelectorAll('.flag-checkbox:checked').length;
+        const selectedSubcategoryValues = catTomSelect ? getTomSelectValues(catTomSelect).map(String).filter(Boolean) : [];
+        const selectedSubcategorySet = new Set(selectedSubcategoryValues);
+        const defaultSubcategorySet = new Set(DEFAULT_CATEGORY_IDS);
+        if (!setsEqual(selectedSubcategorySet, defaultSubcategorySet)) {
+            categoriesCount += selectedSubcategoryValues.length;
+        }
+
+        const selectedFlags = [...document.querySelectorAll('.flag-checkbox:checked')].map(cb => String(cb.value));
+        const selectedFlagSet = new Set(selectedFlags);
+        const defaultFlagSet = new Set(DEFAULT_FLAG_IDS);
+        const selectedFlagsCount = selectedFlags.length;
         const flagsMode = document.querySelector('input[name="flags_mode"]:checked')?.value || '0';
-        let flagsCount = selectedFlagsCount;
-        if (selectedFlagsCount && flagsMode !== '0') {
+        let flagsCount = 0;
+        if (!setsEqual(selectedFlagSet, defaultFlagSet)) {
+            flagsCount += selectedFlagsCount;
+        }
+        if (flagsMode !== DEFAULT_FLAGS_MODE) {
             flagsCount++;
         }
 
         const getValue = (selector) => document.querySelector(selector)?.value?.trim();
-        const rangeFields = [
-            'start_date', 'end_date',
-            'min_size', 'max_size',
-            'min_seeders', 'max_seeders',
-            'min_leechers', 'max_leechers',
-            'min_snatched', 'max_snatched'
-        ];
-        const rangesCount = rangeFields.reduce((sum, name) => (
-            getValue(`input[name="${name}"]`) ? sum + 1 : sum
-        ), 0);
+        let rangesCount = FILTER_TEXT_FIELDS.reduce((sum, name) => {
+            const currentValue = getValue(`input[name="${name}"]`) || '';
+            const defaultValue = DEFAULT_RANGE_FILTERS[name] || '';
+            return currentValue !== defaultValue ? sum + 1 : sum;
+        }, 0);
+        const sizeUnitValue = document.querySelector('select[name="size_unit"]')?.value || DEFAULT_RANGE_FILTERS.size_unit;
+        if (sizeUnitValue !== DEFAULT_RANGE_FILTERS.size_unit) {
+            rangesCount++;
+        }
 
         const count = statusCount + fieldCount + languageCount + categoriesCount + flagsCount + rangesCount;
 
@@ -1539,6 +1724,30 @@ document.addEventListener("DOMContentLoaded", async function () {
             filterBadge.textContent = count;
             filterBadge.style.display = count ? 'inline-block' : 'none';
         }
+    }
+
+    function collectCurrentSearchFilterDefaults() {
+        const defaults = {
+            searchType: document.querySelector('input[name="searchType"]:checked')?.value || DEFAULT_SEARCH_TYPE,
+            search_scope: document.querySelector('input[name="search_scope"]:checked')?.value || DEFAULT_SEARCH_SCOPE,
+            flags_mode: document.querySelector('input[name="flags_mode"]:checked')?.value || DEFAULT_FLAGS_MODE,
+            language_ids: langTomSelect ? getTomSelectValues(langTomSelect).map(String).filter(Boolean) : [],
+            main_cat: getSelectedMainCats().map(String),
+            category_ids: catTomSelect ? getTomSelectValues(catTomSelect).map(String).filter(Boolean) : [],
+            flag_ids: [...document.querySelectorAll('.flag-checkbox:checked')].map(cb => String(cb.value)),
+            size_unit: document.querySelector('select[name="size_unit"]')?.value || DEFAULT_RANGE_FILTERS.size_unit
+        };
+
+        Object.keys(DEFAULT_SEARCH_FIELDS).forEach(field => {
+            const el = document.getElementById(field);
+            defaults[field] = !!el?.checked;
+        });
+
+        FILTER_TEXT_FIELDS.forEach(field => {
+            defaults[field] = document.querySelector(`[name="${field}"]`)?.value?.trim() || '';
+        });
+
+        return defaults;
     }
 
     if (searchForm) {
@@ -1562,23 +1771,39 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         searchForm.addEventListener('reset', () => {
             setTimeout(() => {
-                updateMirroredCheckboxes();
-                if (langTomSelect) {
-                    langTomSelect.clear(true);
-                    if (DEFAULT_LANGUAGE_ID) {
-                        langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
-                    }
-                }
-                if (mainCatPrimaryTomSelect || mainCatFilterTomSelect) {
-                    setMainCatSelection(DEFAULT_MAIN_CATS, true);
-                }
-                if (catTomSelect) {
-                    catTomSelect.clear(true);
-                }
-                updateFilterBadge();
+                restoreFormFromURL(new URLSearchParams());
             }, 0);
         });
     }
+
+    document.getElementById('save-default-filters-button')?.addEventListener('click', async function () {
+        const button = this;
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+
+        try {
+            const payload = { filters: collectCurrentSearchFilterDefaults() };
+            const response = await fetch('/update_default_search_filters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Failed to save default filters.');
+            }
+
+            applySearchFilterDefaults(data.filters || payload.filters);
+            updateFilterBadge();
+            showToast(data.message || 'Default filters saved.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Error saving default filters.', 'danger');
+        } finally {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        }
+    });
 
     const allowedResultFields = new Set([
         'date_uploaded',
@@ -1985,7 +2210,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         setRadioValue('searchType', params.get('searchType'), DEFAULT_SEARCH_TYPE);
         setRadioValue('search_scope', params.get('search_scope'), DEFAULT_SEARCH_SCOPE);
-        setRadioValue('flags_mode', params.get('flags_mode'), '0');
+        setRadioValue('flags_mode', params.get('flags_mode'), DEFAULT_FLAGS_MODE);
 
         if (langTomSelect) {
             let langValues = params.getAll('language_ids');
@@ -2000,13 +2225,14 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             if (langValues.length) {
                 langTomSelect.setValue(langValues, true);
-            } else if (DEFAULT_LANGUAGE_ID) {
-                langTomSelect.setValue([DEFAULT_LANGUAGE_ID], true);
+            } else if (DEFAULT_LANGUAGE_VALUES.length) {
+                langTomSelect.setValue(DEFAULT_LANGUAGE_VALUES, true);
             }
         }
 
         if (catTomSelect) {
-            const catValues = params.getAll('category_ids');
+            const paramCatValues = params.getAll('category_ids');
+            const catValues = paramCatValues.length ? paramCatValues : DEFAULT_CATEGORY_IDS;
             if (catValues.length) {
                 catTomSelect.setValue(catValues, true);
                 ensureMainCatsForSelectedSubcategories(catValues);
@@ -2016,7 +2242,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
         applyCategoryMainCatFilter();
 
-        const flagValues = new Set(params.getAll('flag_ids'));
+        const paramFlagValues = params.getAll('flag_ids');
+        const flagValues = new Set((paramFlagValues.length ? paramFlagValues : DEFAULT_FLAG_IDS).map(String));
         document.querySelectorAll('.flag-checkbox').forEach(cb => {
             cb.checked = flagValues.has(cb.value);
         });
@@ -2035,10 +2262,15 @@ document.addEventListener("DOMContentLoaded", async function () {
         ];
         textFields.forEach(name => {
             const el = document.querySelector(`[name="${name}"]`);
-            if (el) el.value = params.get(name) || '';
+            if (!el) return;
+            if (params.has(name)) {
+                el.value = params.get(name) || '';
+            } else {
+                el.value = DEFAULT_RANGE_FILTERS[name] || '';
+            }
         });
 
-        const sizeUnit = params.get('size_unit');
+        const sizeUnit = params.get('size_unit') || DEFAULT_RANGE_FILTERS.size_unit;
         const sizeUnitSelect = document.querySelector('select[name="size_unit"]');
         if (sizeUnit && sizeUnitSelect) sizeUnitSelect.value = sizeUnit;
 
@@ -2107,6 +2339,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         } else {
             // --- MODIFIED LANDING PAGE CHECK ---
             const urlParams = new URLSearchParams(window.location.search);
+            restoreFormFromURL(urlParams);
             if (urlParams.has('query')) {
                 const queryStr = urlParams.toString();
                 const resultsEmpty = !document.getElementById('results-container').innerHTML.trim();
@@ -2149,6 +2382,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     // Deep Linking (Load search on refresh)
     const initialParams = new URLSearchParams(window.location.search);
+    restoreFormFromURL(initialParams);
 
     // Check if we have a book hash (#book=12345)
     const hash = window.location.hash;
@@ -2156,7 +2390,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     if (initialParams.has('query')) {
         // SCENARIO 1: We have a search query (Standard Refresh)
-        restoreFormFromURL(initialParams);
         performSearch(initialParams.toString()).then(() => {
             if (deepLinkID) openDeepLink(deepLinkID);
         });

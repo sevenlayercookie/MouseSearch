@@ -2,6 +2,7 @@
 from quart import Quart, request, render_template, Response, jsonify, send_file
 import httpx
 import json
+import copy
 import html
 import argparse
 import os
@@ -93,6 +94,33 @@ RESULT_DISPLAY_FIELDS = [
     "series",
 ]
 LANGUAGE_BY_ID = {str(value): name for name, value in language_dict.items()}
+DEFAULT_SEARCH_FILTER_DEFAULTS = {
+    "searchType": "all",
+    "search_scope": "torrents",
+    "search_in_title": True,
+    "search_in_author": True,
+    "search_in_series": True,
+    "search_in_narrator": False,
+    "search_in_description": False,
+    "search_in_tags": False,
+    "search_in_filenames": False,
+    "language_ids": [str(language_dict.get("English", 1))],
+    "main_cat": [],
+    "category_ids": [],
+    "flags_mode": "0",
+    "flag_ids": [],
+    "start_date": "",
+    "end_date": "",
+    "min_size": "",
+    "max_size": "",
+    "size_unit": "1048576",
+    "min_seeders": "",
+    "max_seeders": "",
+    "min_leechers": "",
+    "max_leechers": "",
+    "min_snatched": "",
+    "max_snatched": "",
+}
 
 def normalize_result_display_fields(value, fallback):
     allowed = set(RESULT_DISPLAY_FIELDS)
@@ -136,6 +164,84 @@ def coerce_bool(val, default: bool) -> bool:
 
     # Unknown value => default
     return default
+
+
+def normalize_string_list(value):
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value]
+    elif isinstance(value, str):
+        stripped = value.strip()
+        items = [stripped] if stripped else []
+    else:
+        items = []
+
+    unique = []
+    seen = set()
+    for item in items:
+        if not item:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
+
+
+def normalize_search_filter_defaults(value):
+    defaults = copy.deepcopy(DEFAULT_SEARCH_FILTER_DEFAULTS)
+    if not isinstance(value, dict):
+        return defaults
+
+    bool_fields = [
+        "search_in_title",
+        "search_in_author",
+        "search_in_series",
+        "search_in_narrator",
+        "search_in_description",
+        "search_in_tags",
+        "search_in_filenames",
+    ]
+    for field in bool_fields:
+        defaults[field] = coerce_bool(value.get(field), defaults[field])
+
+    for field in ["searchType", "search_scope"]:
+        raw = value.get(field, defaults[field])
+        text = str(raw).strip()
+        defaults[field] = text if text else defaults[field]
+
+    main_cats = normalize_string_list(value.get("main_cat", defaults["main_cat"]))
+    if "all" in main_cats:
+        main_cats = ["all"]
+    defaults["main_cat"] = main_cats
+
+    defaults["language_ids"] = normalize_string_list(value.get("language_ids", defaults["language_ids"]))
+    defaults["category_ids"] = normalize_string_list(value.get("category_ids", defaults["category_ids"]))
+    defaults["flag_ids"] = normalize_string_list(value.get("flag_ids", defaults["flag_ids"]))
+
+    flags_mode = str(value.get("flags_mode", defaults["flags_mode"])).strip()
+    defaults["flags_mode"] = flags_mode if flags_mode in {"0", "1"} else defaults["flags_mode"]
+
+    text_fields = [
+        "start_date",
+        "end_date",
+        "min_size",
+        "max_size",
+        "size_unit",
+        "min_seeders",
+        "max_seeders",
+        "min_leechers",
+        "max_leechers",
+        "min_snatched",
+        "max_snatched",
+    ]
+    for field in text_fields:
+        raw = value.get(field, defaults[field])
+        defaults[field] = str(raw).strip() if raw is not None else defaults[field]
+
+    if not defaults["size_unit"]:
+        defaults["size_unit"] = DEFAULT_SEARCH_FILTER_DEFAULTS["size_unit"]
+
+    return defaults
 
 
 @app.before_serving
@@ -291,7 +397,8 @@ FALLBACK_CONFIG = {
     "BLOCK_DOWNLOAD_ON_LOW_BUFFER": True,
     "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": True,
     "THUMBNAIL_CACHE_MAX_SIZE_MB": 500,
-    "RESULTS_DISPLAY_FIELDS": ["narrator", "series", "file_size", "file_type", "seeders"]
+    "RESULTS_DISPLAY_FIELDS": ["narrator", "series", "file_size", "file_type", "seeders"],
+    "SEARCH_FILTER_DEFAULTS": copy.deepcopy(DEFAULT_SEARCH_FILTER_DEFAULTS),
 }
 
 # Set up data directory and paths
@@ -322,7 +429,7 @@ TORRENT_DOWNLOAD_PATH = None
 
 def load_config():
     # 1. Start with Hardcoded Defaults (Lowest Priority)
-    config = FALLBACK_CONFIG.copy()
+    config = copy.deepcopy(FALLBACK_CONFIG)
     
     # 2. Update with Environment Variables (Medium Priority)
     # These act as fallbacks if the key is missing in config.json
@@ -393,6 +500,9 @@ def load_config():
     config["RESULTS_DISPLAY_FIELDS"] = normalize_result_display_fields(
         config.get("RESULTS_DISPLAY_FIELDS"),
         FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
+    )
+    config["SEARCH_FILTER_DEFAULTS"] = normalize_search_filter_defaults(
+        config.get("SEARCH_FILTER_DEFAULTS")
     )
 
     return config
@@ -2544,6 +2654,26 @@ async def update_result_display_fields():
     save_config(config_to_update)
     app.config["RESULTS_DISPLAY_FIELDS"] = normalized
     return jsonify({"status": "success", "fields": normalized})
+
+
+@app.route("/update_default_search_filters", methods=["POST"])
+async def update_default_search_filters():
+    payload = await request.get_json(silent=True) or {}
+    filters = payload.get("filters")
+    if filters is None:
+        return jsonify({"status": "error", "message": "Missing filters."}), 400
+
+    normalized = normalize_search_filter_defaults(filters)
+    config_to_update = app.config.copy()
+    config_to_update["SEARCH_FILTER_DEFAULTS"] = normalized
+    save_config(config_to_update)
+    app.config["SEARCH_FILTER_DEFAULTS"] = normalized
+
+    return jsonify({
+        "status": "success",
+        "message": "Default filters saved.",
+        "filters": normalized
+    })
 
 
 # --- ORGANIZE LOGIC ---
