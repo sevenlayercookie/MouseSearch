@@ -515,6 +515,7 @@ FALLBACK_CONFIG = {
     "BLOCK_DOWNLOAD_ON_LOW_BUFFER": True,
     "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": True,
     "THUMBNAIL_CACHE_MAX_SIZE_MB": 500,
+    "MAX_SEARCH_RESULTS": 50,
     "RESULTS_DISPLAY_FIELDS": ["narrator", "series", "file_size", "file_type", "seeders"],
     "SEARCH_FILTER_DEFAULTS": copy.deepcopy(DEFAULT_SEARCH_FILTER_DEFAULTS),
 }
@@ -575,12 +576,16 @@ def load_config():
         "DYNAMIC_IP_UPDATE_INTERVAL_HOURS",
         "AUTO_BUY_VIP_INTERVAL_HOURS",
         "AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS",
-        "THUMBNAIL_CACHE_MAX_SIZE_MB"
+        "THUMBNAIL_CACHE_MAX_SIZE_MB",
+        "MAX_SEARCH_RESULTS"
     ]:
         try:
             config[key] = int(config[key])
         except (ValueError, TypeError):
             config[key] = FALLBACK_CONFIG[key]
+    
+    if config["MAX_SEARCH_RESULTS"] <= 0:
+        config["MAX_SEARCH_RESULTS"] = FALLBACK_CONFIG["MAX_SEARCH_RESULTS"]
 
     # Floats
     for key in [
@@ -2302,7 +2307,10 @@ async def mam_search():
             lang_ids = [str(language_dict.get(lang_value, 1))]
 
     params = {
-        "tor[sortType]": "default", "perpage": 50, "thumbnail": "true", "dlLink": "true",
+        "tor[sortType]": "default",
+        "perpage": app.config.get("MAX_SEARCH_RESULTS", FALLBACK_CONFIG["MAX_SEARCH_RESULTS"]),
+        "thumbnail": "true",
+        "dlLink": "true",
         "tor[browse_lang][]": lang_ids,
         "tor[srchIn][title]": "on" if title_on else "off",
         "tor[srchIn][author]": "on" if author_on else "off",
