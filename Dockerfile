@@ -33,6 +33,7 @@ EXPOSE 5000
 # Production env
 ENV ADDRESS=0.0.0.0
 ENV PORT=5000
+ENV ACCESS_LOGFILE=/dev/null
 
 # Force Docker to use root /data instead of relative ./data
 ENV DATA_PATH=/data
@@ -46,7 +47,7 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 CMD exec hypercorn --bind ${ADDRESS}:${PORT} \
      --workers 1 \
      --worker-class asyncio \
-     --access-logfile - \
+     --access-logfile ${ACCESS_LOGFILE} \
      --error-logfile - \
      --log-level info app:app \
      --graceful-timeout 5

@@ -2,9 +2,22 @@
 
 # launch.sh - Script to launch the web server in a bare-metal environment (non-Docker)
 
+# Ensure the script runs relative to its own directory so .env/.venv are found reliably.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Load .env (if present) and export values for this process.
+if [ -f ".env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source ".env"
+    set +a
+fi
+
 # Default values
-VENV_PATH=".venv"
-PORT="5000"
+VENV_PATH="${VENV_PATH:-.venv}"
+PORT="${PORT:-5000}"
+ACCESS_LOGFILE="${ACCESS_LOGFILE:-/dev/null}"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -17,11 +30,16 @@ while [[ $# -gt 0 ]]; do
             VENV_PATH="$2"
             shift 2
             ;;
+        -a|--access-logfile)
+            ACCESS_LOGFILE="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  -p, --port PORT       Set the port (default: 5000)"
             echo "  -v, --venv PATH       Set the virtual environment path (default: .venv)"
+            echo "  -a, --access-logfile  Hypercorn access log target (default: /dev/null, use '-' for stdout)"
             echo "  -h, --help            Show this help message"
             exit 0
             ;;
@@ -42,7 +60,7 @@ fi
 source "$VENV_PATH/bin/activate"
 
 # Launch hypercorn with specified port
-hypercorn --bind "0.0.0.0:$PORT" --workers 1 --worker-class asyncio --access-logfile /dev/null --error-logfile - --log-level info app:app 2>&1 | while IFS= read -r line; do
+hypercorn --bind "0.0.0.0:$PORT" --workers 1 --worker-class asyncio --access-logfile "$ACCESS_LOGFILE" --error-logfile - --log-level info app:app 2>&1 | while IFS= read -r line; do
     echo "$line"
     if [[ "$line" == *"Address already in use"* ]] || [[ "$line" == *"Errno 98"* ]]; then
         echo ""

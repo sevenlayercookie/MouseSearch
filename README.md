@@ -184,6 +184,11 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` | No | Set to `true` to enable filesystem caching of thumbnail images (stores in `DATA_PATH/cache/thumbnails`). Defaults to `false`. **Enable this if you experience slow thumbnail loading or suspect you're hitting MAM rate limits.** Cached thumbnails expire after 30 days. |
 | `THUMBNAIL_CACHE_MAX_SIZE_MB` | No | Maximum cache size in megabytes (only applies when `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` is enabled). Oldest files are deleted first when limit is exceeded. Defaults to `500`. |
 | `RESULTS_DISPLAY_FIELDS` | No | List of fields to display in search results. Options: `date_uploaded`, `file_type`, `file_size`, `snatches`, `seeders`, `category`, `language`, `narrator`, `series`. |
+| `APP_LOG_LEVEL` | No | Application log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Defaults to `INFO`. |
+| `LOG_HTTP_REQUESTS` | No | Enables app-level HTTP request logging with sanitized query params. Defaults to `false`. |
+| `LOG_HTTP_REQUESTS_INCLUDE_STATIC` | No | Includes `/static/*` and favicon requests in app-level request logs. Defaults to `false`. |
+| `LOG_HTTP_REQUESTS_INCLUDE_EVENTS` | No | Includes `/events` (SSE) requests in app-level request logs. Defaults to `false`. |
+| `ACCESS_LOGFILE` | No | Hypercorn raw access log destination (`/dev/null` disables, `-` logs to stdout). Defaults to `/dev/null`. |
 | `PUID` | No | (Docker only) User ID to run the container as. Set to your host user's UID for correct file permissions. |
 | `PGID` | No | (Docker only) Group ID to run the container as. Set to your host user's GID for correct file permissions. |
 

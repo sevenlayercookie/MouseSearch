@@ -1,5 +1,5 @@
 # app.py - Quart (async) version
-from quart import Quart, request, render_template, Response, jsonify, send_file
+from quart import Quart, request, render_template, Response, jsonify, send_file, g
 import httpx
 import json
 import copy
@@ -11,6 +11,7 @@ import hashlib
 import collections
 import math
 import shutil
+import uuid
 
 from datetime import datetime, timedelta
 from dotenv import load_dotenv, dotenv_values
@@ -317,9 +318,125 @@ async def shutdown():
 
 
 # --- LOGGING CONFIGURATION (NOISY LIBS SILENCED) ---
+def parse_log_level(value, default=logging.DEBUG):
+    """Parse a string/int log level with fallback."""
+    if isinstance(value, int):
+        return value
+    if not value:
+        return default
+    level = getattr(logging, str(value).upper(), None)
+    return level if isinstance(level, int) else default
+
+
+def parse_bool_env(value, default=False):
+    """Parse boolean environment values like true/false/1/0/on/off."""
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+APP_LOG_LEVEL = parse_log_level(os.getenv("APP_LOG_LEVEL", "INFO"), logging.INFO)
+LOG_HTTP_REQUESTS = parse_bool_env(os.getenv("LOG_HTTP_REQUESTS"), False)
+LOG_HTTP_REQUESTS_INCLUDE_STATIC = parse_bool_env(os.getenv("LOG_HTTP_REQUESTS_INCLUDE_STATIC"), False)
+LOG_HTTP_REQUESTS_INCLUDE_EVENTS = parse_bool_env(os.getenv("LOG_HTTP_REQUESTS_INCLUDE_EVENTS"), False)
+HTTP_LOG_REDACT_QUERY_KEYS = {"q", "query", "url", "torrent_url", "download_link"}
+HTTP_LOG_MAX_QUERY_LENGTH = 240
+HTTP_LOG_QUIET_PATHS = {"/events"}
+HTTP_LOG_STATIC_PREFIXES = ("/static/",)
+
+
+def _client_ip_from_headers():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.headers.get("X-Real-IP") or request.remote_addr or "-"
+
+
+def _sanitize_query_args():
+    if not request.args:
+        return ""
+    parts = []
+    for key in sorted(request.args.keys()):
+        key_lower = key.lower()
+        values = request.args.getlist(key)
+        cleaned_values = []
+        for raw in values:
+            value = str(raw).replace("\n", " ").replace("\r", " ")
+            if key_lower in HTTP_LOG_REDACT_QUERY_KEYS:
+                cleaned_values.append(f"<redacted:{len(value)}>")
+            else:
+                cleaned_values.append(value if len(value) <= 80 else f"{value[:77]}...")
+        if not cleaned_values:
+            continue
+        if len(cleaned_values) == 1:
+            parts.append(f"{key}={cleaned_values[0]}")
+        else:
+            parts.append(f"{key}=[{','.join(cleaned_values)}]")
+    joined = ", ".join(parts)
+    if len(joined) > HTTP_LOG_MAX_QUERY_LENGTH:
+        joined = f"{joined[:HTTP_LOG_MAX_QUERY_LENGTH]}..."
+    return joined
+
+
+def _should_skip_http_log(path):
+    if path in HTTP_LOG_QUIET_PATHS and not LOG_HTTP_REQUESTS_INCLUDE_EVENTS:
+        return True
+    if path.startswith(HTTP_LOG_STATIC_PREFIXES) and not LOG_HTTP_REQUESTS_INCLUDE_STATIC:
+        return True
+    if path in {"/favicon.ico", "/robots.txt"} and not LOG_HTTP_REQUESTS_INCLUDE_STATIC:
+        return True
+    return False
+
+
+@app.before_request
+async def _track_request_start():
+    g.request_started_at = time.monotonic()
+    incoming_request_id = (request.headers.get("X-Request-ID") or "").strip()
+    g.request_id = incoming_request_id[:64] if incoming_request_id else uuid.uuid4().hex[:12]
+
+
+@app.after_request
+async def _log_http_request(response):
+    request_id = getattr(g, "request_id", uuid.uuid4().hex[:12])
+    response.headers["X-Request-ID"] = request_id
+
+    if not LOG_HTTP_REQUESTS:
+        return response
+
+    path = request.path or "/"
+    if _should_skip_http_log(path):
+        return response
+
+    started = getattr(g, "request_started_at", None)
+    duration_ms = (time.monotonic() - started) * 1000 if started else 0.0
+    status_code = int(response.status_code)
+
+    log_msg = (
+        f"[HTTP] req={request_id} ip={_client_ip_from_headers()} "
+        f"{request.method} {path} status={status_code} duration_ms={duration_ms:.1f}"
+    )
+    query_summary = _sanitize_query_args()
+    if query_summary:
+        log_msg += f" query={query_summary}"
+
+    if status_code >= 500:
+        app.logger.error(log_msg)
+    elif status_code >= 400:
+        app.logger.warning(log_msg)
+    else:
+        app.logger.info(log_msg)
+
+    return response
+
+
 # Configure root logger
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=APP_LOG_LEVEL,
     format='[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stderr
@@ -331,13 +448,14 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("hpack").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logging.getLogger("tzlocal").setLevel(logging.WARNING)
+logging.getLogger("hypercorn.access").setLevel(logging.INFO)
 
 if __name__ != '__main__':
     logger = logging.getLogger('hypercorn.error')
     app.logger.handlers = logger.handlers
-    app.logger.setLevel(logging.DEBUG)
+    app.logger.setLevel(APP_LOG_LEVEL)
 else:
-    app.logger.setLevel(logging.DEBUG)
+    app.logger.setLevel(APP_LOG_LEVEL)
 
 scheduler = AsyncIOScheduler()
 
@@ -2123,6 +2241,7 @@ async def mam_search():
             ),
         )
     query = request.args.get("query", "").strip()
+    search_started_at = time.monotonic()
 
     # Used by templates to decide whether VIP Freeleech applies (fl_vip).
     is_vip_active = False
@@ -2332,6 +2451,12 @@ async def mam_search():
             
             if any(item.get('my_snatched') == 1 for item in ranked):
                 save_database(metadata)
+
+            search_duration_ms = (time.monotonic() - search_started_at) * 1000
+            app.logger.info(
+                f"[SEARCH] results={len(ranked)} query_len={len(query)} "
+                f"scope={params.get('tor[searchIn]', 'torrents')} duration_ms={search_duration_ms:.1f}"
+            )
             
             return await render_template(
                 "partials/results.html",
@@ -2346,6 +2471,7 @@ async def mam_search():
                 ),
             )
     except Exception as e:
+        app.logger.error(f"[SEARCH] Failed query_len={len(query)}: {e}", exc_info=True)
         return await render_template(
             "partials/results.html",
             error_message=f"Error: {e}",
@@ -2800,6 +2926,9 @@ async def events():
     """Server-Sent Events endpoint with heartbeat to prevent timeouts."""
     queue = asyncio.Queue()
     connected_websockets.add(queue)
+    connected_at = time.monotonic()
+    client_ip = _client_ip_from_headers()
+    app.logger.debug(f"[SSE] Client connected ip={client_ip} active_clients={len(connected_websockets)}")
 
     async def event_stream():
         try:
@@ -2816,6 +2945,11 @@ async def events():
                     yield ": keep-alive\n\n"
         finally:
             connected_websockets.discard(queue)
+            connection_duration = time.monotonic() - connected_at
+            app.logger.debug(
+                f"[SSE] Client disconnected ip={client_ip} "
+                f"duration_s={connection_duration:.1f} active_clients={len(connected_websockets)}"
+            )
 
     return Response(event_stream(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',
