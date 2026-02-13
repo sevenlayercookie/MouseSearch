@@ -27,6 +27,7 @@ MouseSearch is a self-hosted web application that provides a clean, fast search 
 * **Freeleech Tools:** VIP Freeleech awareness in search results plus a personal Freeleech wedge button in the download confirmation dialog.
 * **Enhanced Details UI:** Responsive cards, improved book details layout, a high-res cover lightbox, and a **MediaInfo Inspector** tree for viewing technical file metadata.
 * **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time in results and the book details modal. Designates previously downloaded torrents as "Downloaded".
+* **Template-Based Organization Paths:** Define a default relative path template (e.g., `{Author}/{Title}` or `{Author}/{Series}/{Title}`) with token helpers and live preview in Settings.
 * **[BETA] Auto-Organization:** (See details below) Automatically organizes completed audiobooks from your download folder to a clean library structure (e.g., `Author/Title/file.m4b`) using either hardlinks (instant, no space used) or file copies.
 
 ## Technology Stack
@@ -177,6 +178,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |
 | `AUTO_ORGANIZE_INTERVAL_HOURS` | No | Number of hours between scheduled organization scans (only applies if `AUTO_ORGANIZE_ON_SCHEDULE` is `true`). Defaults to `1`. |
 | `AUTO_ORGANIZE_USE_COPY` | No | Set to `true` to copy files instead of hardlinking. Useful if download/organize paths are on different filesystems. Defaults to `false`. |
+| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, and `{Title}` tokens. Defaults to `{Author}/{Title}`. |
 | `ORGANIZED_PATH` | If auto-organization is enabled | The *container* path for your organized library (e.g., `/downloads/organized/`). |
 | `TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The *container* path where your torrent client saves completed files for this category (e.g., `/downloads/torrents/`). |
 | `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` | No | Set to `true` to enable filesystem caching of thumbnail images (stores in `DATA_PATH/cache/thumbnails`). Defaults to `false`. **Enable this if you experience slow thumbnail loading or suspect you're hitting MAM rate limits.** Cached thumbnails expire after 30 days. |
@@ -242,15 +244,18 @@ The application will be available at `http://<your-server-ip>:5000`.
 3.  **Configure your settings:** You can configure all settings directly through the web interface, or use the `.env` file.
 4.  Once configured, the dashboards should automatically update to "CONNECTED" and populate your user info.
 4.  Use the search bar to find content.
-5.  In the results, select a torrent category (if desired) and click "Download". A dialog will appear, allowing you to confirm or change the final `organized` destination.
+5.  In the results, select a torrent category (if desired) and click "Download". A confirmation dialog will appear. If auto-organize is enabled, you can review/edit the relative organization path before sending to your client.
 6.  The torrent will be added, and a status badge will appear, polling your torrent client for live progress.
 
 ### Path Customization & Series Support:
-When adding a torrent with `AUTO_ORGANIZE_ON_ADD` enabled, MouseSearch will present a confirmation window.
+MouseSearch supports configurable default organization templates via Settings -> Directory Structure.
 
-- **Review Path**: You can modify the calculated Author/Title path manually before sending it to the client.
+- **Template Editor**: Set `REL_PATH_TEMPLATE` from the UI using `{Author}`, `{Series}`, and `{Title}` tokens, with quick-insert buttons and live preview.
+- **Environment Default**: Set `DEFAULT_RELATIVE_PATH_TEMPLATE` in `.env` to control the default template used by the app.
+- **Review Path**: When `AUTO_ORGANIZE_ON_ADD` is enabled, the download confirmation modal pre-fills from your template and remains editable.
+- **Download-Only Confirm**: When `AUTO_ORGANIZE_ON_ADD` is disabled, the same modal is used as a lightweight confirmation without path editing.
 
-- **Series Toggle**: If the book is part of a series, a "Series" button will appear. Clicking this automatically injects the series name into the path (e.g., Author/Series/Title).
+- **Series Toggle**: If the book has series metadata, the "Series" button toggles `{Series}` in/out of the generated path while preserving your template structure.
 
 ## [BETA] Auto-Organization Feature
 

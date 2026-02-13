@@ -86,7 +86,13 @@ class QBittorrentClient(TorrentClient):
 
     async def add_torrent(self, torrent_url: str, category: str, is_auto_organize: bool = False, **kwargs) -> dict:
         """Adds a torrent to qBittorrent."""
-        payload = {'urls': torrent_url, 'category': category}
+        torrent_data = kwargs.get("torrent_data")
+        torrent_filename = kwargs.get("torrent_filename") or "download.torrent"
+
+        payload = {}
+        if category:
+            payload["category"] = category
+
         # qBittorrent v4.1+ requires a dummy Referer header to prevent CSRF errors
         request_headers = {'Referer': self.base_url}
         
@@ -94,13 +100,28 @@ class QBittorrentClient(TorrentClient):
         
         try:
             async with httpx.AsyncClient(cookies=self.session_cookies) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/v2/torrents/add",
-                    data=payload,
-                    headers=request_headers
-                )
+                if torrent_data is not None:
+                    files = {
+                        "torrents": (torrent_filename, torrent_data, "application/x-bittorrent")
+                    }
+                    response = await client.post(
+                        f"{self.base_url}/api/v2/torrents/add",
+                        data=payload,
+                        files=files,
+                        headers=request_headers
+                    )
+                else:
+                    payload['urls'] = torrent_url
+                    response = await client.post(
+                        f"{self.base_url}/api/v2/torrents/add",
+                        data=payload,
+                        headers=request_headers
+                    )
+
+                if response.status_code == 415:
+                    return {'status': 'error', 'message': 'Invalid torrent file (HTTP 415 from qBittorrent)'}
                 response.raise_for_status()
-                if "Ok." in response.text:
+                if "Ok." in response.text or response.text.strip() == "":
                     return {'status': 'success', 'message': 'Torrent added successfully'}
                 return {'status': 'error', 'message': response.text or 'Unknown error'}
         except (RequestError, HTTPStatusError) as e:
