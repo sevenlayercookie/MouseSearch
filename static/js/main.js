@@ -93,11 +93,7 @@ function decorateCategoryOptions() {
         const mainCat = categoryMainCatMap.get(String(value));
         const allowed = isMainCatAllowed(mainCat);
         node.classList.toggle('ts-option-disabled', !allowed);
-        if (allowed) {
-            node.removeAttribute('aria-disabled');
-        } else {
-            node.setAttribute('aria-disabled', 'true');
-        }
+        node.removeAttribute('aria-disabled');
     });
 }
 
@@ -1346,6 +1342,33 @@ document.addEventListener("DOMContentLoaded", async function () {
         return finalValues;
     }
 
+    function ensureMainCatsForSelectedSubcategories(selectedSubcategories = null) {
+        if (!categoryMainCatMap.size) return false;
+
+        const selectedCats = (selectedSubcategories || (catTomSelect ? getTomSelectValues(catTomSelect) : []))
+            .map(String)
+            .filter(Boolean);
+        if (!selectedCats.length) return false;
+
+        const selectedMainCats = new Set(getSelectedMainCats().map(String));
+        if (selectedMainCats.has('all')) return false;
+
+        let changed = false;
+        selectedCats.forEach(catId => {
+            const requiredMainCat = categoryMainCatMap.get(catId);
+            if (requiredMainCat && !selectedMainCats.has(requiredMainCat)) {
+                selectedMainCats.add(requiredMainCat);
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            setMainCatSelection([...selectedMainCats], true);
+        }
+
+        return changed;
+    }
+
     async function initTomSelects() {
         const langSelect = document.getElementById('langSelect');
         if (langSelect) {
@@ -1433,7 +1456,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             catTomSelect.on('item_add', (value) => {
                 const mainCat = categoryMainCatMap.get(String(value));
                 if (!isMainCatAllowed(mainCat)) {
-                    catTomSelect.removeItem(value, true);
+                    ensureMainCatsForSelectedSubcategories([String(value)]);
                 }
             });
             applyCategoryMainCatFilter();
@@ -1948,6 +1971,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             const catValues = params.getAll('category_ids');
             if (catValues.length) {
                 catTomSelect.setValue(catValues, true);
+                ensureMainCatsForSelectedSubcategories(catValues);
             } else {
                 catTomSelect.clear(true);
             }
