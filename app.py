@@ -1148,9 +1148,7 @@ async def mam_autosuggest():
     main_cats = [m for m in request.args.getlist("main_cat") if m]
     if not main_cats:
         main_cats = [m for m in request.args.getlist("media_type") if m]
-    if not main_cats:
-        main_cats = ["13"]
-    if "all" not in main_cats:
+    if main_cats and "all" not in main_cats:
         params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
 
     try:
@@ -2014,16 +2012,7 @@ async def mam_search():
                 FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
             ),
         )
-    query = request.args.get("query", "")
-    if not query: 
-        return await render_template(
-            "partials/results.html",
-            results=[],
-            RESULTS_DISPLAY_FIELDS=app.config.get(
-                "RESULTS_DISPLAY_FIELDS",
-                FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
-            ),
-        )
+    query = request.args.get("query", "").strip()
 
     # Used by templates to decide whether VIP Freeleech applies (fl_vip).
     is_vip_active = False
@@ -2084,7 +2073,6 @@ async def mam_search():
             lang_ids = [str(language_dict.get(lang_value, 1))]
 
     params = {
-        "tor[text]": query,
         "tor[sortType]": "default", "perpage": 50, "thumbnail": "true", "dlLink": "true",
         "tor[browse_lang][]": lang_ids,
         "tor[srchIn][title]": "on" if title_on else "off",
@@ -2097,12 +2085,12 @@ async def mam_search():
         "tor[searchType]": request.args.get("searchType", "all"),
         "isbn": "true", "description": "true", "mediaInfo": "true"
     }
+    if query:
+        params["tor[text]"] = query
     main_cats = [m for m in request.args.getlist("main_cat") if m]
     if not main_cats:
         main_cats = [m for m in request.args.getlist("media_type") if m]
-    if not main_cats:
-        main_cats = ["13"]
-    if "all" not in main_cats:
+    if main_cats and "all" not in main_cats:
         params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
 
     if search_scope := request.args.get("search_scope"):

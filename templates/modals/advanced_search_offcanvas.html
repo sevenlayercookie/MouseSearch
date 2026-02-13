@@ -1,0 +1,377 @@
+  <!-- --- OFFCANVAS: ADVANCED SEARCH --- -->
+  <div class="offcanvas offcanvas-start advanced-search-offcanvas" tabindex="-1" id="advancedSearchOffcanvas"
+    aria-labelledby="advancedSearchLabel">
+    <div class="offcanvas-header bg-body-tertiary border-bottom">
+      <h5 class="offcanvas-title fw-bold" id="advancedSearchLabel">
+        <i class="bi bi-sliders me-2"></i>Advanced Search
+      </h5>
+      <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+
+    <div class="offcanvas-body p-0">
+      <div class="accordion accordion-flush" id="advancedAccordion">
+
+        <!-- SECTION 1: Search Fields -->
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#panelFields" aria-expanded="false">
+              <i class="bi bi-card-text me-2 text-primary"></i>Search Fields
+              <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-2"
+                id="filter-count-fields" style="display:none;">0</span>
+            </button>
+          </h2>
+          <div id="panelFields" class="accordion-collapse collapse" data-bs-parent="#advancedAccordion">
+            <div class="accordion-body bg-body-tertiary">
+              <h6 class="filter-section-title">Search In</h6>
+              <div class="row g-2">
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="advTitle" data-sync-target="search_in_title">
+                    <label class="form-check-label" for="advTitle">Title</label>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="advAuthor"
+                      data-sync-target="search_in_author">
+                    <label class="form-check-label" for="advAuthor">Author</label>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="advSeries"
+                      data-sync-target="search_in_series">
+                    <label class="form-check-label" for="advSeries">Series</label>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="advNarrator"
+                      data-sync-target="search_in_narrator">
+                    <label class="form-check-label" for="advNarrator">Narrator</label>
+                  </div>
+                </div>
+
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="search_in_description" value="true"
+                      id="search_in_description" form="search-form">
+                    <label class="form-check-label" for="search_in_description">Description</label>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="search_in_tags" value="true"
+                      id="search_in_tags" form="search-form">
+                    <label class="form-check-label" for="search_in_tags">Tags</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="search_in_filenames" value="true"
+                      id="search_in_filenames" form="search-form">
+                    <label class="form-check-label" for="search_in_filenames">Filenames (Slow)</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 2: Language -->
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#panelLanguage" aria-expanded="false">
+              <i class="bi bi-translate me-2 text-info"></i>Language
+              <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-2"
+                id="filter-count-language" style="display:none;">0</span>
+            </button>
+          </h2>
+          <div id="panelLanguage" class="accordion-collapse collapse" data-bs-parent="#advancedAccordion">
+            <div class="accordion-body bg-body-tertiary">
+              <select id="langSelect" class="form-select" name="language_ids" multiple
+                placeholder="Select languages..." autocomplete="off" form="search-form">
+                {% for lang, lang_id in LANGUAGE_CHOICES %}
+                <option value="{{ lang_id }}" {% if lang_id == DEFAULT_LANGUAGE_ID %}selected{% endif %}>{{ lang }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text text-muted small mt-1">Type to search languages.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 3: Status & Type -->
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#panelStatus" aria-expanded="false">
+              <i class="bi bi-activity me-2 text-secondary"></i>Status & Type
+              <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-2"
+                id="filter-count-status" style="display:none;">0</span>
+            </button>
+          </h2>
+          <div id="panelStatus" class="accordion-collapse collapse" data-bs-parent="#advancedAccordion">
+            <div class="accordion-body bg-body-tertiary">
+              <h6 class="filter-section-title">Torrent Status</h6>
+              <div class="mb-3">
+                <div class="btn-group w-100 mb-2" role="group" aria-label="Search Type Basic">
+                  <input type="radio" class="btn-check" name="searchType" id="stAll" value="all" form="search-form"
+                    checked>
+                  <label class="btn btn-outline-secondary btn-sm" for="stAll">All</label>
+
+                  <input type="radio" class="btn-check" name="searchType" id="stActive" value="active"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary btn-sm" for="stActive">Active</label>
+
+                  <input type="radio" class="btn-check" name="searchType" id="stInactive" value="inactive"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary btn-sm" for="stInactive">Inactive</label>
+                </div>
+                <div class="d-flex flex-wrap gap-2" role="group" aria-label="Search Type Special">
+                  <input type="radio" class="btn-check" name="searchType" id="stFL" value="fl" form="search-form">
+                  <label class="btn btn-outline-success btn-sm" for="stFL">Freeleech</label>
+
+                  <input type="radio" class="btn-check" name="searchType" id="stFLVIP" value="fl-VIP"
+                    form="search-form">
+                  <label class="btn btn-outline-success btn-sm" for="stFLVIP">Freeleech or VIP</label>
+
+                  <input type="radio" class="btn-check" name="searchType" id="stVIP" value="VIP" form="search-form">
+                  <label class="btn btn-outline-warning btn-sm" for="stVIP">VIP</label>
+
+                  <input type="radio" class="btn-check" name="searchType" id="stNVIP" value="nVIP" form="search-form">
+                  <label class="btn btn-outline-info btn-sm" for="stNVIP">Not VIP</label>
+
+                  <input type="radio" class="btn-check" name="searchType" id="stNMeta" value="nMeta" form="search-form">
+                  <label class="btn btn-outline-secondary btn-sm" for="stNMeta">Missing Metadata</label>
+                </div>
+              </div>
+
+              <h6 class="filter-section-title">Search Scope</h6>
+              <div class="d-grid gap-2">
+                <div class="btn-group-vertical" role="group">
+                  <input type="radio" class="btn-check" name="search_scope" id="siTorrents" value="torrents"
+                    form="search-form" checked>
+                  <label class="btn btn-outline-secondary text-start ps-3 btn-sm" for="siTorrents">
+                    <i class="bi bi-globe me-2"></i>Global Torrents
+                  </label>
+
+                  <input type="radio" class="btn-check" name="search_scope" id="siBookmarks" value="bookmarks"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary text-start ps-3 btn-sm" for="siBookmarks">
+                    <i class="bi bi-bookmark-fill me-2"></i>My Bookmarks
+                  </label>
+
+                  <input type="radio" class="btn-check" name="search_scope" id="siMine" value="mine"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary text-start ps-3 btn-sm" for="siMine">
+                    <i class="bi bi-cloud-upload-fill me-2"></i>My Uploads
+                  </label>
+
+                  <input type="radio" class="btn-check" name="search_scope" id="siNew" value="new"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary text-start ps-3 btn-sm" for="siNew">
+                    <i class="bi bi-stars me-2"></i>Flagged New
+                  </label>
+
+                  <input type="radio" class="btn-check" name="search_scope" id="siAllReseed" value="allReseed"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary text-start ps-3 btn-sm" for="siAllReseed">
+                    <i class="bi bi-recycle me-2"></i>All Reseed Requests
+                  </label>
+
+                  <input type="radio" class="btn-check" name="search_scope" id="siMyReseed" value="myReseed"
+                    form="search-form">
+                  <label class="btn btn-outline-secondary text-start ps-3 btn-sm" for="siMyReseed">
+                    <i class="bi bi-person-check-fill me-2"></i>Torrents I can reseed
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 4: Categories -->
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#panelCats">
+              <i class="bi bi-grid-3x3-gap-fill me-2 text-info"></i>Categories
+              <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-2"
+                id="filter-count-cats" style="display:none;">0</span>
+            </button>
+          </h2>
+          <div id="panelCats" class="accordion-collapse collapse" data-bs-parent="#advancedAccordion">
+            <div class="accordion-body">
+              <label class="form-label small fw-semibold" for="mainCatSelect">Main categories</label>
+              <select id="mainCatSelect" class="form-select mb-3" multiple aria-label="Main categories"
+                autocomplete="off">
+                <option value="all">All</option>
+                <option value="13">Audiobooks</option>
+                <option value="14">E-Books</option>
+                <option value="15">Musicology</option>
+                <option value="16">Radio</option>
+              </select>
+              <select id="catSelect" class="form-select" name="category_ids" multiple
+                placeholder="Select categories..." autocomplete="off" form="search-form">
+              </select>
+              <div class="form-text text-muted small mt-1">Type to search categories.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 5: Filters (Flags) -->
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#panelFlags">
+              <i class="bi bi-flag-fill me-2 text-danger"></i>Content Filters
+              <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-2"
+                id="filter-count-flags" style="display:none;">0</span>
+            </button>
+          </h2>
+          <div id="panelFlags" class="accordion-collapse collapse" data-bs-parent="#advancedAccordion">
+            <div class="accordion-body">
+              <div class="bg-body-tertiary p-2 rounded mb-3">
+                <label class="form-label small fw-bold mb-2">Filter Mode</label>
+                <div class="d-flex gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="flags_mode" id="flagExclude" value="0"
+                      form="search-form" checked>
+                    <label class="form-check-label small" for="flagExclude">Exclude Selected</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="flags_mode" id="flagInclude" value="1"
+                      form="search-form">
+                    <label class="form-check-label small" for="flagInclude">Require Selected</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input flag-checkbox" type="checkbox" name="flag_ids" value="2"
+                  id="flagCrude" form="search-form">
+                <label class="form-check-label" for="flagCrude">Crude Language</label>
+              </div>
+              <div class="form-check mb-2">
+                <input class="form-check-input flag-checkbox" type="checkbox" name="flag_ids" value="4"
+                  id="flagViolence" form="search-form">
+                <label class="form-check-label" for="flagViolence">Violence</label>
+              </div>
+              <div class="form-check mb-2">
+                <input class="form-check-input flag-checkbox" type="checkbox" name="flag_ids" value="8"
+                  id="flagSomeExplicit" form="search-form">
+                <label class="form-check-label" for="flagSomeExplicit">Some Explicit Sexual Content</label>
+              </div>
+              <div class="form-check mb-2">
+                <input class="form-check-input flag-checkbox" type="checkbox" name="flag_ids" value="16"
+                  id="flagExplicit" form="search-form">
+                <label class="form-check-label" for="flagExplicit">Explicit Sexual Content</label>
+              </div>
+              <div class="form-check mb-2">
+                <input class="form-check-input flag-checkbox" type="checkbox" name="flag_ids" value="32"
+                  id="flagAbridged" form="search-form">
+                <label class="form-check-label" for="flagAbridged">Abridged</label>
+              </div>
+              <div class="form-check mb-2">
+                <input class="form-check-input flag-checkbox" type="checkbox" name="flag_ids" value="64"
+                  id="flagLGBT" form="search-form">
+                <label class="form-check-label" for="flagLGBT">LGBT</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 6: Ranges (Date, Size, Stats) -->
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#panelRanges">
+              <i class="bi bi-sliders2 me-2 text-success"></i>Size, Dates & Stats
+              <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-2"
+                id="filter-count-ranges" style="display:none;">0</span>
+            </button>
+          </h2>
+          <div id="panelRanges" class="accordion-collapse collapse" data-bs-parent="#advancedAccordion">
+            <div class="accordion-body">
+              <h6 class="filter-section-title">Upload Date</h6>
+              <div class="input-group mb-3">
+                <span class="input-group-text">From</span>
+                <input type="date" class="form-control" name="start_date" form="search-form">
+              </div>
+              <div class="input-group mb-4">
+                <span class="input-group-text">To&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                <input type="date" class="form-control" name="end_date" form="search-form">
+              </div>
+
+              <h6 class="filter-section-title">File Size</h6>
+              <div class="input-group mb-4">
+                <div class="form-floating">
+                  <input type="number" class="form-control" id="minSize" name="min_size" placeholder="Min"
+                    form="search-form">
+                  <label for="minSize">Min</label>
+                </div>
+                <div class="form-floating">
+                  <input type="number" class="form-control" id="maxSize" name="max_size" placeholder="Max"
+                    form="search-form">
+                  <label for="maxSize">Max</label>
+                </div>
+                <select class="form-select bg-body-tertiary" style="max-width: fit-content;" name="size_unit"
+                  form="search-form">
+                  <option value="1048576" selected>MiB</option>
+                  <option value="1073741824">GiB</option>
+                  <option value="1024">KiB</option>
+                  <option value="1">Bytes</option>
+                </select>
+              </div>
+
+              <h6 class="filter-section-title">Stats</h6>
+              <div class="row g-2">
+                <div class="col-12">
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text w-25">Seeders</span>
+                    <input type="number" class="form-control" placeholder="Min" name="min_seeders"
+                      form="search-form">
+                    <input type="number" class="form-control" placeholder="Max" name="max_seeders"
+                      form="search-form">
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text w-25">Leechers</span>
+                    <input type="number" class="form-control" placeholder="Min" name="min_leechers"
+                      form="search-form">
+                    <input type="number" class="form-control" placeholder="Max" name="max_leechers"
+                      form="search-form">
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text w-25">Snatched</span>
+                    <input type="number" class="form-control" placeholder="Min" name="min_snatched"
+                      form="search-form">
+                    <input type="number" class="form-control" placeholder="Max" name="max_snatched"
+                      form="search-form">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="offcanvas-footer p-3 border-top bg-body-tertiary">
+      <div class="d-grid gap-2">
+        <button class="btn btn-primary" type="submit" form="search-form">
+          Apply Filters
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" type="reset" form="search-form">
+          Reset All
+        </button>
+      </div>
+    </div>
+  </div>

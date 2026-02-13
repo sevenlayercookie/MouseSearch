@@ -69,7 +69,7 @@ function loadLegacyCategoryDefinitions() {
     return legacyCategoryPromise;
 }
 
-const DEFAULT_MAIN_CATS = ['13'];
+const DEFAULT_MAIN_CATS = [];
 
 function normalizeMainCatValues(values) {
     const uniqueValues = [...new Set(values.map(String).filter(Boolean))];
@@ -1209,12 +1209,19 @@ document.addEventListener("DOMContentLoaded", async function () {
     const resultDisplayOptions = document.querySelectorAll('.result-display-option');
     const advancedOffcanvasEl = document.getElementById('advancedSearchOffcanvas');
     const filterBadge = document.getElementById('filter-count');
+    const sectionFilterBadges = {
+        fields: document.getElementById('filter-count-fields'),
+        language: document.getElementById('filter-count-language'),
+        status: document.getElementById('filter-count-status'),
+        categories: document.getElementById('filter-count-cats'),
+        flags: document.getElementById('filter-count-flags'),
+        ranges: document.getElementById('filter-count-ranges')
+    };
 
     const DEFAULT_SEARCH_TYPE = 'all';
     const DEFAULT_SEARCH_SCOPE = 'torrents';
     const DEFAULT_LANGUAGE_ID = window.DEFAULT_LANGUAGE_ID ? String(window.DEFAULT_LANGUAGE_ID) : '1';
     const DEFAULT_LANGUAGE_SET = new Set([DEFAULT_LANGUAGE_ID]);
-    const DEFAULT_MAIN_CAT_SET = new Set(DEFAULT_MAIN_CATS);
     const DEFAULT_SEARCH_FIELDS = {
         search_in_title: true,
         search_in_author: true,
@@ -1301,10 +1308,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         mainCatSelectSyncing = true;
 
         const rawValues = source ? getTomSelectValues(source) : [];
-        let normalized = normalizeMainCatValues(rawValues);
-        if (!normalized.length) {
-            normalized = DEFAULT_MAIN_CATS.slice();
-        }
+        const normalized = normalizeMainCatValues(rawValues);
 
         if (source) {
             const rawSet = new Set(rawValues.map(String));
@@ -1329,7 +1333,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     function setMainCatSelection(values, silent = true) {
         const normalized = normalizeMainCatValues(values);
-        const finalValues = normalized.length ? normalized : DEFAULT_MAIN_CATS.slice();
+        const finalValues = normalized;
 
         if (mainCatPrimaryTomSelect) {
             mainCatPrimaryTomSelect.setValue(finalValues, silent);
@@ -1464,41 +1468,75 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     function updateFilterBadge() {
-        if (!filterBadge) return;
-        let count = 0;
+        const setSectionBadge = (badgeEl, count) => {
+            if (!badgeEl) return;
+            badgeEl.textContent = String(count);
+            badgeEl.style.display = count ? 'inline-block' : 'none';
+        };
 
         const searchType = document.querySelector('input[name="searchType"]:checked')?.value || DEFAULT_SEARCH_TYPE;
-        if (searchType !== DEFAULT_SEARCH_TYPE) count++;
-
         const searchScope = document.querySelector('input[name="search_scope"]:checked')?.value || DEFAULT_SEARCH_SCOPE;
-        if (searchScope !== DEFAULT_SEARCH_SCOPE) count++;
+        const statusCount = (searchType !== DEFAULT_SEARCH_TYPE ? 1 : 0) + (searchScope !== DEFAULT_SEARCH_SCOPE ? 1 : 0);
 
-        const fieldDiff = Object.entries(DEFAULT_SEARCH_FIELDS).some(([id, defVal]) => {
+        let fieldCount = 0;
+        Object.entries(DEFAULT_SEARCH_FIELDS).forEach(([id, defVal]) => {
             const el = document.getElementById(id);
-            return el ? el.checked !== defVal : false;
+            if (el && el.checked !== defVal) {
+                fieldCount++;
+            }
         });
-        if (fieldDiff) count++;
 
+        let languageCount = 0;
         if (langTomSelect) {
-            const selected = new Set(getTomSelectValues(langTomSelect));
-            if (!setsEqual(selected, DEFAULT_LANGUAGE_SET)) count++;
+            const selectedValues = getTomSelectValues(langTomSelect).map(String).filter(Boolean);
+            const selectedSet = new Set(selectedValues);
+            if (!setsEqual(selectedSet, DEFAULT_LANGUAGE_SET)) {
+                languageCount = selectedValues.length || 1;
+            }
         }
 
+        let categoriesCount = 0;
         const selectedMainCats = new Set(getSelectedMainCats());
-        if (selectedMainCats.size && !setsEqual(selectedMainCats, DEFAULT_MAIN_CAT_SET)) count++;
+        const mainCatFilterCount = selectedMainCats.has('all') ? 0 : selectedMainCats.size;
+        if (mainCatFilterCount) {
+            categoriesCount += mainCatFilterCount;
+        }
+        if (catTomSelect) {
+            categoriesCount += getTomSelectValues(catTomSelect).length;
+        }
 
-        if (catTomSelect && getTomSelectValues(catTomSelect).length) count++;
-        if (document.querySelectorAll('.flag-checkbox:checked').length) count++;
+        const selectedFlagsCount = document.querySelectorAll('.flag-checkbox:checked').length;
+        const flagsMode = document.querySelector('input[name="flags_mode"]:checked')?.value || '0';
+        let flagsCount = selectedFlagsCount;
+        if (selectedFlagsCount && flagsMode !== '0') {
+            flagsCount++;
+        }
 
         const getValue = (selector) => document.querySelector(selector)?.value?.trim();
-        if (getValue('input[name="start_date"]') || getValue('input[name="end_date"]')) count++;
-        if (getValue('input[name="min_size"]') || getValue('input[name="max_size"]')) count++;
+        const rangeFields = [
+            'start_date', 'end_date',
+            'min_size', 'max_size',
+            'min_seeders', 'max_seeders',
+            'min_leechers', 'max_leechers',
+            'min_snatched', 'max_snatched'
+        ];
+        const rangesCount = rangeFields.reduce((sum, name) => (
+            getValue(`input[name="${name}"]`) ? sum + 1 : sum
+        ), 0);
 
-        const statFields = ['min_seeders', 'max_seeders', 'min_leechers', 'max_leechers', 'min_snatched', 'max_snatched'];
-        if (statFields.some(name => getValue(`input[name="${name}"]`))) count++;
+        const count = statusCount + fieldCount + languageCount + categoriesCount + flagsCount + rangesCount;
 
-        filterBadge.textContent = count;
-        filterBadge.style.display = count ? 'inline-block' : 'none';
+        setSectionBadge(sectionFilterBadges.status, statusCount);
+        setSectionBadge(sectionFilterBadges.fields, fieldCount);
+        setSectionBadge(sectionFilterBadges.language, languageCount);
+        setSectionBadge(sectionFilterBadges.categories, categoriesCount);
+        setSectionBadge(sectionFilterBadges.flags, flagsCount);
+        setSectionBadge(sectionFilterBadges.ranges, rangesCount);
+
+        if (filterBadge) {
+            filterBadge.textContent = count;
+            filterBadge.style.display = count ? 'inline-block' : 'none';
+        }
     }
 
     if (searchForm) {
@@ -1851,15 +1889,13 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (confirmInput && previewSpan) confirmInput.addEventListener('input', function () { previewSpan.textContent = this.value; });
 
     function performSearch(queryString, isHistoryNavigation = false) {
-        if (!queryString) return Promise.resolve(); // Return resolved promise if no query
-
         searchButton.disabled = true;
         searchButton.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Searching...`;
         if (resultsTitle) resultsTitle.textContent = 'Results';
         hashToElementMap.clear();
+        const searchUrl = queryString ? `/mam/search?${queryString}` : '/mam/search';
 
-        // ADD 'return' HERE
-        return fetch(`/mam/search?${queryString}`)
+        return fetch(searchUrl)
             .then(response => response.text())
             .then(html => {
                 wrapper.style.display = 'block';
@@ -2805,9 +2841,7 @@ function initAutosuggest(inputId) {
             });
 
             const mainCatValues = mainCatPrimaryTomSelect ? getTomSelectValues(mainCatPrimaryTomSelect) : [];
-            const normalizedMainCats = normalizeMainCatValues(
-                mainCatValues.length ? mainCatValues : DEFAULT_MAIN_CATS
-            );
+            const normalizedMainCats = normalizeMainCatValues(mainCatValues);
             if (normalizedMainCats.length) {
                 normalizedMainCats.forEach(id => params.append('main_cat', id));
             }
