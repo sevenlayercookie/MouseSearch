@@ -16,7 +16,7 @@ from dotenv import load_dotenv, dotenv_values
 from httpx import Limits, Timeout, AsyncHTTPTransport
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import re
 from pathlib import Path
@@ -29,7 +29,7 @@ from static.language_dict import language_dict
 import asyncio
 
 from clients import get_torrent_client, get_client_display_name, get_available_clients
-from hashing import calculate_torrent_hash_from_url
+from hashing import calculate_torrent_hash_from_url, calculate_torrent_hash_from_bytes
 
 # --- SCHEDULER AND STATE SETUP ---
 app = Quart(__name__)
@@ -732,7 +732,7 @@ async def monitor_downloads_loop():
             # --- END LOOP OVER ITEMS ---
 
             for h in finished_hashes:
-                app.logger.info(f"[MONITOR] Torrent {h} finished. Triggering Auto-Organize.")
+                app.logger.info(f"[MONITOR] Torrent {h} finished.")
 
                 if h in torrents_info:
                     final_status = {h: torrents_info[h]}
@@ -741,12 +741,13 @@ async def monitor_downloads_loop():
                         "torrents": final_status
                     })
 
-                try:
-                    success, msg = await _perform_organization(h)
-                    if not success:
-                        app.logger.warning(f"[MONITOR] Auto-organize failed for {h}: {msg}")
-                except Exception as e:
-                    app.logger.error(f"[MONITOR] Exception during auto-organize for {h}: {e}", exc_info=True)
+                if app.config.get("AUTO_ORGANIZE_ON_ADD"):
+                    try:
+                        success, msg = await _perform_organization(h)
+                        if not success:
+                            app.logger.warning(f"[MONITOR] Auto-organize failed for {h}: {msg}")
+                    except Exception as e:
+                        app.logger.error(f"[MONITOR] Exception during auto-organize for {h}: {e}", exc_info=True)
                 if h in monitoring_state:
                     del monitoring_state[h]
                 
@@ -1518,6 +1519,46 @@ async def get_user_stats():
     except Exception as e:
         app.logger.error(f"Error parsing user stats: {e}")
         return None
+
+async def fetch_torrent_file_from_mam(torrent_url: str) -> tuple[bytes | None, str | None]:
+    """
+    Downloads a .torrent file with MAM cookies so the app can upload raw bytes
+    to qBittorrent instead of delegating URL fetch/authentication to qB.
+    """
+    if not torrent_url:
+        return None, None
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            response = await client.get(torrent_url, cookies=mam_session_cookies)
+            update_cookies(response)
+            response.raise_for_status()
+
+        torrent_bytes = response.content
+        if not torrent_bytes:
+            return None, None
+
+        filename = "download.torrent"
+        content_disposition = response.headers.get("Content-Disposition", "")
+        filename_match = re.search(
+            r"filename\*?=(?:UTF-8''|\"|)?([^\";]+)",
+            content_disposition,
+            flags=re.IGNORECASE
+        )
+        if filename_match:
+            filename = unquote(filename_match.group(1)).strip()
+        else:
+            basename = os.path.basename(urlparse(str(response.url)).path)
+            if basename:
+                filename = basename
+
+        if not filename.lower().endswith(".torrent"):
+            filename = f"{filename}.torrent"
+
+        return torrent_bytes, filename
+    except Exception as e:
+        app.logger.error(f"Failed to download torrent file from MAM URL '{torrent_url}': {e}")
+        return None, None
     
 # --- GENERIC TORRENT CLIENT ROUTES ---
 @app.route('/client/status', methods=['GET'])
@@ -1630,13 +1671,26 @@ async def client_add_torrent():
     
     auto_organize_warning = None
     hash_val = None
+    client_type = app.config.get("TORRENT_CLIENT_TYPE", "qbittorrent").lower()
+    qb_add_kwargs = {}
+
+    # qBittorrent-only behavior: MouseSearch fetches the torrent binary from MAM
+    # and uploads it to qB via multipart/form-data (`torrents` field).
+    if client_type == "qbittorrent" and torrent_url and torrent_url.lower().startswith(("http://", "https://")):
+        torrent_file_data, torrent_filename = await fetch_torrent_file_from_mam(torrent_url)
+        if torrent_file_data is None:
+            return jsonify({'error': 'Failed to download torrent file from MAM before sending to qBittorrent'}), 400
+        qb_add_kwargs = {
+            "torrent_data": torrent_file_data,
+            "torrent_filename": torrent_filename
+        }
     
-    # Check if MID is present - if so, skip hash calculation
-    if id and id != '0' and app.config.get("AUTO_ORGANIZE_ON_ADD"):
+    # Check if MID is present - if so, skip hash calculation and resolve hash via MID polling.
+    if id and id != '0':
         app.logger.info(f"MID {id} detected - adding torrent without hash calculation")
         
         # Add torrent immediately
-        result = await torrent_client.add_torrent(torrent_url, category, mid=id)
+        result = await torrent_client.add_torrent(torrent_url, category, mid=id, **qb_add_kwargs)
         
         if result['status'] == 'success':
             # Extract additional metadata from incoming_data
@@ -1668,8 +1722,11 @@ async def client_add_torrent():
             return jsonify({'error': result.get('message', 'Unknown error')}), 400
     
     # Fallback: No MID or auto-organize disabled - use old hash-based approach
-    app.logger.warning(f"WARNING: running hash calculation for torrent URL without MID: {torrent_url}")
-    hash_val = await calculate_torrent_hash_from_url(torrent_url)
+    if qb_add_kwargs.get("torrent_data") is not None:
+        hash_val = calculate_torrent_hash_from_bytes(qb_add_kwargs["torrent_data"])
+    else:
+        app.logger.warning(f"WARNING: running hash calculation for torrent URL without MID: {torrent_url}")
+        hash_val = await calculate_torrent_hash_from_url(torrent_url)
     
     if app.config.get("AUTO_ORGANIZE_ON_ADD"):
         if not hash_val:
@@ -1693,11 +1750,11 @@ async def client_add_torrent():
             save_database(metadata)
             app.logger.info(f"Saved metadata for torrent hash: {hash_val}")
     
-    result = await torrent_client.add_torrent(torrent_url, category)
+    result = await torrent_client.add_torrent(torrent_url, category, **qb_add_kwargs)
     
     if result['status'] == 'success':
-        # Start Monitoring
-        if hash_val and app.config.get("AUTO_ORGANIZE_ON_ADD"):
+        # Start progress monitoring regardless of auto-organize setting.
+        if hash_val:
             monitoring_state[hash_val] = {
                 "added_at": time.time()
             }
