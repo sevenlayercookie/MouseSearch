@@ -514,6 +514,7 @@ FALLBACK_CONFIG = {
     "AUTO_BUY_UPLOAD_BONUS_AMOUNT": 50,
     "AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS": 6,
     "BLOCK_DOWNLOAD_ON_LOW_BUFFER": True,
+    "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD": False,
     "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": True,
     "THUMBNAIL_CACHE_MAX_SIZE_MB": 500,
     "MAX_SEARCH_RESULTS": 50,
@@ -614,6 +615,7 @@ def load_config():
         "AUTO_BUY_UPLOAD_ON_BUFFER",
         "AUTO_BUY_UPLOAD_ON_BONUS",
         "BLOCK_DOWNLOAD_ON_LOW_BUFFER",
+        "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD",
         "ENABLE_FILESYSTEM_THUMBNAIL_CACHE"
     ]:
         config[key] = coerce_bool(config.get(key), FALLBACK_CONFIG[key])
@@ -1650,31 +1652,36 @@ async def mam_buy_personal_fl():
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid torrentid'}), 400
 
-        epoch_ms = int(time.time() * 1000)
-
-        # MAM expects the timestamp in both the path and as a query arg.
-        api_url = f"{app.config.get('MAM_API_URL')}/json/bonusBuy.php/{epoch_ms}"
-        params = {
-            'spendtype': 'personalFL',
-            'torrentid': torrentid,
-            'timestamp': epoch_ms,
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.get(api_url, params=params, cookies=mam_session_cookies, timeout=10)
-            update_cookies(response)
-            response.raise_for_status()
-            result = response.json()
-
-        if result.get('success'):
-            await push_mam_stats()
-        else:
-            app.logger.warning(f"[BUY-PERSONAL-FL] Purchase failed: {result}")
-
+        result = await purchase_personal_fl_wedge(torrentid)
         return jsonify(result)
     except Exception as e:
         app.logger.error(f"Error buying personal freeleech: {e}")
         return jsonify({'success': False, 'error': 'Failed to spend freeleech token'}), 503
+
+
+async def purchase_personal_fl_wedge(torrentid: int) -> dict:
+    """Attempt to spend a personal freeleech wedge for a torrent id."""
+    epoch_ms = int(time.time() * 1000)
+
+    api_url = f"{app.config.get('MAM_API_URL')}/json/bonusBuy.php/{epoch_ms}"
+    params = {
+        'spendtype': 'personalFL',
+        'torrentid': int(torrentid),
+        'timestamp': epoch_ms,
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(api_url, params=params, cookies=mam_session_cookies, timeout=10)
+        update_cookies(response)
+        response.raise_for_status()
+        result = response.json()
+
+    if result.get('success'):
+        await push_mam_stats()
+    else:
+        app.logger.warning(f"[BUY-PERSONAL-FL] Purchase failed: {result}")
+
+    return result
         
 
 # Helper function to clean the specific MAM JSON format
@@ -1890,6 +1897,41 @@ async def client_add_torrent():
     id = incoming_data.get('id', '0')
     category = incoming_data.get('category', app.config.get("TORRENT_CLIENT_CATEGORY", ""))
     torrent_size_str = incoming_data.get('size', '0 GiB')  # e.g., "1.5 GiB"
+    is_public_freeleech = False
+    try:
+        is_public_freeleech = int(incoming_data.get('free', 0) or 0) == 1
+    except (ValueError, TypeError):
+        is_public_freeleech = False
+
+    if app.config.get("AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD", False):
+        if is_public_freeleech:
+            app.logger.info("[DOWNLOAD] Auto Freeleech wedge purchase skipped: torrent is already public freeleech.")
+        else:
+            torrent_id_for_fl = None
+            try:
+                if id not in (None, '', '0', 0):
+                    torrent_id_for_fl = int(id)
+            except (ValueError, TypeError):
+                torrent_id_for_fl = None
+
+            if torrent_id_for_fl is not None:
+                try:
+                    if await login_mam():
+                        fl_result = await purchase_personal_fl_wedge(torrent_id_for_fl)
+                        if fl_result.get('success'):
+                            app.logger.info(f"[DOWNLOAD] Auto-purchased Freeleech wedge for torrent {torrent_id_for_fl}")
+                        else:
+                            app.logger.warning(
+                                f"[DOWNLOAD] Auto Freeleech wedge purchase failed for torrent {torrent_id_for_fl}; continuing download. Result={fl_result}"
+                            )
+                    else:
+                        app.logger.warning(
+                            f"[DOWNLOAD] Auto Freeleech wedge purchase skipped for torrent {torrent_id_for_fl}; not logged into MAM. Continuing download."
+                        )
+                except Exception as e:
+                    app.logger.warning(
+                        f"[DOWNLOAD] Auto Freeleech wedge purchase errored for torrent {torrent_id_for_fl}; continuing download. Error={e}"
+                    )
     
     # Check if download should be blocked due to low buffer
     if app.config.get("BLOCK_DOWNLOAD_ON_LOW_BUFFER", True) and await login_mam():
@@ -2733,7 +2775,7 @@ async def api_settings():
 async def update_settings():
     form = await request.form
     config_to_update = app.config.copy()
-    boolean_fields = {"AUTO_ORGANIZE_ON_ADD", "AUTO_ORGANIZE_ON_SCHEDULE", "AUTO_ORGANIZE_USE_COPY", "HAPTICS_ENABLED", "ENABLE_DYNAMIC_IP_UPDATE", "AUTO_BUY_VIP", "AUTO_BUY_UPLOAD_ON_RATIO", "AUTO_BUY_UPLOAD_ON_BUFFER", "AUTO_BUY_UPLOAD_ON_BONUS", "BLOCK_DOWNLOAD_ON_LOW_BUFFER"}
+    boolean_fields = {"AUTO_ORGANIZE_ON_ADD", "AUTO_ORGANIZE_ON_SCHEDULE", "AUTO_ORGANIZE_USE_COPY", "HAPTICS_ENABLED", "ENABLE_DYNAMIC_IP_UPDATE", "AUTO_BUY_VIP", "AUTO_BUY_UPLOAD_ON_RATIO", "AUTO_BUY_UPLOAD_ON_BUFFER", "AUTO_BUY_UPLOAD_ON_BONUS", "BLOCK_DOWNLOAD_ON_LOW_BUFFER", "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD"}
     for key in FALLBACK_CONFIG.keys():
         if key in boolean_fields: config_to_update[key] = key in form
         elif key in form: config_to_update[key] = form[key]

@@ -24,7 +24,7 @@ MouseSearch is a self-hosted web application that provides a clean, fast search 
     * **[NEW]** Auto-purchase when bonus points exceed a threshold (spends excess points to build buffer)
     * Pre-download buffer check - prevents downloads larger than available buffer and prompts for upload credit purchase
     * Manual purchase interface with preset amounts, custom multiples of 50 GB (up to 200 GB), or max affordable option (rounded down to the nearest 50 GB)
-* **Freeleech Tools:** VIP Freeleech awareness in search results plus a personal Freeleech wedge button in the download confirmation dialog.
+* **Freeleech Tools:** VIP Freeleech awareness in search results, a personal Freeleech wedge button in the download confirmation dialog, and an optional setting to auto-attempt wedge purchase before every download add.
 * **Enhanced Details UI:** Responsive cards, improved book details layout, a high-res cover lightbox, and a **MediaInfo Inspector** tree for viewing technical file metadata.
 * **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time in results and the book details modal. Designates previously downloaded torrents as "Downloaded".
 * **Template-Based Organization Paths:** Define a default relative path template (e.g., `{Author}/{Title}` or `{Author}/{Series}/{Title}`) with token helpers and live preview in Settings.
@@ -174,6 +174,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `AUTO_BUY_UPLOAD_BONUS_AMOUNT` | No | Amount of upload credit (in GB) to purchase per bonus-threshold check (multiples of 50 only). Defaults to `50`. |
 | `AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS` | No | Number of hours between ratio/buffer/bonus checks (only applies if auto-buy upload is enabled). Defaults to `6`. |
 | `BLOCK_DOWNLOAD_ON_LOW_BUFFER` | No | Set to `true` to prevent downloads when torrent size exceeds available buffer (prompts user to purchase upload credit). Defaults to `true`. |
+| `AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD` | No | Set to `true` to auto-attempt spending a personal Freeleech wedge before each download add. If purchase fails, the torrent is still added. Defaults to `false`. |
 | `AUTO_ORGANIZE_ON_ADD` | No | Set to `true` to enable auto-organization when torrents are added. Defaults to `false`. |
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |
 | `AUTO_ORGANIZE_INTERVAL_HOURS` | No | Number of hours between scheduled organization scans (only applies if `AUTO_ORGANIZE_ON_SCHEDULE` is `true`). Defaults to `1`. |

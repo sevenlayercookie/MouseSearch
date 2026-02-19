@@ -321,6 +321,24 @@
             </div>
           </div>
 
+          <div class="card mb-3 border-secondary-subtle">
+            <div
+              class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              onclick="toggleCardSwitch('AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD')">
+              <span class="d-flex small fw-bold">
+                <i class="bi bi-pie-chart-fill me-2"></i> Auto-Buy Freeleech Wedge on Download
+              </span>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" id="AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD"
+                  name="AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD" {% if AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD %}checked{% endif %}
+                  onclick="event.stopPropagation()">
+              </div>
+            </div>
+            <div class="card-body pt-2 pb-2 small text-body-secondary">
+              Before each download, MouseSearch attempts to spend one personal Freeleech wedge. If purchase fails, the download still proceeds.
+            </div>
+          </div>
+
           <hr class="border-secondary-subtle my-4">
           <h6 class="text-uppercase mb-3">Upload Credit Automation</h6>
 
