@@ -342,7 +342,9 @@ function normalizeRelPathTemplate(template) {
 }
 
 function stripSeriesTokenFromTemplate(template) {
-    let cleaned = normalizeRelPathTemplate(template).split('{Series}').join('');
+    let cleaned = normalizeRelPathTemplate(template)
+        .split('{Series}').join('')
+        .split('{SeriesNumber}').join('');
     cleaned = cleaned.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
     return cleaned || DEFAULT_REL_PATH_TEMPLATE;
 }
@@ -362,6 +364,7 @@ function buildRelativePathFromTemplate(template, values) {
     const replacements = {
         '{Author}': values.author || '',
         '{Series}': values.series || '',
+        '{SeriesNumber}': values.seriesNumber || '',
         '{Title}': values.title || ''
     };
     for (const [token, value] of Object.entries(replacements)) {
@@ -390,17 +393,51 @@ function setSeriesToggleButtonState(button, isActive) {
 }
 
 function getSeriesName(seriesJsonStr) {
+    const primarySeries = getPrimarySeriesInfo(seriesJsonStr);
+    return primarySeries?.name || null;
+}
+
+function normalizeSeriesNumber(seriesNumber) {
+    if (seriesNumber === null || seriesNumber === undefined) return '';
+    if (typeof seriesNumber === 'number') {
+        if (!Number.isFinite(seriesNumber) || seriesNumber < 0) return '';
+        return Number.isInteger(seriesNumber) ? String(seriesNumber) : String(seriesNumber).replace(/\.?0+$/, '');
+    }
+
+    const numberText = String(seriesNumber).trim();
+    if (!numberText) return '';
+
+    const parsed = Number(numberText);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed) && parsed >= 0) {
+        return Number.isInteger(parsed) ? String(parsed) : String(parsed).replace(/\.?0+$/, '');
+    }
+
+    return numberText;
+}
+
+function getPrimarySeriesInfo(seriesInfo) {
     try {
-        if (!seriesJsonStr) return null;
-        const data = JSON.parse(seriesJsonStr);
+        if (!seriesInfo) return null;
+        const data = typeof seriesInfo === 'object' ? seriesInfo : JSON.parse(seriesInfo);
         const values = Object.values(data);
         if (values.length > 0 && Array.isArray(values[0])) {
-            return values[0][0];
+            const [seriesName, seriesNumber] = values[0];
+            const name = String(seriesName || '').trim();
+            if (!name) return null;
+            return {
+                name,
+                number: normalizeSeriesNumber(seriesNumber)
+            };
         }
     } catch (e) {
         console.error("Error parsing series info:", e);
     }
     return null;
+}
+
+function formatPrimarySeriesLabel(primarySeries) {
+    if (!primarySeries?.name) return '';
+    return primarySeries.number ? `${primarySeries.name} #${primarySeries.number}` : primarySeries.name;
 }
 
 // ============================================================
@@ -1118,6 +1155,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         const previewData = {
             '{Author}': 'J.K. Rowling',
             '{Series}': 'Harry Potter',
+            '{SeriesNumber}': '1',
             '{Title}': "Harry Potter and the Sorcerer's Stone"
         };
 
@@ -2929,7 +2967,9 @@ document.addEventListener("DOMContentLoaded", async function () {
  */
     function initiateDownloadFlow(button, resultItem) {
         const rawSeries = button.dataset.seriesInfo;
-        const seriesName = getSeriesName(rawSeries);
+        const primarySeries = getPrimarySeriesInfo(rawSeries);
+        const seriesName = primarySeries?.name || null;
+        const seriesNumber = primarySeries?.number || "";
 
         // 1. Construct the download payload from the button's data attributes
         const downloadData = {
@@ -2974,8 +3014,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const cleanAuthor = sanitizeFilename(downloadData.author);
                 const cleanTitle = sanitizeFilename(downloadData.title);
                 const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
+                const cleanSeriesNumber = seriesNumber ? sanitizeFilename(seriesNumber) : "";
                 const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
-                const templateHasSeries = relTemplate.includes('{Series}');
+                const templateHasSeries = relTemplate.includes('{Series}') || relTemplate.includes('{SeriesNumber}');
 
                 syncConfirmDestinationOptions(downloadData.main_cat, true);
 
@@ -2983,6 +3024,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const relativePath = buildRelativePathFromTemplate(relTemplate, {
                     author: cleanAuthor,
                     series: cleanSeries,
+                    seriesNumber: cleanSeriesNumber,
                     title: cleanTitle
                 });
                 if (confirmInput) confirmInput.value = relativePath;
@@ -2999,6 +3041,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                     addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
                     addSeriesBtn.dataset.cleanTitle = cleanTitle;
                     addSeriesBtn.dataset.cleanSeries = cleanSeries;
+                    addSeriesBtn.dataset.cleanSeriesNumber = cleanSeriesNumber;
                     addSeriesBtn.dataset.templateWithSeries = templateHasSeries
                         ? relTemplate
                         : insertSeriesTokenIntoTemplate(relTemplate);
@@ -3089,7 +3132,9 @@ document.addEventListener("DOMContentLoaded", async function () {
         // --- Standard Metadata Rendering ---
         const authors = parseMamJson(data.author_info);
         const narrators = parseMamJson(data.narrator_info) || "N/A";
-        const series = parseMamJson(data.series_info);
+        const primarySeries = getPrimarySeriesInfo(data.series_info);
+        const fallbackSeries = parseMamJson(data.series_info);
+        const seriesLabel = formatPrimarySeriesLabel(primarySeries) || fallbackSeries || '';
 
         const titleLinkEl = document.getElementById('detail-title-link');
         if (titleLinkEl) {
@@ -3100,7 +3145,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             document.getElementById('detail-title').textContent = data.title || '';
         }
         renderJsonTree(data.mediainfo, 'mediainfo-tree-container');
-        document.getElementById('detail-subtitle').innerHTML = series ? `<span class="badge bg-secondary opacity-75">Series</span> ${series}` : '';
+        document.getElementById('detail-subtitle').innerHTML = seriesLabel ? `<span class="badge bg-secondary opacity-75">Series</span> ${seriesLabel}` : '';
         document.getElementById('detail-authors').textContent = authors;
         document.getElementById('detail-narrators').textContent = narrators;
         document.getElementById('detail-description').innerHTML = data.description || "No description available.";
@@ -3206,6 +3251,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         // --- Rest of Rendering (Metadata, Tags, etc.) ---
         document.getElementById('detail-category').innerHTML = data.catname;
+        document.getElementById('detail-series').textContent = seriesLabel || '---';
         document.getElementById('detail-language').textContent = getLanguageName(data.lang_code);
         document.getElementById('detail-filetype').textContent = data.filetype;
         document.getElementById('detail-size').textContent = data.size.replace('iB', 'B');
@@ -3295,7 +3341,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     document.getElementById('add-series-btn')?.addEventListener('click', function () {
         const input = document.getElementById('confirm-path-input');
         const hintEl = document.getElementById('path-format-hint');
-        const { cleanAuthor, cleanTitle, cleanSeries, active, templateWithSeries, templateWithoutSeries } = this.dataset;
+        const { cleanAuthor, cleanTitle, cleanSeries, cleanSeriesNumber, active, templateWithSeries, templateWithoutSeries } = this.dataset;
         const isActive = active === "true";
         const nextTemplate = isActive
             ? (templateWithoutSeries || DEFAULT_REL_PATH_TEMPLATE)
@@ -3304,6 +3350,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         input.value = buildRelativePathFromTemplate(nextTemplate, {
             author: cleanAuthor || '',
             series: cleanSeries || '',
+            seriesNumber: cleanSeriesNumber || '',
             title: cleanTitle || ''
         });
         if (hintEl) hintEl.textContent = `Template: ${nextTemplate}`;
