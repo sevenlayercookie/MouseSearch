@@ -98,6 +98,7 @@ LANGUAGE_BY_ID = {str(value): name for name, value in language_dict.items()}
 DEFAULT_SEARCH_FILTER_DEFAULTS = {
     "searchType": "all",
     "search_scope": "torrents",
+    "hide_downloaded": False,
     "search_in_title": True,
     "search_in_author": True,
     "search_in_series": True,
@@ -194,6 +195,7 @@ def normalize_search_filter_defaults(value):
         return defaults
 
     bool_fields = [
+        "hide_downloaded",
         "search_in_title",
         "search_in_author",
         "search_in_series",
@@ -2371,6 +2373,7 @@ async def mam_search():
     description_on = checkbox_state("search_in_description")
     tags_on = checkbox_state("search_in_tags")
     filenames_on = checkbox_state("search_in_filenames")
+    hide_downloaded = checkbox_state("hide_downloaded")
     if author_on and not title_on:
         title_on = True
 
@@ -2536,15 +2539,22 @@ async def mam_search():
             if any(item.get('my_snatched') == 1 for item in ranked):
                 save_database(metadata)
 
+            display_results = ranked
+            if hide_downloaded:
+                display_results = [
+                    item for item in ranked
+                    if str(item.get('my_snatched', 0)) != "1"
+                ]
+
             search_duration_ms = (time.monotonic() - search_started_at) * 1000
             app.logger.info(
-                f"[SEARCH] results={len(ranked)} query_len={len(query)} "
+                f"[SEARCH] results={len(display_results)} query_len={len(query)} "
                 f"scope={params.get('tor[searchIn]', 'torrents')} duration_ms={search_duration_ms:.1f}"
             )
             
             return await render_template(
                 "partials/results.html",
-                results=ranked,
+                results=display_results,
                 CLIENT_STATUS="CONNECTED" if client_connected else "NOT CONNECTED",
                 categories=categories,
                 TORRENT_CLIENT_CATEGORY=app.config.get("TORRENT_CLIENT_CATEGORY", ""),

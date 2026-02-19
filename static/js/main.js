@@ -581,6 +581,39 @@ async function getTorrentHashByMID(torrentId) {
     return null;
 }
 
+const downloadedResultStates = new Set(['uploading', 'stalledUP', 'checkingUP', 'forcedUP', 'pausedUP', 'queuedUP']);
+
+function isDownloadedResultItem(item) {
+    if (!item) return false;
+    if (String(item.dataset.snatched || '0') === '1') return true;
+
+    const state = String(item.dataset.clientState || '').trim();
+    if (downloadedResultStates.has(state)) return true;
+
+    const progress = Number(item.dataset.clientProgress || 0);
+    return Number.isFinite(progress) && progress >= 1;
+}
+
+function applyHideDownloadedResultsFilter() {
+    const container = document.getElementById('results-container');
+    if (!container) return;
+
+    const hideDownloaded = !!document.getElementById('hide_downloaded')?.checked;
+    const items = container.querySelectorAll('.result-item');
+    let visibleCount = 0;
+
+    items.forEach(item => {
+        const shouldHide = hideDownloaded && isDownloadedResultItem(item);
+        item.classList.toggle('d-none', shouldHide);
+        if (!shouldHide) visibleCount++;
+    });
+
+    const titleEl = document.getElementById('results-title');
+    if (titleEl) {
+        titleEl.textContent = `Results (${visibleCount})`;
+    }
+}
+
 function updateTorrentUI(hash, data, resultItem) {
     // 1. Generate the HTML (Same logic as before)
     const state = data.state || 'unknown';
@@ -621,10 +654,14 @@ function updateTorrentUI(hash, data, resultItem) {
 
     // 2. Update the Search Result Row (Desktop & Mobile)
     if (resultItem) {
+        resultItem.dataset.clientState = state;
+        resultItem.dataset.clientProgress = String(data.progress || 0);
         const rowContainers = resultItem.querySelectorAll('.torrent-status-container');
         rowContainers.forEach(container => {
             container.innerHTML = htmlContent;
         });
+
+        applyHideDownloadedResultsFilter();
     }
 
     // 3. [NEW] Update the Modal Footer if it's open and matches this book
@@ -1318,6 +1355,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const DEFAULT_LANGUAGE_ID = window.DEFAULT_LANGUAGE_ID ? String(window.DEFAULT_LANGUAGE_ID) : '1';
     let DEFAULT_SEARCH_TYPE = 'all';
     let DEFAULT_SEARCH_SCOPE = 'torrents';
+    let DEFAULT_HIDE_DOWNLOADED = false;
     let DEFAULT_FLAGS_MODE = '0';
     let DEFAULT_LANGUAGE_VALUES = [DEFAULT_LANGUAGE_ID];
     let DEFAULT_LANGUAGE_SET = new Set(DEFAULT_LANGUAGE_VALUES);
@@ -1374,6 +1412,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         const defaults = {
             searchType: 'all',
             search_scope: 'torrents',
+            hide_downloaded: false,
             search_in_title: true,
             search_in_author: true,
             search_in_series: true,
@@ -1403,6 +1442,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
 
         const boolFields = [
+            'hide_downloaded',
             'search_in_title',
             'search_in_author',
             'search_in_series',
@@ -1455,6 +1495,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         DEFAULT_SEARCH_TYPE = normalized.searchType;
         DEFAULT_SEARCH_SCOPE = normalized.search_scope;
+        DEFAULT_HIDE_DOWNLOADED = normalized.hide_downloaded === true;
         DEFAULT_FLAGS_MODE = normalized.flags_mode;
         DEFAULT_SEARCH_FIELDS = {
             search_in_title: normalized.search_in_title,
@@ -1754,7 +1795,11 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         const searchType = document.querySelector('input[name="searchType"]:checked')?.value || DEFAULT_SEARCH_TYPE;
         const searchScope = document.querySelector('input[name="search_scope"]:checked')?.value || DEFAULT_SEARCH_SCOPE;
-        const statusCount = (searchType !== DEFAULT_SEARCH_TYPE ? 1 : 0) + (searchScope !== DEFAULT_SEARCH_SCOPE ? 1 : 0);
+        const hideDownloaded = !!document.getElementById('hide_downloaded')?.checked;
+        const statusCount =
+            (searchType !== DEFAULT_SEARCH_TYPE ? 1 : 0)
+            + (searchScope !== DEFAULT_SEARCH_SCOPE ? 1 : 0)
+            + (hideDownloaded !== DEFAULT_HIDE_DOWNLOADED ? 1 : 0);
 
         let fieldCount = 0;
         Object.entries(DEFAULT_SEARCH_FIELDS).forEach(([id, defVal]) => {
@@ -1831,6 +1876,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         const defaults = {
             searchType: document.querySelector('input[name="searchType"]:checked')?.value || DEFAULT_SEARCH_TYPE,
             search_scope: document.querySelector('input[name="search_scope"]:checked')?.value || DEFAULT_SEARCH_SCOPE,
+            hide_downloaded: !!document.getElementById('hide_downloaded')?.checked,
             flags_mode: document.querySelector('input[name="flags_mode"]:checked')?.value || DEFAULT_FLAGS_MODE,
             language_ids: langTomSelect ? getTomSelectValues(langTomSelect).map(String).filter(Boolean) : [],
             main_cat: getSelectedMainCats().map(String),
@@ -2247,14 +2293,12 @@ document.addEventListener("DOMContentLoaded", async function () {
                         markTorrentPersonalFreeleech(tid);
                     }
                 }
-
-                const count = resultsContainer.querySelectorAll('.result-item').length;
-                if (resultsTitle) resultsTitle.textContent = `Results (${count})`;
                 if (!isHistoryNavigation) {
                     wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
                 refreshCategories();
                 initializeSnatchedTorrents();
+                applyHideDownloadedResultsFilter();
             })
             .catch(error => {
                 wrapper.style.display = 'block';
@@ -2312,6 +2356,11 @@ document.addEventListener("DOMContentLoaded", async function () {
         setRadioValue('searchType', params.get('searchType'), DEFAULT_SEARCH_TYPE);
         setRadioValue('search_scope', params.get('search_scope'), DEFAULT_SEARCH_SCOPE);
         setRadioValue('flags_mode', params.get('flags_mode'), DEFAULT_FLAGS_MODE);
+
+        const hideDownloadedToggle = document.getElementById('hide_downloaded');
+        if (hideDownloadedToggle) {
+            hideDownloadedToggle.checked = params.has('hide_downloaded') ? true : DEFAULT_HIDE_DOWNLOADED;
+        }
 
         if (langTomSelect) {
             let langValues = params.getAll('language_ids');
@@ -2377,9 +2426,14 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         updateMirroredCheckboxes();
         updateFilterBadge();
+        applyHideDownloadedResultsFilter();
     }
 
     if (searchForm) {
+        document.getElementById('hide_downloaded')?.addEventListener('change', () => {
+            applyHideDownloadedResultsFilter();
+        });
+
         searchForm.addEventListener("submit", function (e) {
             e.preventDefault();
             triggerHaptic('search');
