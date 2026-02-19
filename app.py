@@ -257,24 +257,56 @@ async def startup():
         
     if app.config.get("AUTO_ORGANIZE_ON_SCHEDULE"):
         hours = int(app.config.get("AUTO_ORGANIZE_INTERVAL_HOURS", 1))
-        scheduler.add_job(check_for_unorganized_torrents, 'interval', hours=hours, id='organize_safety_net_job', replace_existing=True)
+        misfire_grace_seconds = max(1, int(hours * 3600 * 0.8))
+        scheduler.add_job(
+            check_for_unorganized_torrents,
+            'interval',
+            hours=hours,
+            id='organize_safety_net_job',
+            replace_existing=True,
+            misfire_grace_time=misfire_grace_seconds,
+        )
 
     
     if (app.config.get("AUTO_BUY_UPLOAD_ON_RATIO")
             or app.config.get("AUTO_BUY_UPLOAD_ON_BUFFER")
             or app.config.get("AUTO_BUY_UPLOAD_ON_BONUS")):
         interval_hours = int(app.config.get("AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS", 6))
-        scheduler.add_job(check_and_buy_upload, 'interval', hours=interval_hours, id='upload_check_job', replace_existing=True)
+        misfire_grace_seconds = max(1, int(interval_hours * 3600 * 0.8))
+        scheduler.add_job(
+            check_and_buy_upload,
+            'interval',
+            hours=interval_hours,
+            id='upload_check_job',
+            replace_existing=True,
+            misfire_grace_time=misfire_grace_seconds,
+        )
         scheduler.add_job(check_and_buy_upload, 'date', run_date=datetime.now() + timedelta(seconds=15), id='initial_upload_check_job')
 
     if app.config.get("ENABLE_DYNAMIC_IP_UPDATE"):
         interval_hours = int(app.config.get("DYNAMIC_IP_UPDATE_INTERVAL_HOURS", 3))
-        scheduler.add_job(check_and_update_ip, 'interval', hours=interval_hours, id='ip_check_job', replace_existing=True)
+        misfire_grace_seconds = max(1, int(interval_hours * 3600 * 0.8))
+        scheduler.add_job(
+            check_and_update_ip,
+            'interval',
+            hours=interval_hours,
+            id='ip_check_job',
+            replace_existing=True,
+            misfire_grace_time=misfire_grace_seconds,
+        )
         scheduler.add_job(check_and_update_ip, 'date', run_date=datetime.now() + timedelta(seconds=5), id='initial_ip_check_job')
     
     if app.config.get("AUTO_BUY_VIP"):
         interval_hours = int(app.config.get("AUTO_BUY_VIP_INTERVAL_HOURS", 24))
-        scheduler.add_job(auto_buy_vip, 'interval', hours=interval_hours, id='vip_buy_job', replace_existing=True)
+        misfire_grace_seconds = max(1, int(interval_hours * 3600 * 0.8))
+        scheduler.add_job(
+            auto_buy_vip,
+            'interval',
+            hours=interval_hours,
+            id='vip_buy_job',
+            replace_existing=True,
+            misfire_grace_time=misfire_grace_seconds,
+        )
         scheduler.add_job(auto_buy_vip, 'date', run_date=datetime.now() + timedelta(seconds=10), id='initial_vip_buy_job')
         app.logger.info("AUTO_BUY_VIP started")
     
@@ -2788,7 +2820,15 @@ async def update_settings():
     # Update VIP auto-buy scheduler based on new settings
     if app.config.get("AUTO_BUY_VIP"):
         interval_hours = int(app.config.get("AUTO_BUY_VIP_INTERVAL_HOURS", 24))
-        scheduler.add_job(auto_buy_vip, 'interval', hours=interval_hours, id='vip_buy_job', replace_existing=True)
+        misfire_grace_seconds = max(1, int(interval_hours * 3600 * 0.8))
+        scheduler.add_job(
+            auto_buy_vip,
+            'interval',
+            hours=interval_hours,
+            id='vip_buy_job',
+            replace_existing=True,
+            misfire_grace_time=misfire_grace_seconds,
+        )
     else:
         # Remove the job if disabled
         try:
@@ -2801,7 +2841,15 @@ async def update_settings():
             or app.config.get("AUTO_BUY_UPLOAD_ON_BUFFER")
             or app.config.get("AUTO_BUY_UPLOAD_ON_BONUS")):
         interval_hours = int(app.config.get("AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS", 6))
-        scheduler.add_job(check_and_buy_upload, 'interval', hours=interval_hours, id='upload_check_job', replace_existing=True)
+        misfire_grace_seconds = max(1, int(interval_hours * 3600 * 0.8))
+        scheduler.add_job(
+            check_and_buy_upload,
+            'interval',
+            hours=interval_hours,
+            id='upload_check_job',
+            replace_existing=True,
+            misfire_grace_time=misfire_grace_seconds,
+        )
     else:
         # Remove the job if disabled
         try:
