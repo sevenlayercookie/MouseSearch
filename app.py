@@ -247,6 +247,84 @@ def normalize_search_filter_defaults(value):
     return defaults
 
 
+AUTO_ORGANIZE_MEDIA_TYPES = [
+    {"id": "13", "label": "Audiobooks"},
+    {"id": "14", "label": "E-Books"},
+    {"id": "15", "label": "Musicology"},
+    {"id": "16", "label": "Radio"},
+]
+ALLOWED_AUTO_ORGANIZE_MAIN_CATS = {item["id"] for item in AUTO_ORGANIZE_MEDIA_TYPES}
+
+
+def normalize_destination_paths(value, fallback_path):
+    fallback_root = str(fallback_path or "").strip()
+    if not fallback_root:
+        fallback_root = "/downloads/organized"
+
+    entries = []
+
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                raw_path = item.get("path") or item.get("root_path") or item.get("destination")
+                raw_default = item.get("default_main_cat") or item.get("default_for") or item.get("media_type") or ""
+            elif isinstance(item, str):
+                raw_path = item
+                raw_default = ""
+            else:
+                continue
+
+            path = str(raw_path or "").strip()
+            if not path:
+                continue
+
+            default_main_cat = str(raw_default or "").strip()
+            if default_main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS:
+                default_main_cat = ""
+
+            entries.append({
+                "path": path,
+                "default_main_cat": default_main_cat,
+            })
+    elif isinstance(value, str):
+        path = value.strip()
+        if path:
+            entries.append({"path": path, "default_main_cat": ""})
+
+    if not entries:
+        entries = [{"path": fallback_root, "default_main_cat": ""}]
+
+    seen_defaults = set()
+    for entry in entries:
+        default_main_cat = entry.get("default_main_cat", "")
+        if not default_main_cat:
+            continue
+        if default_main_cat in seen_defaults:
+            entry["default_main_cat"] = ""
+            continue
+        seen_defaults.add(default_main_cat)
+
+    return entries
+
+
+def apply_default_destination_path(default_path, destination_paths):
+    default_root = str(default_path or "").strip() or FALLBACK_CONFIG["ORGANIZED_PATH"]
+    normalized = normalize_destination_paths(destination_paths, default_root)
+
+    extras = []
+    for entry in normalized:
+        path = str(entry.get("path") or "").strip()
+        if not path or path == default_root:
+            continue
+        extras.append({
+            "path": path,
+            "default_main_cat": str(entry.get("default_main_cat") or "").strip(),
+        })
+
+    combined = [{"path": default_root, "default_main_cat": ""}] + extras
+    return default_root, combined
+
+
 @app.before_serving
 async def startup():
     # 1. Load the configuration FIRST
@@ -526,6 +604,9 @@ FALLBACK_CONFIG = {
     "MAM_ID": "",
     "DATA_PATH": "./data",
     "ORGANIZED_PATH": "/downloads/organized",
+    "DESTINATION_PATHS": [
+        {"path": "/downloads/organized", "default_main_cat": ""}
+    ],
     "TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
     "REL_PATH_TEMPLATE": DEFAULT_RELATIVE_PATH_TEMPLATE,
     "AUTO_ORGANIZE_ON_ADD": False,
@@ -666,6 +747,13 @@ def load_config():
         config.get("SEARCH_FILTER_DEFAULTS")
     )
 
+    organized_path, destination_paths = apply_default_destination_path(
+        config.get("ORGANIZED_PATH", FALLBACK_CONFIG["ORGANIZED_PATH"]),
+        config.get("DESTINATION_PATHS"),
+    )
+    config["ORGANIZED_PATH"] = organized_path
+    config["DESTINATION_PATHS"] = destination_paths
+
     return config
 
 def save_config(config):
@@ -789,6 +877,14 @@ def calculate_vip_topup_weeks(user_data):
     
 async def load_new_app_config():
     new_config = load_config()
+
+    organized_path, destination_paths = apply_default_destination_path(
+        new_config.get("ORGANIZED_PATH", FALLBACK_CONFIG["ORGANIZED_PATH"]),
+        new_config.get("DESTINATION_PATHS"),
+    )
+    new_config["ORGANIZED_PATH"] = organized_path
+    new_config["DESTINATION_PATHS"] = destination_paths
+
     app.secret_key = new_config["QUART_SECRET_KEY"]
     app.config.update(new_config)
     
@@ -1923,6 +2019,7 @@ async def client_add_torrent():
     
     # --- NEW: Extract custom path ---
     custom_relative_path = incoming_data.get('custom_relative_path')
+    custom_destination_path = incoming_data.get('custom_destination_path')
     # --------------------------------
     
     torrent_url = incoming_data.get('torrent_url') or incoming_data.get('url')
@@ -2062,7 +2159,8 @@ async def client_add_torrent():
                     "series_info": series_info,
                     "category": get_category_name(main_cat),
                     "download_link": download_link,
-                    "custom_relative_path": custom_relative_path
+                    "custom_relative_path": custom_relative_path,
+                    "custom_destination_path": custom_destination_path,
                 }
             }
             app.logger.info(f"Added MID {id} to pending_mid_resolutions for hash resolution")
@@ -2096,7 +2194,8 @@ async def client_add_torrent():
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
                 "download_link": download_link,
-                "custom_relative_path": custom_relative_path
+                "custom_relative_path": custom_relative_path,
+                "custom_destination_path": custom_destination_path,
             }
             save_database(metadata)
             app.logger.info(f"Saved metadata for torrent hash: {hash_val}")
@@ -2601,6 +2700,7 @@ async def index():
         CLIENT_DISPLAY_NAME=display_name,
         AVAILABLE_CLIENTS=available_clients,  # Pass the list here
         categories=categories,
+        AUTO_ORGANIZE_MEDIA_TYPES=AUTO_ORGANIZE_MEDIA_TYPES,
         LANGUAGE_CHOICES=language_choices,
         LANGUAGE_MAP=language_dict,
         DEFAULT_LANGUAGE_ID=language_dict.get("English", 1),
@@ -2821,6 +2921,28 @@ async def update_settings():
     for key in FALLBACK_CONFIG.keys():
         if key in boolean_fields: config_to_update[key] = key in form
         elif key in form: config_to_update[key] = form[key]
+
+    raw_dest_paths = form.getlist("extra_dest_paths[]")
+    raw_dest_defaults = form.getlist("extra_dest_defaults[]")
+    destination_rows = []
+    for i, raw_path in enumerate(raw_dest_paths):
+        path = str(raw_path or "").strip()
+        if not path:
+            continue
+        default_main_cat = str(raw_dest_defaults[i] if i < len(raw_dest_defaults) else "").strip()
+        destination_rows.append({
+            "path": path,
+            "default_main_cat": default_main_cat,
+        })
+
+    default_path = str(config_to_update.get("ORGANIZED_PATH", FALLBACK_CONFIG["ORGANIZED_PATH"]) or "").strip() or FALLBACK_CONFIG["ORGANIZED_PATH"]
+    normalized_extras = normalize_destination_paths(destination_rows, default_path)
+    normalized_destinations = [{"path": default_path, "default_main_cat": ""}] + [
+        row for row in normalized_extras if row.get("path") != default_path
+    ]
+    config_to_update["DESTINATION_PATHS"] = normalized_destinations
+    config_to_update["ORGANIZED_PATH"] = normalized_destinations[0]["path"]
+
     if form.get("TORRENT_CLIENT_PASSWORD"): config_to_update["TORRENT_CLIENT_PASSWORD"] = form.get("TORRENT_CLIENT_PASSWORD")
     save_config(config_to_update)
     await load_new_app_config()
@@ -2946,8 +3068,12 @@ async def _perform_organization(hash_val: str) -> tuple[bool, str]:
     if not info: return False, f"Torrent {hash_val} not found in client."
     
     content_path = Path(TORRENT_DOWNLOAD_PATH) / info.get('name')
-    organized_path = Path(ORGANIZED_PATH)
     torrent_meta = metadata[hash_val]
+
+    destination_root = str(torrent_meta.get('custom_destination_path') or ORGANIZED_PATH or "").strip()
+    if not destination_root:
+        destination_root = str(FALLBACK_CONFIG["ORGANIZED_PATH"])
+    organized_path = Path(destination_root)
     
     # --- CHANGED LOGIC START ---
     if torrent_meta.get('custom_relative_path'):

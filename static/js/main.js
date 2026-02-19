@@ -1000,8 +1000,14 @@ document.addEventListener("DOMContentLoaded", async function () {
         const organizeOnAdd = isChecked('AUTO_ORGANIZE_ON_ADD');
         const organizeOnSchedule = isChecked('AUTO_ORGANIZE_ON_SCHEDULE');
         const pathContainer = document.getElementById('path-configuration-container');
+        const autoOrganizeAdvancedSection = document.getElementById('auto-organize-advanced-section');
         if (pathContainer) {
             pathContainer.classList.toggle('d-none', !organizeOnAdd && !organizeOnSchedule);
+        }
+        if (autoOrganizeAdvancedSection) {
+            const shouldShowAutoOrganizeAdvanced = organizeOnAdd || organizeOnSchedule;
+            const advancedSectionCollapse = bootstrap.Collapse.getOrCreateInstance(autoOrganizeAdvancedSection, { toggle: false });
+            shouldShowAutoOrganizeAdvanced ? advancedSectionCollapse.show() : advancedSectionCollapse.hide();
         }
     }
 
@@ -1023,13 +1029,22 @@ document.addEventListener("DOMContentLoaded", async function () {
     function captureSettingsSnapshot() {
         if (!settingsForm) return;
         settingsSnapshot = {};
+        const arrayFields = {};
         settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
             if (!el.name) return;
+            if (el.name.endsWith('[]')) {
+                if (!arrayFields[el.name]) arrayFields[el.name] = [];
+                arrayFields[el.name].push(el.type === 'checkbox' ? el.checked : el.value);
+                return;
+            }
             if (el.type === 'checkbox') {
                 settingsSnapshot[el.name] = el.checked;
             } else {
                 settingsSnapshot[el.name] = el.value;
             }
+        });
+        Object.entries(arrayFields).forEach(([name, values]) => {
+            settingsSnapshot[name] = values;
         });
         settingsDirty = false;
         setSavedRelPathTemplate(settingsSnapshot.REL_PATH_TEMPLATE || DEFAULT_REL_PATH_TEMPLATE);
@@ -1038,7 +1053,19 @@ document.addEventListener("DOMContentLoaded", async function () {
     function restoreSettingsSnapshot() {
         if (!settingsForm || !settingsSnapshot) return;
         isRestoringSettings = true;
+
+        if (destinationPathsList) {
+            const paths = Array.isArray(settingsSnapshot['extra_dest_paths[]']) ? settingsSnapshot['extra_dest_paths[]'] : [];
+            const defaults = Array.isArray(settingsSnapshot['extra_dest_defaults[]']) ? settingsSnapshot['extra_dest_defaults[]'] : [];
+            const rows = paths.map((path, idx) => ({
+                path,
+                default_main_cat: defaults[idx] || ''
+            }));
+            renderDestinationRows(rows);
+        }
+
         settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
+            if (el.name?.endsWith('[]')) return;
             if (!el.name || !(el.name in settingsSnapshot)) return;
             if (el.type === 'checkbox') {
                 el.checked = !!settingsSnapshot[el.name];
@@ -1053,6 +1080,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         syncHapticsState();
         const relTemplateInput = document.getElementById('REL_PATH_TEMPLATE');
         if (relTemplateInput) relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
+        updateConfirmPathPreview();
     }
 
     if (settingsForm) {
@@ -2018,11 +2046,283 @@ document.addEventListener("DOMContentLoaded", async function () {
     const confirmModal = confirmModalEl ? new bootstrap.Modal(confirmModalEl) : null;
     const confirmInput = document.getElementById('confirm-path-input');
     const previewSpan = document.getElementById('full-path-preview');
+    const confirmDestinationSelect = document.getElementById('confirm-destination-select');
+    const confirmDestinationRoot = document.getElementById('confirm-destination-root');
+    const defaultOrganizedPathInput = document.getElementById('ORGANIZED_PATH');
     const autoOrganizeSection = document.getElementById('auto-organize-section');
     const confirmDownloadOnly = document.getElementById('confirm-download-only');
 
     const personalFlBtn = document.getElementById('use-personal-fl-btn');
     const freeleechIndicator = document.getElementById('confirm-freeleech-indicator');
+
+    const destinationPathsList = document.getElementById('destination-paths-list');
+    const addDestinationPathBtn = document.getElementById('add-destination-path-btn');
+    const mediaTypeOptions = Array.isArray(window.AUTO_ORGANIZE_MEDIA_TYPES) && window.AUTO_ORGANIZE_MEDIA_TYPES.length
+        ? window.AUTO_ORGANIZE_MEDIA_TYPES.map(item => ({ id: String(item.id), label: String(item.label) }))
+        : [
+            { id: '13', label: 'Audiobooks' },
+            { id: '14', label: 'E-Books' },
+            { id: '15', label: 'Musicology' },
+            { id: '16', label: 'Radio' },
+        ];
+    const allowedDestinationDefaults = new Set(mediaTypeOptions.map(item => item.id));
+    let destinationPathEntries = [];
+
+    function normalizeDestinationEntries(entries, fallbackPath = '/downloads/organized', requireFallback = true) {
+        const normalized = [];
+        const seenDefaults = new Set();
+
+        (Array.isArray(entries) ? entries : []).forEach(entry => {
+            const path = String(entry?.path || '').trim();
+            if (!path) return;
+
+            let defaultMainCat = String(entry?.default_main_cat || '').trim();
+            if (!allowedDestinationDefaults.has(defaultMainCat)) {
+                defaultMainCat = '';
+            }
+            if (defaultMainCat && seenDefaults.has(defaultMainCat)) {
+                defaultMainCat = '';
+            }
+            if (defaultMainCat) {
+                seenDefaults.add(defaultMainCat);
+            }
+
+            normalized.push({ path, default_main_cat: defaultMainCat });
+        });
+
+        if (requireFallback && !normalized.length) {
+            normalized.push({ path: String(fallbackPath || '/downloads/organized').trim() || '/downloads/organized', default_main_cat: '' });
+        }
+
+        return normalized;
+    }
+
+    function getDefaultDestinationPath() {
+        const configured = String(defaultOrganizedPathInput?.value || '').trim();
+        if (configured) return configured;
+        const fromWindow = String(window.DESTINATION_PATHS?.[0]?.path || '').trim();
+        return fromWindow || '/downloads/organized';
+    }
+
+    function buildConfiguredDestinationEntries() {
+        const defaultPath = getDefaultDestinationPath();
+        const extras = normalizeDestinationEntries(readDestinationRows(), defaultPath, false)
+            .filter(entry => entry.path !== defaultPath);
+        return [{ path: defaultPath, default_main_cat: '' }, ...extras];
+    }
+
+    function readDestinationRows() {
+        if (!destinationPathsList) return [];
+        return Array.from(destinationPathsList.querySelectorAll('.destination-path-row')).map(row => ({
+            path: row.querySelector('.destination-path-input')?.value || '',
+            default_main_cat: row.querySelector('.destination-default-select')?.value || ''
+        }));
+    }
+
+    function buildDestinationRow(path = '', defaultMainCat = '') {
+        const row = document.createElement('div');
+        row.className = 'destination-path-row d-flex gap-2 mb-2 align-items-center';
+
+        const pathWrap = document.createElement('div');
+        pathWrap.className = 'form-floating flex-grow-1';
+        const pathInput = document.createElement('input');
+        pathInput.type = 'text';
+        pathInput.className = 'form-control destination-path-input';
+        pathInput.name = 'extra_dest_paths[]';
+        pathInput.placeholder = '/data/media';
+        pathInput.required = true;
+        pathInput.value = path;
+        const pathLabel = document.createElement('label');
+        pathLabel.textContent = 'Root Path';
+        pathWrap.append(pathInput, pathLabel);
+
+        const defaultWrap = document.createElement('div');
+        defaultWrap.className = 'form-floating';
+        defaultWrap.style.minWidth = '140px';
+        defaultWrap.style.maxWidth = '180px';
+        const defaultSelect = document.createElement('select');
+        defaultSelect.className = 'form-select destination-default-select';
+        defaultSelect.name = 'extra_dest_defaults[]';
+
+        const noneOption = document.createElement('option');
+        noneOption.value = '';
+        noneOption.textContent = 'None (Global)';
+        defaultSelect.appendChild(noneOption);
+
+        mediaTypeOptions.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.label;
+            if (item.id === defaultMainCat) {
+                option.selected = true;
+            }
+            defaultSelect.appendChild(option);
+        });
+
+        const defaultLabel = document.createElement('label');
+        defaultLabel.textContent = 'Default For';
+        defaultWrap.append(defaultSelect, defaultLabel);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-outline-danger remove-path-btn';
+        removeBtn.title = 'Remove Path';
+        removeBtn.style.height = '58px';
+        removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
+
+        row.append(pathWrap, defaultWrap, removeBtn);
+        return row;
+    }
+
+    function updateDestinationRowUI() {
+        if (!destinationPathsList) return;
+
+        const rows = Array.from(destinationPathsList.querySelectorAll('.destination-path-row'));
+        const selectedDefaults = rows.map(row => row.querySelector('.destination-default-select')?.value || '');
+
+        rows.forEach((row, index) => {
+            const select = row.querySelector('.destination-default-select');
+            if (!select) return;
+            const ownValue = selectedDefaults[index];
+            Array.from(select.options).forEach(option => {
+                if (!option.value) {
+                    option.disabled = false;
+                    return;
+                }
+                option.disabled = selectedDefaults.includes(option.value) && ownValue !== option.value;
+            });
+        });
+
+        const canRemove = rows.length > 1;
+        rows.forEach(row => {
+            const removeBtn = row.querySelector('.remove-path-btn');
+            if (removeBtn) {
+                removeBtn.disabled = !canRemove;
+            }
+        });
+    }
+
+    function syncConfirmDestinationOptions(mainCat = '', preferCategoryDefault = false) {
+        if (!confirmDestinationSelect) return;
+
+        const liveEntries = buildConfiguredDestinationEntries();
+        destinationPathEntries = liveEntries;
+
+        const existingValue = confirmDestinationSelect.value;
+        confirmDestinationSelect.innerHTML = '';
+
+        liveEntries.forEach(entry => {
+            const option = document.createElement('option');
+            option.value = entry.path;
+            option.textContent = entry.path;
+            confirmDestinationSelect.appendChild(option);
+        });
+
+        const mappedDefault = liveEntries.find(entry => entry.default_main_cat === String(mainCat || ''));
+        const fallbackDefault = liveEntries[0];
+        const preferredValue = (mappedDefault || fallbackDefault)?.path || '';
+        const hasExisting = liveEntries.some(entry => entry.path === existingValue);
+
+        if (preferCategoryDefault) {
+            confirmDestinationSelect.value = preferredValue;
+        } else if (hasExisting) {
+            confirmDestinationSelect.value = existingValue;
+        } else {
+            confirmDestinationSelect.value = preferredValue;
+        }
+    }
+
+    function renderDestinationRows(entries) {
+        if (!destinationPathsList) return;
+        const fallbackPath = getDefaultDestinationPath();
+        const normalized = normalizeDestinationEntries(entries, fallbackPath, false)
+            .filter(entry => entry.path !== fallbackPath);
+        destinationPathEntries = normalized;
+
+        destinationPathsList.innerHTML = '';
+        normalized.forEach(entry => {
+            destinationPathsList.appendChild(buildDestinationRow(entry.path, entry.default_main_cat));
+        });
+
+        updateDestinationRowUI();
+        syncConfirmDestinationOptions();
+    }
+
+    function updateConfirmPathPreview() {
+        if (previewSpan && confirmInput) {
+            previewSpan.textContent = confirmInput.value || '';
+        }
+        if (confirmDestinationRoot) {
+            const root = String(confirmDestinationSelect?.value || '').trim();
+            confirmDestinationRoot.textContent = root ? `${root}/` : '';
+        }
+    }
+
+    if (destinationPathsList) {
+        const initialRows = readDestinationRows();
+        if (initialRows.length) {
+            renderDestinationRows(initialRows);
+        } else {
+            renderDestinationRows((window.DESTINATION_PATHS || []).slice(1));
+        }
+
+        addDestinationPathBtn?.addEventListener('click', () => {
+            destinationPathsList.appendChild(buildDestinationRow('', ''));
+            updateDestinationRowUI();
+            syncConfirmDestinationOptions();
+            updateConfirmPathPreview();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+
+        destinationPathsList.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('.remove-path-btn');
+            if (!removeBtn) return;
+
+            const row = removeBtn.closest('.destination-path-row');
+            if (!row) return;
+
+            const rowCount = destinationPathsList.querySelectorAll('.destination-path-row').length;
+            if (rowCount <= 1) return;
+
+            row.remove();
+            updateDestinationRowUI();
+            syncConfirmDestinationOptions();
+            updateConfirmPathPreview();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+
+        destinationPathsList.addEventListener('change', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.classList.contains('destination-default-select')) {
+                updateDestinationRowUI();
+            }
+            syncConfirmDestinationOptions();
+            updateConfirmPathPreview();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+
+        destinationPathsList.addEventListener('input', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.classList.contains('destination-path-input')) {
+                syncConfirmDestinationOptions();
+                updateConfirmPathPreview();
+                if (!isRestoringSettings) settingsDirty = true;
+            }
+        });
+    }
+
+    defaultOrganizedPathInput?.addEventListener('input', () => {
+        syncConfirmDestinationOptions();
+        updateConfirmPathPreview();
+    });
+
+    if (confirmDestinationSelect) {
+        confirmDestinationSelect.addEventListener('change', updateConfirmPathPreview);
+    }
+
+    updateConfirmPathPreview();
 
     // Used to prevent repeated MID resolve/info calls while the confirm modal is open.
     // mid(string) -> { inClient: boolean, hash?: string, progress?: number, state?: string, isComplete?: boolean, isStarted?: boolean }
@@ -2260,7 +2560,9 @@ document.addEventListener("DOMContentLoaded", async function () {
             });
     });
 
-    if (confirmInput && previewSpan) confirmInput.addEventListener('input', function () { previewSpan.textContent = this.value; });
+    if (confirmInput) {
+        confirmInput.addEventListener('input', updateConfirmPathPreview);
+    }
 
     function performSearch(queryString, isHistoryNavigation = false) {
         searchButton.disabled = true;
@@ -2675,6 +2977,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
                 const templateHasSeries = relTemplate.includes('{Series}');
 
+                syncConfirmDestinationOptions(downloadData.main_cat, true);
+
                 // Set default path from template
                 const relativePath = buildRelativePathFromTemplate(relTemplate, {
                     author: cleanAuthor,
@@ -2682,7 +2986,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                     title: cleanTitle
                 });
                 if (confirmInput) confirmInput.value = relativePath;
-                if (previewSpan) previewSpan.textContent = relativePath;
+                updateConfirmPathPreview();
                 const pathHintEl = document.getElementById('path-format-hint');
                 if (pathHintEl) pathHintEl.textContent = `Template: ${relTemplate}`;
 
@@ -2714,7 +3018,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                 }
             } else {
                 if (confirmInput) confirmInput.value = '';
-                if (previewSpan) previewSpan.textContent = '';
+                syncConfirmDestinationOptions('', false);
+                updateConfirmPathPreview();
                 const pathHintEl = document.getElementById('path-format-hint');
                 if (pathHintEl) pathHintEl.textContent = 'Format: Author / Title';
             }
@@ -2977,8 +3282,10 @@ document.addEventListener("DOMContentLoaded", async function () {
         const autoOrganizeEnabled = document.getElementById('AUTO_ORGANIZE_ON_ADD')?.checked;
         if (autoOrganizeEnabled && confirmInput) {
             pendingDownloadData.custom_relative_path = confirmInput.value;
+            pendingDownloadData.custom_destination_path = confirmDestinationSelect?.value || '';
         } else {
             delete pendingDownloadData.custom_relative_path;
+            delete pendingDownloadData.custom_destination_path;
         }
         confirmModal.hide();
         performDownload(pendingDownloadData, pendingButton);

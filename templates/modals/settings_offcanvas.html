@@ -181,6 +181,7 @@
             </div>
           </div>
 
+          <div id="auto-organize-advanced-section" class="collapse {% if AUTO_ORGANIZE_ON_ADD or AUTO_ORGANIZE_ON_SCHEDULE %}show{% endif %}">
           <hr class="border-secondary-subtle my-4">
 
           <h6 class="text-uppercase mb-3">File Operation Mode</h6>
@@ -264,12 +265,53 @@
             </div>
 
             <div class="mb-3">
-              <label for="ORGANIZED_PATH" class="form-label small">Organized Destination Path</label>
+              <label for="ORGANIZED_PATH" class="form-label small">Default Organized Destination Path</label>
               <input type="text" class="form-control" id="ORGANIZED_PATH" name="ORGANIZED_PATH"
-                value="{{ ORGANIZED_PATH }}">
+                value="{{ ORGANIZED_PATH }}" required>
+            </div>
+
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label small fw-bold mb-0">Additional Destination Paths</label>
+                <button type="button" class="btn btn-sm btn-outline-primary py-0" id="add-destination-path-btn">
+                  <i class="bi bi-plus-lg"></i> Add Path
+                </button>
+              </div>
+              <div class="form-text small mb-3">
+                Add optional extra destination roots and assign a media-type default for future downloads.
+              </div>
+
+              <div id="destination-paths-list">
+                {% set configured_destinations = DESTINATION_PATHS[1:] if DESTINATION_PATHS and DESTINATION_PATHS|length > 1 else [] %}
+                {% for dest in configured_destinations %}
+                <div class="destination-path-row d-flex gap-2 mb-2 align-items-center">
+                  <div class="form-floating flex-grow-1">
+                    <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
+                      value="{{ dest.path }}" placeholder="/data/media" required>
+                    <label>Root Path</label>
+                  </div>
+                  <div class="form-floating" style="min-width: 140px; max-width: 180px;">
+                    <select class="form-select destination-default-select" name="extra_dest_defaults[]">
+                      <option value="">None (Global)</option>
+                      {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
+                      <option value="{{ media.id }}" {% if dest.default_main_cat==media.id %}selected{% endif %}>
+                        {{ media.label }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                    <label>Default For</label>
+                  </div>
+                  <button type="button" class="btn btn-outline-danger remove-path-btn" title="Remove Path"
+                    style="height: 58px;">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+                {% endfor %}
+              </div>
             </div>
           </div>
         </div>
+      </div>
 
 
         <div class="tab-pane fade" id="helpers-pane" role="tabpanel" aria-labelledby="helpers-tab" tabindex="0">

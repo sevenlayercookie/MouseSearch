@@ -14,6 +14,8 @@
     window.DEFAULT_LANGUAGE_ID = {{ DEFAULT_LANGUAGE_ID | tojson }};
     window.DEFAULT_SEARCH_FILTERS = {{ SEARCH_FILTER_DEFAULTS | tojson }};
     window.LEGACY_CATEGORY_URL = "{{ url_for('static', filename='categoryDefinitionsLegacy.json') }}";
+    window.AUTO_ORGANIZE_MEDIA_TYPES = {{ AUTO_ORGANIZE_MEDIA_TYPES | tojson }};
+    window.DESTINATION_PATHS = {{ DESTINATION_PATHS | tojson }};
   </script>
 
   <meta charset="utf-8">

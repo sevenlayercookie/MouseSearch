@@ -44,8 +44,8 @@
           <p class="mt-3">Review the organization path before downloading.</p>
 
           <div class="mb-3">
-            <label class="form-label text-muted small">Organization Root</label>
-            <input type="text" class="form-control" value="{{ ORGANIZED_PATH }}" disabled readonly>
+            <label for="confirm-destination-select" class="form-label text-muted small">Destination</label>
+            <select class="form-select" id="confirm-destination-select"></select>
           </div>
 
           <div class="mb-3">
@@ -68,7 +68,7 @@
 
           <div class="alert alert-light border small" role="alert">
             <strong>Full Path: </strong>
-            <span class="text-muted">{{ ORGANIZED_PATH }}/</span><span id="full-path-preview"
+            <span class="text-muted" id="confirm-destination-root">{{ ORGANIZED_PATH }}/</span><span id="full-path-preview"
               class="text-primary fw-bold"></span>
           </div>
         </div>
