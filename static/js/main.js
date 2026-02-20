@@ -656,6 +656,7 @@ function updateTorrentUI(hash, data, resultItem) {
     const state = data.state || 'unknown';
     const progressPercent = Math.floor((data.progress || 0) * 100);
     const etaSeconds = data.eta || 0;
+    const trackerError = String(data.tracker_error || '').trim();
 
     const errorStates = ['error', 'missingFiles'];
     const seedingStates = ['uploading', 'stalledUP', 'checkingUP', 'forcedUP', 'pausedUP', 'queuedUP'];
@@ -684,9 +685,14 @@ function updateTorrentUI(hash, data, resultItem) {
                 <div class="progress-bar bg-success" style="width: 100%">Seeding</div>
             </div>`;
     } else if (errorStates.includes(state)) {
-        htmlContent = `<div class="alert alert-danger py-1 px-2 mb-0 small text-center"><i class="bi bi-exclamation-triangle-fill"></i> Error: ${state}</div>`;
+        const errorText = trackerError || state;
+        htmlContent = `<div class="alert alert-danger py-1 px-2 mb-0 small text-center"><i class="bi bi-exclamation-triangle-fill"></i> Error: ${errorText}</div>`;
     } else {
         htmlContent = `<div class="badge bg-secondary">State: ${state}</div>`;
+    }
+
+    if (trackerError && !errorStates.includes(state)) {
+        htmlContent += `<div class="alert alert-warning py-1 px-2 mt-1 mb-0 small text-start"><i class="bi bi-exclamation-triangle"></i> Tracker: ${trackerError}</div>`;
     }
 
     // 2. Update the Search Result Row (Desktop & Mobile)
@@ -3434,6 +3440,11 @@ document.addEventListener("DOMContentLoaded", async function () {
                 if (data.message) {
                     if (button) button.textContent = 'Added!';
 
+                    const responseHash = String(data.hash || '').trim().toLowerCase();
+                    if (responseHash && downloadData.id) {
+                        torrentHashMap[String(downloadData.id)] = responseHash;
+                    }
+
                     // Find the row
                     let resultItem = button && button.closest ? button.closest('.result-item') : null;
                     if (!resultItem && downloadData.id) {
@@ -3455,6 +3466,12 @@ document.addEventListener("DOMContentLoaded", async function () {
                     // Check if the download we just started matches the open modal
                     if (modalBtn && modalContainer && String(modalBtn.dataset.id) === String(downloadData.id)) {
                         modalContainer.innerHTML = resolvingHtml;
+                    }
+
+                    if (responseHash) {
+                        pollTorrentStatus(responseHash, resultItem);
+                        fetchAndUpdateTorrentStatus(responseHash, resultItem);
+                        return;
                     }
 
                     // Start Polling

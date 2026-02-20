@@ -9,6 +9,7 @@ reloadService.sh
 # buildImage.sh
 compose.yaml
 tools/
+docs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

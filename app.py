@@ -1057,6 +1057,16 @@ async def monitor_downloads_loop():
                 if not state_entry: continue 
                 eta_history = state_entry.setdefault('eta_history', [])
 
+                tracker_error = str(info.get('tracker_error') or '').strip()
+                if tracker_error:
+                    last_tracker_error = str(state_entry.get('last_tracker_error') or '').strip()
+                    if tracker_error != last_tracker_error:
+                        state_entry['last_tracker_error'] = tracker_error
+                        torrent_name = str(info.get('name') or h[:8])
+                        await broadcast_toast(f"Torrent client (Transmission) tracker error for '{torrent_name}': {tracker_error}", "warning")
+                elif state_entry.get('last_tracker_error'):
+                    state_entry['last_tracker_error'] = ''
+
                 state = info.get('state', 'unknown')
                 progress = info.get('progress', 0)
                 current_eta = info.get('eta', 8640000)
@@ -1111,7 +1121,9 @@ async def monitor_downloads_loop():
                 if app.config.get("AUTO_ORGANIZE_ON_ADD"):
                     try:
                         success, msg = await _perform_organization(h)
-                        if not success:
+                        if success:
+                            app.logger.info(f"[MONITOR] Auto-organize succeeded for {h}: {msg}")
+                        else:
                             app.logger.warning(f"[MONITOR] Auto-organize failed for {h}: {msg}")
                     except Exception as e:
                         app.logger.error(f"[MONITOR] Exception during auto-organize for {h}: {e}", exc_info=True)
@@ -2120,48 +2132,68 @@ async def client_add_torrent():
     auto_organize_warning = None
     hash_val = None
     client_type = app.config.get("TORRENT_CLIENT_TYPE", "qbittorrent").lower()
-    qb_add_kwargs = {}
+    client_add_kwargs = {}
 
-    # qBittorrent-only behavior: MouseSearch fetches the torrent binary from MAM
-    # and uploads it to qB via multipart/form-data (`torrents` field).
-    if client_type == "qbittorrent" and torrent_url and torrent_url.lower().startswith(("http://", "https://")):
+    supports_binary_add = {"qbittorrent", "transmission"}
+    if client_type in supports_binary_add and torrent_url and torrent_url.lower().startswith(("http://", "https://")):
         torrent_file_data, torrent_filename = await fetch_torrent_file_from_mam(torrent_url)
         if torrent_file_data is None:
-            return jsonify({'error': 'Failed to download torrent file from MAM before sending to qBittorrent'}), 400
-        qb_add_kwargs = {
+            return jsonify({'error': f'Failed to download torrent file from MAM before sending to {client_type}'}), 400
+        client_add_kwargs = {
             "torrent_data": torrent_file_data,
             "torrent_filename": torrent_filename
         }
+        hash_val = calculate_torrent_hash_from_bytes(torrent_file_data)
     
     # Check if MID is present - if so, skip hash calculation and resolve hash via MID polling.
     if id and id != '0':
         app.logger.info(f"MID {id} detected - adding torrent without hash calculation")
         
         # Add torrent immediately
-        result = await torrent_client.add_torrent(torrent_url, category, mid=id, **qb_add_kwargs)
+        result = await torrent_client.add_torrent(torrent_url, category, mid=id, **client_add_kwargs)
         
         if result['status'] == 'success':
             # Extract additional metadata from incoming_data
             series_info = parse_series_info(incoming_data.get('series_info', ''))
             main_cat = incoming_data.get('main_cat', '')
             download_link = incoming_data.get('download_link', '')
+            resolved_hash = str(result.get('hash') or hash_val or '').strip().lower()
+
+            metadata_payload = {
+                "mid": id,
+                "author": author,
+                "title": title,
+                "added_on": datetime.now().isoformat(),
+                "status": "pending",
+                "retry_count": 0,
+                "series_info": series_info,
+                "category": get_category_name(main_cat),
+                "download_link": download_link,
+                "custom_relative_path": custom_relative_path,
+                "custom_destination_path": custom_destination_path,
+            }
+
+            if resolved_hash:
+                if app.config.get("AUTO_ORGANIZE_ON_ADD"):
+                    metadata = load_database()
+                    metadata[resolved_hash] = metadata_payload
+                    save_database(metadata)
+                    app.logger.info(f"Saved metadata for torrent hash: {resolved_hash}")
+
+                monitoring_state[resolved_hash] = {
+                    "added_at": time.time()
+                }
+                start_monitoring_loop()
+
+                response_data = {'message': result['message'], 'hash': resolved_hash}
+                if auto_organize_warning:
+                    response_data['warning'] = auto_organize_warning
+                return jsonify(response_data)
             
             # Store in pending_mid_resolutions for later hash resolution
             pending_mid_resolutions[id] = {
                 "added_at": time.time(),
-                "metadata": {
-                    "mid": id,
-                    "author": author,
-                    "title": title,
-                    "added_on": datetime.now().isoformat(),
-                    "status": "pending",
-                    "retry_count": 0,
-                    "series_info": series_info,
-                    "category": get_category_name(main_cat),
-                    "download_link": download_link,
-                    "custom_relative_path": custom_relative_path,
-                    "custom_destination_path": custom_destination_path,
-                }
+                "metadata": metadata_payload
             }
             app.logger.info(f"Added MID {id} to pending_mid_resolutions for hash resolution")
             start_monitoring_loop()
@@ -2171,9 +2203,7 @@ async def client_add_torrent():
             return jsonify({'error': result.get('message', 'Unknown error')}), 400
     
     # Fallback: No MID or auto-organize disabled - use old hash-based approach
-    if qb_add_kwargs.get("torrent_data") is not None:
-        hash_val = calculate_torrent_hash_from_bytes(qb_add_kwargs["torrent_data"])
-    else:
+    if not hash_val:
         app.logger.warning(f"WARNING: running hash calculation for torrent URL without MID: {torrent_url}")
         hash_val = await calculate_torrent_hash_from_url(torrent_url)
     
@@ -2200,18 +2230,21 @@ async def client_add_torrent():
             save_database(metadata)
             app.logger.info(f"Saved metadata for torrent hash: {hash_val}")
     
-    result = await torrent_client.add_torrent(torrent_url, category, **qb_add_kwargs)
+    result = await torrent_client.add_torrent(torrent_url, category, **client_add_kwargs)
     
     if result['status'] == 'success':
+        resolved_hash = str(result.get('hash') or hash_val or '').strip().lower()
         # Start progress monitoring regardless of auto-organize setting.
-        if hash_val:
-            monitoring_state[hash_val] = {
+        if resolved_hash:
+            monitoring_state[resolved_hash] = {
                 "added_at": time.time()
             }
             start_monitoring_loop()
-            app.logger.info(f"Registered {hash_val} for active monitoring.")
+            app.logger.info(f"Registered {resolved_hash} for active monitoring.")
 
         response_data = {'message': result['message']}
+        if resolved_hash:
+            response_data['hash'] = resolved_hash
         if auto_organize_warning: response_data['warning'] = auto_organize_warning
         return jsonify(response_data)
     else:
@@ -2244,7 +2277,13 @@ async def client_resolve_mid():
                         app.logger.debug(f"Resolved MID {mid} to hash {torrent_hash}")
                         return jsonify({'hash': torrent_hash, 'mid': mid})
         
-        # MID not found in client
+        # Fallback: search local metadata DB for MID->hash mapping (hash-first add flow)
+        metadata = load_database()
+        for hash_key, entry in metadata.items():
+            if str(entry.get('mid', '')) == str(mid):
+                return jsonify({'hash': str(hash_key).strip().lower(), 'mid': str(mid)})
+
+        # MID not found in client nor local DB
         return jsonify({'error': 'MID not found in client'}), 404
         
     except Exception as e:
@@ -3155,6 +3194,7 @@ async def _perform_organization(hash_val: str) -> tuple[bool, str]:
         f"Files: {files_linked} linked, {files_exist} already existed. "
         f"Source: {content_path}, Destination: {dest_path}"
     )
+    app.logger.info(f"[ORGANIZE] {details}")
     return True, details
 
 @app.route('/events')
