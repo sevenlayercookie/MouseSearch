@@ -1152,6 +1152,17 @@ document.addEventListener("DOMContentLoaded", async function () {
     const resetTemplateBtn = document.getElementById('reset-template-btn');
 
     if (relTemplateInput && previewOutput) {
+        let relTemplateCaretRange = null;
+
+        const captureRelTemplateCaretRange = () => {
+            if (document.activeElement !== relTemplateInput) return;
+            const start = relTemplateInput.selectionStart;
+            const end = relTemplateInput.selectionEnd;
+            if (typeof start === 'number' && typeof end === 'number') {
+                relTemplateCaretRange = { start, end };
+            }
+        };
+
         const previewData = {
             '{Author}': 'J.K. Rowling',
             '{Series}': 'Harry Potter',
@@ -1172,18 +1183,49 @@ document.addEventListener("DOMContentLoaded", async function () {
         };
 
         relTemplateInput.addEventListener('input', updatePathPreview);
+        relTemplateInput.addEventListener('keyup', captureRelTemplateCaretRange);
+        relTemplateInput.addEventListener('click', captureRelTemplateCaretRange);
+        relTemplateInput.addEventListener('select', captureRelTemplateCaretRange);
+        relTemplateInput.addEventListener('focus', captureRelTemplateCaretRange);
 
         document.querySelectorAll('.insert-token-btn').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                captureRelTemplateCaretRange();
+            });
+
             btn.addEventListener('click', () => {
                 const token = btn.dataset.token;
                 if (!token) return;
-                let currentVal = relTemplateInput.value || '';
 
-                if (currentVal.length > 0 && !currentVal.endsWith('/') && token !== '/') {
-                    currentVal += '/';
+                const hasCaretRange = relTemplateCaretRange
+                    && typeof relTemplateCaretRange.start === 'number'
+                    && typeof relTemplateCaretRange.end === 'number';
+
+                if (hasCaretRange) {
+                    const currentVal = relTemplateInput.value || '';
+                    const boundedStart = Math.max(0, Math.min(relTemplateCaretRange.start, currentVal.length));
+                    const boundedEnd = Math.max(boundedStart, Math.min(relTemplateCaretRange.end, currentVal.length));
+                    const before = currentVal.slice(0, boundedStart);
+                    const after = currentVal.slice(boundedEnd);
+                    relTemplateInput.value = `${before}${token}${after}`;
+                    const nextCaretPos = boundedStart + token.length;
+                    relTemplateInput.focus();
+                    relTemplateInput.setSelectionRange(nextCaretPos, nextCaretPos);
+                    relTemplateCaretRange = { start: nextCaretPos, end: nextCaretPos };
+                } else {
+                    let currentVal = relTemplateInput.value || '';
+
+                    if (currentVal.length > 0 && !currentVal.endsWith('/') && token !== '/') {
+                        currentVal += '/';
+                    }
+
+                    relTemplateInput.value = currentVal + token;
+                    const endPos = relTemplateInput.value.length;
+                    relTemplateInput.focus();
+                    relTemplateInput.setSelectionRange(endPos, endPos);
+                    relTemplateCaretRange = { start: endPos, end: endPos };
                 }
 
-                relTemplateInput.value = currentVal + token;
                 relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
             });
         });
