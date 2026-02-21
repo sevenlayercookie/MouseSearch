@@ -2219,7 +2219,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         pathInput.required = true;
         pathInput.value = path;
         const pathLabel = document.createElement('label');
-        pathLabel.textContent = 'Root Path';
+        pathLabel.textContent = 'Path';
         pathWrap.append(pathInput, pathLabel);
 
         const defaultWrap = document.createElement('div');
@@ -2279,11 +2279,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             });
         });
 
-        const canRemove = rows.length > 1;
         rows.forEach(row => {
             const removeBtn = row.querySelector('.remove-path-btn');
             if (removeBtn) {
-                removeBtn.disabled = !canRemove;
+                removeBtn.disabled = false;
             }
         });
     }
@@ -2366,9 +2365,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             const row = removeBtn.closest('.destination-path-row');
             if (!row) return;
-
-            const rowCount = destinationPathsList.querySelectorAll('.destination-path-row').length;
-            if (rowCount <= 1) return;
 
             row.remove();
             updateDestinationRowUI();

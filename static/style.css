@@ -367,6 +367,10 @@ input:disabled, select:disabled {
     z-index: 1070;
 }
 
+.settings-menu-icon {
+    height: 1em !important;
+    width: 1em !important;
+}
 /* Custom class to apply rounding ONLY on small (sm) screens and up */
 .rounded-sm {
   /* Targets screens with a viewport width of 576px or greater */
