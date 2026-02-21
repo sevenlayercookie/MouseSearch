@@ -121,9 +121,6 @@
                   onclick="event.stopPropagation()">
               </div>
             </div>
-            <div class="card-body pt-2 pb-2 small text-body-secondary">
-              Vibrate on supported browsers, with a lightweight fallback on unsupported WebKit browsers.
-            </div>
           </div>
         </div>
 
@@ -282,7 +279,7 @@
                 </button>
               </div>
               <div class="form-text small mb-3">
-                Add optional extra destination roots and assign a media-type default for future downloads.
+                Add optional extra destination paths and assign a media-type default for future downloads.
               </div>
 
               <div id="destination-paths-list">
@@ -292,7 +289,7 @@
                   <div class="form-floating flex-grow-1">
                     <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
                       value="{{ dest.path }}" placeholder="/data/media" required>
-                    <label>Root Path</label>
+                    <label>Path</label>
                   </div>
                   <div class="form-floating" style="min-width: 140px; max-width: 180px;">
                     <select class="form-select destination-default-select" name="extra_dest_defaults[]">
@@ -372,7 +369,10 @@
               class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD')">
               <span class="d-flex small fw-bold">
-                <i class="bi bi-pie-chart-fill me-2"></i> Auto-Buy Freeleech Wedge on Download
+                <i class="me-2 align-content-center text-warning">
+                  <span class="icon-cheese settings-menu-icon"></span>
+                </i>
+                Auto-Buy Freeleech Wedge on Download
               </span>
               <div class="form-check form-switch m-0">
                 <input class="form-check-input" type="checkbox" id="AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD"
