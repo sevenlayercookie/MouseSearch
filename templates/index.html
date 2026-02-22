@@ -299,63 +299,175 @@
 
         <h4 class="mb-0 fw-bold text-body-secondary" id="results-title">Results</h4>
 
-        <div class="dropdown">
-          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="results-display-toggle"
-            data-bs-toggle="dropdown" aria-expanded="false">
-            <i class="bi bi-sliders me-1"></i> Customize
-          </button>
-          <div class="dropdown-menu dropdown-menu-end p-3 shadow-sm" style="white-space: nowrap;"
-            aria-labelledby="results-display-toggle">
-            <h6 class="dropdown-header px-0">Show in results</h6>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="series"
-                id="result-display-series" {% if 'series' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-series">Series</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="narrator"
-                id="result-display-narrator" {% if 'narrator' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-narrator">Narrator</label>
-            </div>
+        <div class="d-flex align-items-center gap-2">
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="results-sort-toggle"
+              data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-sort-down me-1"></i> <span id="results-sort-current">Sort: Quality</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="results-sort-toggle"
+              style="max-height: 350px; overflow-y: auto;">
+              <li>
+                <button class="dropdown-item results-sort-option active d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="quality_desc" data-sort-label="Quality">
+                  Quality score
+                  <i class="bi bi-check2 sort-check-icon"></i>
+                </button>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+
+              <li><h6 class="dropdown-header">Date Uploaded</h6></li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="date_uploaded_desc" data-sort-label="Date (Newest)">
+                  Newest first
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="date_uploaded_asc" data-sort-label="Date (Oldest)">
+                  Oldest first
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+
+              <li><h6 class="dropdown-header">Alphabetical</h6></li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="author_asc" data-sort-label="Author (A → Z)">
+                  Author (A → Z)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="author_desc" data-sort-label="Author (Z → A)">
+                  Author (Z → A)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="title_asc" data-sort-label="Title (A → Z)">
+                  Title (A → Z)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="title_desc" data-sort-label="Title (Z → A)">
+                  Title (Z → A)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+
+              <li><h6 class="dropdown-header">Stats &amp; Size</h6></li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="seeders_desc" data-sort-label="Seeders (High → Low)">
+                  Seeders (High → Low)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="seeders_asc" data-sort-label="Seeders (Low → High)">
+                  Seeders (Low → High)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="snatches_desc" data-sort-label="Downloads (High → Low)">
+                  Downloads (High → Low)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="snatches_asc" data-sort-label="Downloads (Low → High)">
+                  Downloads (Low → High)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="size_desc" data-sort-label="Size (Large → Small)">
+                  Torrent size (Large → Small)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item results-sort-option d-flex justify-content-between align-items-center"
+                  type="button" data-sort-mode="size_asc" data-sort-label="Size (Small → Large)">
+                  Torrent size (Small → Large)
+                  <i class="bi bi-check2 sort-check-icon d-none"></i>
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="results-display-toggle"
+              data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-sliders me-1"></i> Customize
+            </button>
+            <div class="dropdown-menu dropdown-menu-end p-3 shadow-sm" style="white-space: nowrap;"
+              aria-labelledby="results-display-toggle">
+              <h6 class="dropdown-header px-0">Show in results</h6>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="series"
+                  id="result-display-series" {% if 'series' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-series">Series</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="narrator"
+                  id="result-display-narrator" {% if 'narrator' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-narrator">Narrator</label>
+              </div>
 
 
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="file_type"
-                id="result-display-file-type" {% if 'file_type' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-file-type">File type</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="file_size"
-                id="result-display-file-size" {% if 'file_size' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-file-size">File size</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="seeders"
-                id="result-display-seeders" {% if 'seeders' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-seeders"># of current seeders</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="date_uploaded"
-                id="result-display-date" {% if 'date_uploaded' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-date">Date uploaded</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="snatches"
-                id="result-display-snatches" {% if 'snatches' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-snatches"># of snatches</label>
-            </div>
-            
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="category"
-                id="result-display-category" {% if 'category' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-category">Subcategory name</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input result-display-option" type="checkbox" value="language"
-                id="result-display-language" {% if 'language' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
-              <label class="form-check-label" for="result-display-language">Language</label>
-            </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="file_type"
+                  id="result-display-file-type" {% if 'file_type' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-file-type">File type</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="file_size"
+                  id="result-display-file-size" {% if 'file_size' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-file-size">File size</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="seeders"
+                  id="result-display-seeders" {% if 'seeders' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-seeders"># of current seeders</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="date_uploaded"
+                  id="result-display-date" {% if 'date_uploaded' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-date">Date uploaded</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="snatches"
+                  id="result-display-snatches" {% if 'snatches' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-snatches"># of snatches</label>
+              </div>
+              
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="category"
+                  id="result-display-category" {% if 'category' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-category">Subcategory name</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input result-display-option" type="checkbox" value="language"
+                  id="result-display-language" {% if 'language' in RESULTS_DISPLAY_FIELDS %}checked{% endif %}>
+                <label class="form-check-label" for="result-display-language">Language</label>
+              </div>
 
+            </div>
           </div>
         </div>
 

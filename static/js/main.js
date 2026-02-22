@@ -2077,6 +2077,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     const SEARCH_BUTTON_LOADING_HTML = `<span class="d-inline-flex align-items-center"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Searching...</span>`;
     const wrapper = document.getElementById('results-container-wrapper');
     const resultsTitle = document.getElementById('results-title');
+    const resultsSortCurrent = document.getElementById('results-sort-current');
+    const resultsSortOptions = document.querySelectorAll('.results-sort-option');
     const resultDisplayOptions = document.querySelectorAll('.result-display-option');
     const advancedOffcanvasEl = document.getElementById('advancedSearchOffcanvas');
     const filterBadge = document.getElementById('filter-count');
@@ -2133,6 +2135,169 @@ document.addEventListener("DOMContentLoaded", async function () {
         'min_snatched',
         'max_snatched'
     ];
+
+    const DEFAULT_RESULTS_SORT = 'quality_desc';
+    let currentResultsSort = DEFAULT_RESULTS_SORT;
+    const resultJsonCache = new WeakMap();
+
+    function updateSortMenuUI() {
+        if (resultsSortCurrent) {
+            const activeOption = [...resultsSortOptions].find(option => option.dataset.sortMode === currentResultsSort);
+            const activeLabel = activeOption?.dataset.sortLabel || 'Quality';
+            resultsSortCurrent.textContent = `Sort: ${activeLabel}`;
+        }
+
+        resultsSortOptions.forEach(option => {
+            const isActive = option.dataset.sortMode === currentResultsSort;
+            option.classList.toggle('active', isActive);
+            const checkIcon = option.querySelector('.sort-check-icon');
+            if (checkIcon) {
+                checkIcon.classList.toggle('d-none', !isActive);
+            }
+        });
+    }
+
+    function parseResultJson(resultItem) {
+        if (!resultItem) return {};
+        const cached = resultJsonCache.get(resultItem);
+        if (cached) return cached;
+
+        let parsed = {};
+        const rawJson = resultItem.dataset.json;
+        if (rawJson) {
+            try {
+                parsed = JSON.parse(rawJson);
+            } catch (_) {
+                parsed = {};
+            }
+        }
+        resultJsonCache.set(resultItem, parsed);
+        return parsed;
+    }
+
+    function parseSizeToBytes(sizeValue) {
+        if (typeof sizeValue !== 'string') return 0;
+        const match = sizeValue.trim().match(/^([\d.,]+)\s*([A-Za-z]+)$/);
+        if (!match) return 0;
+
+        const number = Number.parseFloat(match[1].replace(/,/g, ''));
+        if (!Number.isFinite(number)) return 0;
+
+        const unit = match[2].toUpperCase();
+        const multipliers = {
+            B: 1,
+            KB: 1000,
+            MB: 1000 ** 2,
+            GB: 1000 ** 3,
+            TB: 1000 ** 4,
+            KIB: 1024,
+            MIB: 1024 ** 2,
+            GIB: 1024 ** 3,
+            TIB: 1024 ** 4
+        };
+        return number * (multipliers[unit] || 1);
+    }
+
+    function parseSortableDate(dateValue) {
+        if (!dateValue) return 0;
+        const normalized = String(dateValue).trim().replace(' ', 'T');
+        const timestamp = Date.parse(normalized);
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+
+    function compareStrings(a, b) {
+        return String(a || '').localeCompare(String(b || ''), undefined, {
+            sensitivity: 'base',
+            numeric: true
+        });
+    }
+
+    function compareNumbers(a, b) {
+        const left = Number(a);
+        const right = Number(b);
+        const safeLeft = Number.isFinite(left) ? left : 0;
+        const safeRight = Number.isFinite(right) ? right : 0;
+        return safeLeft - safeRight;
+    }
+
+    function compareResultItems(leftItem, rightItem, sortMode) {
+        const left = parseResultJson(leftItem);
+        const right = parseResultJson(rightItem);
+
+        switch (sortMode) {
+            case 'date_uploaded_desc': {
+                const diff = compareNumbers(parseSortableDate(right.added), parseSortableDate(left.added));
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'date_uploaded_asc': {
+                const diff = compareNumbers(parseSortableDate(left.added), parseSortableDate(right.added));
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'author_asc': {
+                const diff = compareStrings(left.author_info, right.author_info);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'author_desc': {
+                const diff = compareStrings(right.author_info, left.author_info);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'title_asc':
+                return compareStrings(left.title, right.title);
+            case 'title_desc':
+                return compareStrings(right.title, left.title);
+            case 'seeders_desc': {
+                const diff = compareNumbers(right.seeders, left.seeders);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'seeders_asc': {
+                const diff = compareNumbers(left.seeders, right.seeders);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'snatches_desc': {
+                const diff = compareNumbers(right.times_completed, left.times_completed);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'snatches_asc': {
+                const diff = compareNumbers(left.times_completed, right.times_completed);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'size_desc': {
+                const diff = compareNumbers(parseSizeToBytes(right.size), parseSizeToBytes(left.size));
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'size_asc': {
+                const diff = compareNumbers(parseSizeToBytes(left.size), parseSizeToBytes(right.size));
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+            case 'quality_desc':
+            default: {
+                const diff = compareNumbers(right.score, left.score);
+                if (diff !== 0) return diff;
+                return compareStrings(left.title, right.title);
+            }
+        }
+    }
+
+    function applyCurrentResultsSort(container = resultsContainer) {
+        if (!container) return;
+        const items = [...container.querySelectorAll('.result-item')];
+        if (items.length <= 1) return;
+
+        items.sort((left, right) => compareResultItems(left, right, currentResultsSort));
+        const fragment = document.createDocumentFragment();
+        items.forEach(item => fragment.appendChild(item));
+        container.appendChild(fragment);
+    }
 
     function refreshAppLogoState() {
     let targetState = 'static';
@@ -2747,6 +2912,21 @@ document.addEventListener("DOMContentLoaded", async function () {
             .map(option => option.value);
     }
 
+    if (resultsSortOptions.length) {
+        const initiallyActive = [...resultsSortOptions].find(option => option.classList.contains('active'));
+        currentResultsSort = initiallyActive?.dataset.sortMode || DEFAULT_RESULTS_SORT;
+        updateSortMenuUI();
+
+        resultsSortOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                currentResultsSort = option.dataset.sortMode || DEFAULT_RESULTS_SORT;
+                updateSortMenuUI();
+            applyCurrentResultsSort(resultsContainer);
+            applyHideDownloadedResultsFilter();
+            });
+        });
+    }
+
     function applyResultDisplayFields(fields, scope = document) {
         const active = new Set(fields);
         scope.querySelectorAll('[data-result-field]').forEach(el => {
@@ -3323,6 +3503,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             .then(html => {
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = html;
+                applyCurrentResultsSort(resultsContainer);
                 lastPerformedQuery = queryString;
                 localizeDates(resultsContainer);
                 applyResultDisplayFields(window.resultDisplayFields || getSelectedResultFields(), resultsContainer);
