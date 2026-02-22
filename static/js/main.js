@@ -1452,6 +1452,629 @@ document.addEventListener("DOMContentLoaded", async function () {
     const searchForm = document.getElementById("search-form");
     const resultsContainer = document.getElementById("results-container");
     const searchButton = document.getElementById("searchButton");
+    const appLogos = document.querySelectorAll('.app-logo');
+    const STATIC_MOUSE_LOGO_SVG = `<svg
+   viewBox="0 0 300 340"
+   version="1.1"
+   id="svg15"
+   sodipodi:docname="mouse.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview15"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.1113749"
+     inkscape:cx="118.32191"
+     inkscape:cy="130.01914"
+     inkscape:window-width="1238"
+     inkscape:window-height="626"
+     inkscape:window-x="0"
+     inkscape:window-y="34"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="g15" />
+  <defs
+     id="defs7">
+    <linearGradient
+       id="headGrad"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#ffffff"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#b095e6"
+         id="stop2" />
+    </linearGradient>
+    <linearGradient
+       id="earGrad"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#a16ff2"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#763cd4"
+         id="stop4" />
+    </linearGradient>
+    <radialGradient
+       id="lensGrad"
+       cx="175"
+       cy="175"
+       r="64.999998"
+       fx="175"
+       fy="175"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#d6b8ff"
+         id="stop5" />
+      <stop
+         offset="50%"
+         stop-color="#9f5ff0"
+         id="stop6" />
+      <stop
+         offset="100%"
+         stop-color="#6930c3"
+         id="stop7" />
+    </radialGradient>
+  </defs>
+  <g
+     id="g15">
+    <path
+       d="M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320"
+       fill="none"
+       stroke="#100324"
+       stroke-width="14"
+       stroke-linecap="round"
+       id="path7" />
+    <circle
+       cx="85"
+       cy="80"
+       r="48"
+       fill="url(#earGrad)"
+       stroke="#100324"
+       stroke-width="12"
+       id="circle7" />
+    <circle
+       cx="215"
+       cy="80"
+       r="48"
+       fill="url(#earGrad)"
+       stroke="#100324"
+       stroke-width="12"
+       id="circle8" />
+    <ellipse
+       cx="150"
+       cy="150"
+       rx="85"
+       ry="90.34948"
+       fill="url(#headGrad)"
+       stroke="#100324"
+       stroke-width="12"
+       id="ellipse8" />
+    <circle
+       cx="117"
+       cy="111"
+       r="11"
+       fill="#100324"
+       id="circle9" />
+    <circle
+       cx="183"
+       cy="111"
+       r="11"
+       fill="#100324"
+       id="circle10" />
+    <path
+       d="M 91.197315,148.72121 H 124.22088"
+       stroke="#100324"
+       stroke-width="12.7207"
+       stroke-linecap="round"
+       id="path10" />
+    <path
+       d="m 90.013639,176.21869 30.205051,-5.43738"
+       stroke="#100324"
+       stroke-width="13.5626"
+       stroke-linecap="round"
+       id="path11" />
+    <g
+       id="g14"
+       inkscape:label="g14"
+       transform="translate(0,2)">
+      <line
+         x1="225"
+         y1="225"
+         x2="270"
+         y2="280"
+         stroke="#100324"
+         stroke-width="28"
+         stroke-linecap="round"
+         id="line11" />
+      <line
+         x1="225"
+         y1="225"
+         x2="270"
+         y2="280"
+         stroke="#48188a"
+         stroke-width="12"
+         stroke-linecap="round"
+         id="line12" />
+      <circle
+         cx="190"
+         cy="190"
+         r="60"
+         fill="#ebe8f2"
+         stroke="#100324"
+         stroke-width="12"
+         id="circle12" />
+      <circle
+         cx="190"
+         cy="190"
+         r="46"
+         fill="url(#lensGrad)"
+         stroke="#100324"
+         stroke-width="8"
+         id="circle13"
+         style="fill:url(#lensGrad)" />
+      <path
+         d="m 162,173 a 30,30 0 0 1 35,-15"
+         fill="none"
+         stroke="#ffffff"
+         stroke-width="8"
+         stroke-linecap="round"
+         id="path13" />
+      <circle
+         cx="158"
+         cy="188"
+         r="6"
+         fill="#ffffff"
+         id="circle14" />
+    </g>
+  </g>
+</svg>`;
+    const TAIL_ANIMATED_MOUSE_LOGO_SVG = `<svg
+       viewBox="0 0 300 340"
+       version="1.1"
+       xmlns="http://www.w3.org/2000/svg"
+       xmlns:svg="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient
+           id="headGradTail"
+           x1="0%"
+           y1="0%"
+           x2="0%"
+           y2="100%">
+          <stop offset="0%" stop-color="#ffffff" />
+          <stop offset="100%" stop-color="#b095e6" />
+        </linearGradient>
+        <linearGradient
+           id="earGradTail"
+           x1="0%"
+           y1="0%"
+           x2="0%"
+           y2="100%">
+          <stop offset="0%" stop-color="#a16ff2" />
+          <stop offset="100%" stop-color="#763cd4" />
+        </linearGradient>
+        <radialGradient
+           id="lensGradTail"
+           cx="35%"
+           cy="35%"
+           r="65%">
+          <stop offset="0%" stop-color="#d6b8ff" />
+          <stop offset="50%" stop-color="#9f5ff0" />
+          <stop offset="100%" stop-color="#6930c3" />
+        </radialGradient>
+      </defs>
+      <g>
+        <!-- Tail -->
+        <path
+           fill="none"
+           stroke="#100324"
+           stroke-width="14"
+           stroke-linecap="round">
+          <animate
+             attributeName="d"
+             values="M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320;M 90 200 C 10 270, 80 310, 140 285 C 190 265, 210 280, 230 310;M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320"
+             dur="1.5s"
+             repeatCount="indefinite" />
+        </path>
+        
+        <!-- Left Ear -->
+        <circle
+           cx="85"
+           cy="80"
+           r="48"
+           fill="url(#earGradTail)"
+           stroke="#100324"
+           stroke-width="12">
+          <animateTransform 
+             attributeName="transform" 
+             type="rotate" 
+             values="0 120 120; -6 120 120; 0 120 120" 
+             dur="1.6s" 
+             repeatCount="indefinite" />
+        </circle>
+        
+        <!-- Right Ear -->
+        <circle
+           cx="215"
+           cy="80"
+           r="48"
+           fill="url(#earGradTail)"
+           stroke="#100324"
+           stroke-width="12">
+          <animateTransform 
+             attributeName="transform" 
+             type="rotate" 
+             values="0 180 120; 6 180 120; 0 180 120" 
+             dur="1.6s" 
+             repeatCount="indefinite" />
+        </circle>
+        
+        <!-- Head -->
+        <ellipse
+           cx="150"
+           cy="150"
+           rx="85"
+           ry="90.34948"
+           fill="url(#headGradTail)"
+           stroke="#100324"
+           stroke-width="12" />
+           
+        <!-- Left Eye -->
+        <circle
+           cx="117"
+           cy="111"
+           r="11"
+           fill="#100324" />
+           
+        <!-- Right Eye -->
+        <circle
+           cx="183"
+           cy="111"
+           r="11"
+           fill="#100324" />
+           
+        <!-- Whiskers / Nose elements -->
+        <path
+           d="M 91.197315,148.72121 H 124.22088"
+           stroke="#100324"
+           stroke-width="12.7207"
+           stroke-linecap="round" />
+        <path
+           d="m 90.013639,176.21869 30.205051,-5.43738"
+           stroke="#100324"
+           stroke-width="13.5626"
+           stroke-linecap="round" />
+           
+        <!-- Magnifying Glass -->
+        <g transform="translate(0,2)">
+          <line
+             x1="225"
+             y1="225"
+             x2="270"
+             y2="280"
+             stroke="#100324"
+             stroke-width="28"
+             stroke-linecap="round" />
+          <line
+             x1="225"
+             y1="225"
+             x2="270"
+             y2="280"
+             stroke="#48188a"
+             stroke-width="12"
+             stroke-linecap="round" />
+          <circle
+             cx="190"
+             cy="190"
+             r="60"
+             fill="#ebe8f2"
+             stroke="#100324"
+             stroke-width="12" />
+          <circle
+             cx="190"
+             cy="190"
+             r="46"
+             fill="url(#lensGradTail)"
+             stroke="#100324"
+             stroke-width="8" />
+          <path
+             d="m 162,173 a 30,30 0 0 1 35,-15"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="8"
+             stroke-linecap="round" />
+          <circle
+             cx="158"
+             cy="188"
+             r="6"
+             fill="#ffffff" />
+        </g>
+      </g>
+    </svg>`;
+    const SEARCHING_MOUSE_LOGO_SVG = `<svg
+   viewBox="0 0 300 340"
+   version="1.1"
+   id="svg16"
+   sodipodi:docname="mouse-animated-glass-lower.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview16"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.95559748"
+     inkscape:cx="83.717257"
+     inkscape:cy="134.47084"
+     inkscape:window-width="1145"
+     inkscape:window-height="782"
+     inkscape:window-x="243"
+     inkscape:window-y="34"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="g16" />
+  <defs
+     id="defs7">
+    <linearGradient
+       id="headGradAnim"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#ffffff"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#b095e6"
+         id="stop2" />
+    </linearGradient>
+    <linearGradient
+       id="earGradAnim"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#a16ff2"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#763cd4"
+         id="stop4" />
+    </linearGradient>
+    <radialGradient
+       id="lensGradAnim"
+       cx="175"
+       cy="175"
+       r="64.999998"
+       fx="175"
+       fy="175"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#d6b8ff"
+         id="stop5" />
+      <stop
+         offset="50%"
+         stop-color="#9f5ff0"
+         id="stop6" />
+      <stop
+         offset="100%"
+         stop-color="#6930c3"
+         id="stop7" />
+    </radialGradient>
+  </defs>
+  <!-- Main Group: Contains the breathing/bouncing animation -->
+  <g
+     id="g16">
+    <animateTransform
+       attributeName="transform"
+       type="translate"
+       values="0,0; 0,-10; 0,0"
+       dur="1.5s"
+       repeatCount="indefinite" />
+    <!-- Tail (with swishing path animation) -->
+    <path
+       fill="none"
+       stroke="#100324"
+       stroke-width="14"
+       stroke-linecap="round"
+       id="path7">
+      <animate
+         attributeName="d"
+         values="                     M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320;                     M 90 200 C 10 270, 80 310, 140 285 C 190 265, 210 280, 230 310;                     M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320"
+         dur="1.5s"
+         repeatCount="indefinite" />
+    </path>
+    <!-- Left Ear -->
+    <circle
+       cx="85"
+       cy="80"
+       r="48"
+       fill="url(#earGradAnim)"
+       stroke="#100324"
+       stroke-width="12"
+         id="circle7">
+        <animateTransform
+            attributeName="transform"
+            type="rotate"
+            values="0 120 120; -6 120 120; 0 120 120"
+            dur="1.6s"
+            repeatCount="indefinite" />
+     </circle>
+    <!-- Right Ear -->
+    <circle
+       cx="215"
+       cy="80"
+       r="48"
+       fill="url(#earGradAnim)"
+       stroke="#100324"
+       stroke-width="12"
+         id="circle8">
+        <animateTransform
+            attributeName="transform"
+            type="rotate"
+            values="0 180 120; 6 180 120; 0 180 120"
+            dur="1.6s"
+            repeatCount="indefinite" />
+     </circle>
+    <!-- Head Base -->
+    <ellipse
+       cx="150"
+       cy="150"
+       rx="85"
+       ry="90.34948"
+       fill="url(#headGradAnim)"
+       stroke="#100324"
+       stroke-width="12"
+       id="ellipse8" />
+    <!-- Left Eye -->
+    <circle
+       cx="117"
+       cy="111"
+       r="11"
+       fill="#100324"
+       id="circle9" />
+    <!-- Right Eye -->
+    <circle
+       cx="183"
+       cy="111"
+       r="11"
+       fill="#100324"
+       id="circle10" />
+    <!-- Left Whiskers -->
+    <path
+       d="M 91.197315,148.72121 H 124.22088"
+       stroke="#100324"
+       stroke-width="12.7207"
+       stroke-linecap="round"
+       id="path10" />
+    <path
+       d="m 90.013639,176.21869 30.205051,-5.43738"
+       stroke="#100324"
+       stroke-width="13.5626"
+       stroke-linecap="round"
+       id="path11" />
+    <!-- Magnifying Glass (nested groups to combine translation and rotation cleanly) -->
+    <g
+       id="g15"
+       transform="translate(0,2)">
+      <!-- Translation: Scanning left and right -->
+      <animateTransform
+         attributeName="transform"
+         type="translate"
+         values="0,0; -15,5; 10,-3; 0,0"
+         dur="2s"
+         repeatCount="indefinite" />
+      <g
+         id="g14">
+        <!-- Rotation: Subtle twisting as if searching -->
+        <animateTransform
+           attributeName="transform"
+           type="rotate"
+           values="-8 190 190; 5 190 190; -8 190 190"
+           dur="2s"
+           repeatCount="indefinite" />
+        <!-- Handle Base -->
+        <line
+           x1="225"
+           y1="225"
+           x2="270"
+           y2="280"
+           stroke="#100324"
+           stroke-width="28"
+           stroke-linecap="round"
+           id="line11" />
+        <!-- Handle Core -->
+        <line
+           x1="225"
+           y1="225"
+           x2="270"
+           y2="280"
+           stroke="#48188a"
+           stroke-width="12"
+           stroke-linecap="round"
+           id="line12" />
+        <!-- Glass Outer Rim -->
+        <circle
+           cx="190"
+           cy="190"
+           r="60"
+           fill="#ebe8f2"
+           stroke="#100324"
+           stroke-width="12"
+           id="circle12" />
+        <!-- Glass Lens -->
+        <circle
+           cx="190"
+           cy="190"
+           r="46"
+           fill="url(#lensGradAnim)"
+           stroke="#100324"
+           stroke-width="8"
+           id="circle13"
+           style="fill:url(#lensGradAnim)" />
+        <!-- Lens Glare Arc -->
+        <path
+           d="m 162,173 a 30,30 0 0 1 35,-15"
+           fill="none"
+           stroke="#ffffff"
+           stroke-width="8"
+           stroke-linecap="round"
+           id="path13" />
+        <!-- Lens Glare Dot -->
+        <circle
+           cx="158"
+           cy="188"
+           r="6"
+           fill="#ffffff"
+           id="circle14" />
+      </g>
+    </g>
+  </g>
+</svg>`;
+    function renderInlineSvg(svgMarkup, className = '') {
+        return String(svgMarkup || '').replace(
+            '<svg',
+            `<svg class="${className}" aria-hidden="true" focusable="false"`
+        );
+    }
+
+    const STATIC_LOGO_MARKUP = renderInlineSvg(STATIC_MOUSE_LOGO_SVG, 'app-logo-svg');
+    const TAIL_ANIMATED_LOGO_MARKUP = renderInlineSvg(TAIL_ANIMATED_MOUSE_LOGO_SVG, 'app-logo-svg');
+    const ANIMATED_LOGO_MARKUP = renderInlineSvg(SEARCHING_MOUSE_LOGO_SVG, 'app-logo-svg');
+    let activeSearchRequests = 0;
+    let highlightedLogoCount = 0;
+    const SEARCH_BUTTON_DEFAULT_HTML = searchButton ? searchButton.innerHTML : 'Search';
+    const SEARCH_BUTTON_LOADING_HTML = `<span class="d-inline-flex align-items-center"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Searching...</span>`;
     const wrapper = document.getElementById('results-container-wrapper');
     const resultsTitle = document.getElementById('results-title');
     const resultDisplayOptions = document.querySelectorAll('.result-display-option');
@@ -1510,6 +2133,46 @@ document.addEventListener("DOMContentLoaded", async function () {
         'min_snatched',
         'max_snatched'
     ];
+
+    function refreshAppLogoState() {
+    let targetState = 'static';
+    let targetMarkup = STATIC_LOGO_MARKUP;
+    if (activeSearchRequests > 0) {
+        targetState = 'animated';
+        targetMarkup = ANIMATED_LOGO_MARKUP;
+    } else if (highlightedLogoCount > 0) {
+        targetState = 'tail';
+        targetMarkup = TAIL_ANIMATED_LOGO_MARKUP;
+    }
+
+    appLogos.forEach(logo => {
+        if (logo.dataset.logoState !== targetState) {
+            logo.innerHTML = targetMarkup;
+            logo.dataset.logoState = targetState;
+
+            // --- The Safari "Kick in the Pants" Hack ---
+            // 1. Hide the logo
+            logo.style.display = 'none';
+            // 2. Read a layout property to force the browser to immediately recalculate the DOM
+            void logo.offsetWidth; 
+            // 3. Show it again
+            logo.style.display = '';
+        }
+    });
+}
+
+    appLogos.forEach(logo => {
+        logo.addEventListener('mouseenter', () => {
+            highlightedLogoCount += 1;
+            refreshAppLogoState();
+        });
+        logo.addEventListener('mouseleave', () => {
+            highlightedLogoCount = Math.max(0, highlightedLogoCount - 1);
+            refreshAppLogoState();
+        });
+    });
+
+    refreshAppLogoState();
 
     function uniqueStringValues(value) {
         if (Array.isArray(value)) {
@@ -2647,8 +3310,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     function performSearch(queryString, isHistoryNavigation = false) {
+        activeSearchRequests += 1;
+        refreshAppLogoState();
         searchButton.disabled = true;
-        searchButton.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Searching...`;
+        searchButton.innerHTML = SEARCH_BUTTON_LOADING_HTML;
         if (resultsTitle) resultsTitle.textContent = 'Results';
         hashToElementMap.clear();
         const searchUrl = queryString ? `/mam/search?${queryString}` : '/mam/search';
@@ -2689,8 +3354,10 @@ document.addEventListener("DOMContentLoaded", async function () {
                 resultsContainer.innerHTML = `<div class="alert alert-danger">Search failed.</div>`;
             })
             .finally(() => {
+                activeSearchRequests = Math.max(0, activeSearchRequests - 1);
+                refreshAppLogoState();
                 searchButton.disabled = false;
-                searchButton.innerHTML = "Search";
+                searchButton.innerHTML = SEARCH_BUTTON_DEFAULT_HTML;
             });
     }
 

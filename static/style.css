@@ -277,6 +277,12 @@ input:disabled, select:disabled {
     object-fit: contain; /* Ensures the image is never distorted */
 }
 
+.app-logo-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
 /* === DESKTOP VIEW (Two-Column Layout) === */
 /* Triggered when Bootstrap switches to 'col-md-4' (768px) */
 @media (min-width: 768px) {

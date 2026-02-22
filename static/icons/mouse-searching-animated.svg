@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 300 340"
+   version="1.1"
+   id="svg16"
+   sodipodi:docname="mouse-animated-glass-lower.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview16"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.95559748"
+     inkscape:cx="83.717257"
+     inkscape:cy="134.47084"
+     inkscape:window-width="1145"
+     inkscape:window-height="782"
+     inkscape:window-x="243"
+     inkscape:window-y="34"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="g16" />
+  <defs
+     id="defs7">
+    <linearGradient
+       id="headGradAnim"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#ffffff"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#b095e6"
+         id="stop2" />
+    </linearGradient>
+    <linearGradient
+       id="earGradAnim"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#a16ff2"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#763cd4"
+         id="stop4" />
+    </linearGradient>
+    <radialGradient
+       id="lensGradAnim"
+       cx="175"
+       cy="175"
+       r="64.999998"
+       fx="175"
+       fy="175"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#d6b8ff"
+         id="stop5" />
+      <stop
+         offset="50%"
+         stop-color="#9f5ff0"
+         id="stop6" />
+      <stop
+         offset="100%"
+         stop-color="#6930c3"
+         id="stop7" />
+    </radialGradient>
+  </defs>
+  <!-- Main Group: Contains the breathing/bouncing animation -->
+  <g
+     id="g16">
+    <animateTransform
+       attributeName="transform"
+       type="translate"
+       values="0,0; 0,-10; 0,0"
+       dur="1.5s"
+       repeatCount="indefinite" />
+    <!-- Tail (with swishing path animation) -->
+    <path
+       fill="none"
+       stroke="#100324"
+       stroke-width="14"
+       stroke-linecap="round"
+       id="path7">
+      <animate
+         attributeName="d"
+         values="                     M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320;                     M 90 200 C 10 270, 80 310, 140 285 C 190 265, 210 280, 230 310;                     M 90 200 C 20 280, 100 300, 160 275 C 200 260, 230 290, 220 320"
+         dur="1.5s"
+         repeatCount="indefinite" />
+    </path>
+    <!-- Left Ear -->
+    <circle
+       cx="85"
+       cy="80"
+       r="48"
+       fill="url(#earGradAnim)"
+       stroke="#100324"
+       stroke-width="12"
+         id="circle7">
+        <animateTransform
+            attributeName="transform"
+            type="rotate"
+            values="0 120 120; -6 120 120; 0 120 120"
+            dur="1.6s"
+            repeatCount="indefinite" />
+     </circle>
+    <!-- Right Ear -->
+    <circle
+       cx="215"
+       cy="80"
+       r="48"
+       fill="url(#earGradAnim)"
+       stroke="#100324"
+       stroke-width="12"
+         id="circle8">
+        <animateTransform
+            attributeName="transform"
+            type="rotate"
+            values="0 180 120; 6 180 120; 0 180 120"
+            dur="1.6s"
+            repeatCount="indefinite" />
+     </circle>
+    <!-- Head Base -->
+    <ellipse
+       cx="150"
+       cy="150"
+       rx="85"
+       ry="90.34948"
+       fill="url(#headGradAnim)"
+       stroke="#100324"
+       stroke-width="12"
+       id="ellipse8" />
+    <!-- Left Eye -->
+    <circle
+       cx="117"
+       cy="111"
+       r="11"
+       fill="#100324"
+       id="circle9" />
+    <!-- Right Eye -->
+    <circle
+       cx="183"
+       cy="111"
+       r="11"
+       fill="#100324"
+       id="circle10" />
+    <!-- Left Whiskers -->
+    <path
+       d="M 91.197315,148.72121 H 124.22088"
+       stroke="#100324"
+       stroke-width="12.7207"
+       stroke-linecap="round"
+       id="path10" />
+    <path
+       d="m 90.013639,176.21869 30.205051,-5.43738"
+       stroke="#100324"
+       stroke-width="13.5626"
+       stroke-linecap="round"
+       id="path11" />
+    <!-- Magnifying Glass (nested groups to combine translation and rotation cleanly) -->
+    <g
+       id="g15"
+       transform="translate(0,2)">
+      <!-- Translation: Scanning left and right -->
+      <animateTransform
+         attributeName="transform"
+         type="translate"
+         values="0,0; -15,5; 10,-3; 0,0"
+         dur="2s"
+         repeatCount="indefinite" />
+      <g
+         id="g14">
+        <!-- Rotation: Subtle twisting as if searching -->
+        <animateTransform
+           attributeName="transform"
+           type="rotate"
+           values="-8 190 190; 5 190 190; -8 190 190"
+           dur="2s"
+           repeatCount="indefinite" />
+        <!-- Handle Base -->
+        <line
+           x1="225"
+           y1="225"
+           x2="270"
+           y2="280"
+           stroke="#100324"
+           stroke-width="28"
+           stroke-linecap="round"
+           id="line11" />
+        <!-- Handle Core -->
+        <line
+           x1="225"
+           y1="225"
+           x2="270"
+           y2="280"
+           stroke="#48188a"
+           stroke-width="12"
+           stroke-linecap="round"
+           id="line12" />
+        <!-- Glass Outer Rim -->
+        <circle
+           cx="190"
+           cy="190"
+           r="60"
+           fill="#ebe8f2"
+           stroke="#100324"
+           stroke-width="12"
+           id="circle12" />
+        <!-- Glass Lens -->
+        <circle
+           cx="190"
+           cy="190"
+           r="46"
+           fill="url(#lensGradAnim)"
+           stroke="#100324"
+           stroke-width="8"
+           id="circle13"
+           style="fill:url(#lensGradAnim)" />
+        <!-- Lens Glare Arc -->
+        <path
+           d="m 162,173 a 30,30 0 0 1 35,-15"
+           fill="none"
+           stroke="#ffffff"
+           stroke-width="8"
+           stroke-linecap="round"
+           id="path13" />
+        <!-- Lens Glare Dot -->
+        <circle
+           cx="158"
+           cy="188"
+           r="6"
+           fill="#ffffff"
+           id="circle14" />
+      </g>
+    </g>
+  </g>
+</svg>
