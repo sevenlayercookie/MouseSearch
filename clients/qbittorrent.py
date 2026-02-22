@@ -1,6 +1,8 @@
+import os
 import httpx
 from httpx import RequestError, HTTPStatusError
 from .base import TorrentClient
+from hashing import calculate_torrent_hash_from_bytes
 
 class QBittorrentClient(TorrentClient):
     def __init__(self, config):
@@ -8,6 +10,9 @@ class QBittorrentClient(TorrentClient):
         self.base_url = config.get("TORRENT_CLIENT_URL")
         self.username = config.get("TORRENT_CLIENT_USERNAME")
         self.password = config.get("TORRENT_CLIENT_PASSWORD")
+        self.force_start_on_add = str(os.getenv("QB_FORCE_START", "false")).strip().lower() in {
+            "1", "true", "t", "yes", "y", "on"
+        }
 
     @property
     def display_name(self) -> str:
@@ -88,6 +93,7 @@ class QBittorrentClient(TorrentClient):
         """Adds a torrent to qBittorrent."""
         torrent_data = kwargs.get("torrent_data")
         torrent_filename = kwargs.get("torrent_filename") or "download.torrent"
+        added_hash = calculate_torrent_hash_from_bytes(torrent_data) if torrent_data is not None else None
 
         payload = {}
         if category:
@@ -122,7 +128,21 @@ class QBittorrentClient(TorrentClient):
                     return {'status': 'error', 'message': 'Invalid torrent file (HTTP 415 from qBittorrent)'}
                 response.raise_for_status()
                 if "Ok." in response.text or response.text.strip() == "":
-                    return {'status': 'success', 'message': 'Torrent added successfully'}
+                    message = 'Torrent added successfully'
+                    if self.force_start_on_add and added_hash:
+                        force_start_response = await client.post(
+                            f"{self.base_url}/api/v2/torrents/setForceStart",
+                            data={"hashes": added_hash, "value": "true"},
+                            headers=request_headers
+                        )
+                        force_start_response.raise_for_status()
+                    elif self.force_start_on_add and not added_hash:
+                        message = 'Torrent added successfully (force start skipped: hash unavailable)'
+
+                    result = {'status': 'success', 'message': message}
+                    if added_hash:
+                        result['hash'] = added_hash
+                    return result
                 return {'status': 'error', 'message': response.text or 'Unknown error'}
         except (RequestError, HTTPStatusError) as e:
             return {'status': 'error', 'message': f'Failed to communicate with qBittorrent: {e}'}

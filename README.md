@@ -153,6 +153,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `TORRENT_CLIENT_USERNAME` | **Yes** | Your torrent client username. |
 | `TORRENT_CLIENT_PASSWORD` | **Yes** | Your torrent client password. |
 | `TORRENT_CLIENT_CATEGORY` | No | (Optional) A default category to assign to downloads (e.g., `audiobooks`). |
+| `QB_FORCE_START` | No | qBittorrent only. Set to `true` to force-start each torrent immediately after MouseSearch adds it. Defaults to `false`. |
 
 ### Additional Configuration
 
