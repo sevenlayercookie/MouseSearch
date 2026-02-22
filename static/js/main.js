@@ -2288,6 +2288,19 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 
+    function scrollToResultsWrapper() {
+        if (!wrapper) return;
+        const navbar = document.getElementById('main-navbar');
+        const navbarHeight = navbar ? navbar.getBoundingClientRect().height : 0;
+        const extraSpacing = 0;
+        const top = window.scrollY + wrapper.getBoundingClientRect().top - navbarHeight - extraSpacing;
+
+        window.scrollTo({
+            top: Math.max(0, top),
+            behavior: 'smooth'
+        });
+    }
+
     function applyCurrentResultsSort(container = resultsContainer) {
         if (!container) return;
         const items = [...container.querySelectorAll('.result-item')];
@@ -3524,7 +3537,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                     }
                 }
                 if (!isHistoryNavigation) {
-                    wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    scrollToResultsWrapper();
                 }
                 refreshCategories();
                 initializeSnatchedTorrents();
