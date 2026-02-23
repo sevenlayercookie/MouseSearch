@@ -4708,7 +4708,7 @@ function initAutosuggest(inputId) {
                             ${authorMetaHtml}
                         </div>
                     </div>
-                    <span class="badge rounded-pill ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
+                    <span class="badge ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
                 </div>
             `;
 
