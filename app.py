@@ -12,6 +12,7 @@ import collections
 import math
 import shutil
 import uuid
+import sqlite3
 from difflib import SequenceMatcher
 
 from datetime import datetime, timedelta
@@ -90,8 +91,9 @@ class LeakyBucket:
 mam_autosuggest_limiter = LeakyBucket(120, 60.0)
 AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS = 3600.0
 AUTOSUGGEST_RESPONSE_CACHE_MAX_ENTRIES = 1000
-autosuggest_response_cache = collections.OrderedDict()
-autosuggest_response_cache_lock = asyncio.Lock()
+autosuggest_cache_db_conn = None
+autosuggest_cache_db_lock = asyncio.Lock()
+AUTOSUGGEST_CACHE_DB_PATH = None
 
 RESULT_DISPLAY_FIELDS = [
     "date_uploaded",
@@ -212,32 +214,144 @@ def make_autosuggest_cache_key(raw_query, query_candidates, lang_ids, main_cats,
 
 
 async def get_cached_autosuggest_response(cache_key):
-    now = time.monotonic()
-    async with autosuggest_response_cache_lock:
-        entry = autosuggest_response_cache.get(cache_key)
-        if not entry:
+    if not await ensure_autosuggest_cache_db():
+        return None
+
+    now = time.time()
+    async with autosuggest_cache_db_lock:
+        conn = autosuggest_cache_db_conn
+        if conn is None:
             return None
-        expires_at, payload = entry
-        if expires_at <= now:
-            autosuggest_response_cache.pop(cache_key, None)
+
+        row = conn.execute(
+            "SELECT payload, expires_at FROM autosuggest_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+        if not row:
             return None
-        autosuggest_response_cache.move_to_end(cache_key)
-        return payload
+
+        payload_text, expires_at = row
+        if float(expires_at) <= now:
+            conn.execute("DELETE FROM autosuggest_cache WHERE cache_key = ?", (cache_key,))
+            conn.commit()
+            return None
+
+        conn.execute(
+            "UPDATE autosuggest_cache SET updated_at = ? WHERE cache_key = ?",
+            (now, cache_key),
+        )
+        conn.commit()
+
+    try:
+        payload = json.loads(payload_text)
+    except (TypeError, json.JSONDecodeError):
+        async with autosuggest_cache_db_lock:
+            conn = autosuggest_cache_db_conn
+            if conn is not None:
+                conn.execute("DELETE FROM autosuggest_cache WHERE cache_key = ?", (cache_key,))
+                conn.commit()
+        return None
+
+    return payload if isinstance(payload, list) else None
 
 
 async def set_cached_autosuggest_response(cache_key, payload):
-    if not isinstance(payload, list) or len(payload) == 0:
-        async with autosuggest_response_cache_lock:
-            autosuggest_response_cache.pop(cache_key, None)
+    if not await ensure_autosuggest_cache_db():
         return
-    async with autosuggest_response_cache_lock:
-        autosuggest_response_cache[cache_key] = (
-            time.monotonic() + AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS,
-            payload,
+
+    async with autosuggest_cache_db_lock:
+        conn = autosuggest_cache_db_conn
+        if conn is None:
+            return
+
+        if not isinstance(payload, list) or len(payload) == 0:
+            conn.execute("DELETE FROM autosuggest_cache WHERE cache_key = ?", (cache_key,))
+            conn.commit()
+            return
+
+        now = time.time()
+        expires_at = now + AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS
+        payload_text = json.dumps(payload, separators=(",", ":"))
+
+        conn.execute(
+            """
+            INSERT INTO autosuggest_cache (cache_key, payload, expires_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET
+                payload = excluded.payload,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (cache_key, payload_text, expires_at, now),
         )
-        autosuggest_response_cache.move_to_end(cache_key)
-        while len(autosuggest_response_cache) > AUTOSUGGEST_RESPONSE_CACHE_MAX_ENTRIES:
-            autosuggest_response_cache.popitem(last=False)
+        prune_autosuggest_cache_db_locked(conn, now)
+        conn.commit()
+
+
+def prune_autosuggest_cache_db_locked(conn, now_epoch):
+    conn.execute("DELETE FROM autosuggest_cache WHERE expires_at <= ?", (now_epoch,))
+    row = conn.execute("SELECT COUNT(*) FROM autosuggest_cache").fetchone()
+    total = int(row[0]) if row else 0
+    overflow = total - AUTOSUGGEST_RESPONSE_CACHE_MAX_ENTRIES
+    if overflow > 0:
+        conn.execute(
+            """
+            DELETE FROM autosuggest_cache
+            WHERE cache_key IN (
+                SELECT cache_key FROM autosuggest_cache
+                ORDER BY updated_at ASC
+                LIMIT ?
+            )
+            """,
+            (overflow,),
+        )
+
+
+async def ensure_autosuggest_cache_db():
+    global autosuggest_cache_db_conn
+    async with autosuggest_cache_db_lock:
+        if autosuggest_cache_db_conn is not None:
+            return True
+
+        db_path = AUTOSUGGEST_CACHE_DB_PATH
+        if db_path is None:
+            return False
+
+        try:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS autosuggest_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    expires_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_autosuggest_cache_expires_at ON autosuggest_cache(expires_at)"
+            )
+            prune_autosuggest_cache_db_locked(conn, time.time())
+            conn.commit()
+            autosuggest_cache_db_conn = conn
+            return True
+        except Exception as e:
+            app.logger.error(f"Failed to initialize autosuggest sqlite cache: {e}")
+            autosuggest_cache_db_conn = None
+            return False
+
+
+async def close_autosuggest_cache_db():
+    global autosuggest_cache_db_conn
+    async with autosuggest_cache_db_lock:
+        if autosuggest_cache_db_conn is None:
+            return
+        autosuggest_cache_db_conn.close()
+        autosuggest_cache_db_conn = None
 
 
 def normalize_search_filter_defaults(value):
@@ -381,6 +495,11 @@ async def startup():
     # 1. Load the configuration FIRST
     await load_new_app_config()
 
+    if await ensure_autosuggest_cache_db():
+        app.logger.debug(f"Autosuggest sqlite cache ready at {AUTOSUGGEST_CACHE_DB_PATH}")
+    else:
+        app.logger.warning("Autosuggest sqlite cache unavailable; autosuggest cache disabled")
+
     if not RAPIDFUZZ_AVAILABLE:
         app.logger.warning(
             "rapidfuzz is not installed; autosuggest fuzzy scoring is using difflib fallback. "
@@ -480,6 +599,8 @@ async def shutdown():
         await UPSTREAM_CLIENT.aclose()
         UPSTREAM_CLIENT = None
         app.logger.info("Shared httpx AsyncClient closed")
+
+    await close_autosuggest_cache_db()
     
     global monitor_task
     if monitor_task:
@@ -698,6 +819,7 @@ FALLBACK_CONFIG = {
 # Set up data directory and paths
 DATA_PATH = Path(os.getenv("DATA_PATH", FALLBACK_CONFIG["DATA_PATH"])).resolve()
 DATA_PATH.mkdir(parents=True, exist_ok=True)
+AUTOSUGGEST_CACHE_DB_PATH = DATA_PATH / "autosuggest_cache.sqlite3"
 
 UPLOAD_OPTIONS_FILE = Path("./static/upload_options.json")
 UPLOAD_CREDIT_COST_PER_GB = 500
@@ -1579,16 +1701,21 @@ def build_author_initials_variant(query: str) -> str | None:
 # --- QUART ROUTES ---
 @app.route('/mam/autosuggest', methods=['GET'])
 async def mam_autosuggest():
+    def autosuggest_response(payload, cache_status="miss"):
+        response = jsonify(payload)
+        response.headers["X-Autosuggest-Cache"] = cache_status
+        return response
+
     # 1. Capture and clean input
     raw_query = request.args.get('q', '').strip()
     
     # Basic length check on the raw input
     if len(raw_query) < 3:
-        return jsonify([])
+        return autosuggest_response([])
 
     # 2. Prepare MAM Request
     if not mam_session_cookies.get("mam_id"):
-        return jsonify([])
+        return autosuggest_response([])
 
     url = f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php"
     
@@ -1623,10 +1750,17 @@ async def mam_autosuggest():
             return default_search_fields.get(name, False) if not has_search_param else False
         return val in ("true", "on", "1", "yes")
 
+    def bool_arg(name, default=False):
+        val = request.args.get(name)
+        if val is None:
+            return default
+        return str(val).strip().lower() in {"true", "on", "1", "yes"}
+
     title_on = checkbox_state("search_in_title")
     author_on = checkbox_state("search_in_author")
     series_on = checkbox_state("search_in_series")
     narrator_on = checkbox_state("search_in_narrator")
+    cache_only = bool_arg("cache_only", False)
     if author_on and not title_on:
         title_on = True
 
@@ -1649,7 +1783,7 @@ async def mam_autosuggest():
     query_candidates = list(dict.fromkeys([clause for clause in query_candidates if clause]))
 
     if not query_candidates:
-        return jsonify([])
+        return autosuggest_response([])
 
     suggestion_limit = app.config.get("MAX_AUTOCOMPLETE_RESULTS", FALLBACK_CONFIG["MAX_AUTOCOMPLETE_RESULTS"])
     try:
@@ -1719,7 +1853,9 @@ async def mam_autosuggest():
     )
     cached_payload = await get_cached_autosuggest_response(cache_key)
     if cached_payload is not None:
-        return jsonify(cached_payload)
+        return autosuggest_response(cached_payload, "hit")
+    if cache_only:
+        return autosuggest_response([])
 
     # 3. Enforce Rate Limit before calling upstream
     wait_or_success = await mam_autosuggest_limiter.acquire()
@@ -1744,7 +1880,7 @@ async def mam_autosuggest():
                     break
 
             if not raw_results:
-                return jsonify([])
+                return autosuggest_response([])
             phrase_candidates = []
 
             for row_index, row in enumerate(raw_results):
@@ -1822,11 +1958,11 @@ async def mam_autosuggest():
             ]
 
             await set_cached_autosuggest_response(cache_key, suggestions)
-            return jsonify(suggestions)
+            return autosuggest_response(suggestions)
 
     except Exception as e:
         app.logger.error(f"MAM Autosuggest Error: {e}")
-        return jsonify([])
+        return autosuggest_response([])
     
     
 @app.route('/mam/status', methods=['GET'])

@@ -4488,6 +4488,7 @@ function initAutosuggest(inputId) {
     // State management for cancellation
     let debounceTimer = null;
     let abortController = null;
+    let cacheProbeController = null;
     let hasIssuedInitialSearch = false;
     const MIN_AUTOSUGGEST_LENGTH = 3;
     const INITIAL_AUTOSUGGEST_TRIGGER_LENGTH = 5;
@@ -4715,6 +4716,40 @@ function initAutosuggest(inputId) {
         container.style.display = 'block';
     };
 
+    const probeServerCache = async (queryString, val) => {
+        if (!queryString) return;
+        if (cacheProbeController) {
+            cacheProbeController.abort();
+        }
+        cacheProbeController = new AbortController();
+
+        try {
+            const res = await fetch(`/mam/autosuggest?${queryString}&cache_only=true`, {
+                signal: cacheProbeController.signal
+            });
+            if (!res.ok) return;
+
+            const cacheHeader = (res.headers.get('x-autosuggest-cache') || '').toLowerCase();
+            if (cacheHeader !== 'hit') return;
+
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) return;
+
+            const currentVal = input.value.trim();
+            const currentQueryString = buildAutosuggestQueryString(currentVal);
+            if (currentVal !== val || currentQueryString !== queryString) {
+                return;
+            }
+
+            setCachedSuggestions(queryString, data);
+            renderSuggestions(data, val);
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.error("Autosuggest cache probe error", e);
+            }
+        }
+    };
+
     const buildAutosuggestQueryString = (val) => {
         if (!val || val.length < MIN_AUTOSUGGEST_LENGTH) return null;
         const getCheck = (id) => document.getElementById(id)?.checked ? 'true' : 'false';
@@ -4807,6 +4842,8 @@ function initAutosuggest(inputId) {
             const cachedData = getCachedSuggestions(queryString);
             if (cachedData) {
                 renderSuggestions(cachedData, val);
+            } else {
+                probeServerCache(queryString, val);
             }
         }
 
