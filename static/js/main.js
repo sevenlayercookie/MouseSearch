@@ -4471,6 +4471,7 @@ function initAutosuggest(inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
     const isMainSearchInput = inputId === 'query';
+    const inputAnchor = input.closest('.form-floating, .input-group') || input.parentNode;
 
     // Create results dropdown container
     const container = document.createElement('div');
@@ -4551,6 +4552,66 @@ function initAutosuggest(inputId) {
         if (type === 'author') return 'Author';
         if (type === 'series') return 'Series';
         return 'Title';
+    };
+
+    const searchFilterIds = new Set([
+        'search_in_title',
+        'search_in_author',
+        'search_in_series',
+        'search_in_narrator',
+        'advTitle',
+        'advAuthor',
+        'advSeries',
+        'advNarrator'
+    ]);
+    const searchFilterSelector = [
+        '#search_in_title',
+        '#search_in_author',
+        '#search_in_series',
+        '#search_in_narrator',
+        '#advTitle',
+        '#advAuthor',
+        '#advSeries',
+        '#advNarrator',
+        '[data-sync-target="search_in_title"]',
+        '[data-sync-target="search_in_author"]',
+        '[data-sync-target="search_in_series"]',
+        '[data-sync-target="search_in_narrator"]'
+    ].join(', ');
+    const searchFilterElements = Array.from(document.querySelectorAll(searchFilterSelector));
+    const mainCatSelectEl = document.getElementById('main_cat');
+
+    const isSearchFieldToggleTarget = (target) => {
+        if (!(target instanceof Element)) return false;
+        if (target.closest(searchFilterSelector)) return true;
+        const label = target.closest('label[for]');
+        if (!label) return false;
+        return searchFilterIds.has(label.getAttribute('for'));
+    };
+
+    const isMainCatTomSelectTarget = (target) => {
+        if (!(target instanceof Element)) return false;
+        if (!mainCatSelectEl) return false;
+        if (mainCatSelectEl.contains(target)) return true;
+        if (target.closest('#main_cat-ts-control') || target.closest('#main_cat-ts-dropdown')) return true;
+
+        const tsInstance = mainCatPrimaryTomSelect || mainCatSelectEl.tomselect || null;
+        if (!tsInstance) return false;
+        if (tsInstance.wrapper?.contains(target)) return true;
+        if (tsInstance.control?.contains(target)) return true;
+        if (tsInstance.dropdown?.contains(target)) return true;
+        return false;
+    };
+
+    const refreshVisibleSuggestions = () => {
+        if (container.style.display === 'none') return;
+        const val = input.value.trim();
+        if (val.length < 3) {
+            container.style.display = 'none';
+            return;
+        }
+        clearTimeout(debounceTimer);
+        performSearch(val);
     };
 
     const performSearch = async (val) => {
@@ -4681,10 +4742,28 @@ function initAutosuggest(inputId) {
 
     // 3. Click Outside
     document.addEventListener('click', (e) => {
-        if (!input.contains(e.target) && !container.contains(e.target)) {
+        if (isSearchFieldToggleTarget(e.target) && container.style.display !== 'none') {
+            return;
+        }
+        if (isMainCatTomSelectTarget(e.target) && container.style.display !== 'none') {
+            return;
+        }
+        if (!inputAnchor.contains(e.target) && !container.contains(e.target)) {
             container.style.display = 'none';
         }
     });
+
+    searchFilterElements.forEach((element) => {
+        element.addEventListener('change', refreshVisibleSuggestions);
+    });
+    if (mainCatSelectEl) {
+        mainCatSelectEl.addEventListener('change', refreshVisibleSuggestions);
+    }
+    if (mainCatPrimaryTomSelect) {
+        mainCatPrimaryTomSelect.on('change', refreshVisibleSuggestions);
+        mainCatPrimaryTomSelect.on('item_add', refreshVisibleSuggestions);
+        mainCatPrimaryTomSelect.on('item_remove', refreshVisibleSuggestions);
+    }
 
     if (isMainSearchInput) {
         window.addEventListener('resize', updateContainerGeometry);
