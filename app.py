@@ -88,6 +88,10 @@ class LeakyBucket:
 
 # 120 requests per 60 seconds (Shared limit)
 mam_autosuggest_limiter = LeakyBucket(120, 60.0)
+AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS = 3600.0
+AUTOSUGGEST_RESPONSE_CACHE_MAX_ENTRIES = 1000
+autosuggest_response_cache = collections.OrderedDict()
+autosuggest_response_cache_lock = asyncio.Lock()
 
 RESULT_DISPLAY_FIELDS = [
     "date_uploaded",
@@ -193,6 +197,47 @@ def normalize_string_list(value):
         seen.add(item)
         unique.append(item)
     return unique
+
+
+def make_autosuggest_cache_key(raw_query, query_candidates, lang_ids, main_cats, selected_fields, suggestion_limit):
+    payload = {
+        "q": normalize_spaces(raw_query).lower(),
+        "candidates": [str(item) for item in (query_candidates or [])],
+        "lang_ids": sorted({str(item) for item in (lang_ids or [])}),
+        "main_cats": sorted({str(item) for item in (main_cats or [])}),
+        "fields": [str(item) for item in (selected_fields or [])],
+        "limit": int(suggestion_limit),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+async def get_cached_autosuggest_response(cache_key):
+    now = time.monotonic()
+    async with autosuggest_response_cache_lock:
+        entry = autosuggest_response_cache.get(cache_key)
+        if not entry:
+            return None
+        expires_at, payload = entry
+        if expires_at <= now:
+            autosuggest_response_cache.pop(cache_key, None)
+            return None
+        autosuggest_response_cache.move_to_end(cache_key)
+        return payload
+
+
+async def set_cached_autosuggest_response(cache_key, payload):
+    if not isinstance(payload, list) or len(payload) == 0:
+        async with autosuggest_response_cache_lock:
+            autosuggest_response_cache.pop(cache_key, None)
+        return
+    async with autosuggest_response_cache_lock:
+        autosuggest_response_cache[cache_key] = (
+            time.monotonic() + AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS,
+            payload,
+        )
+        autosuggest_response_cache.move_to_end(cache_key)
+        while len(autosuggest_response_cache) > AUTOSUGGEST_RESPONSE_CACHE_MAX_ENTRIES:
+            autosuggest_response_cache.popitem(last=False)
 
 
 def normalize_search_filter_defaults(value):
@@ -1541,12 +1586,7 @@ async def mam_autosuggest():
     if len(raw_query) < 3:
         return jsonify([])
 
-    # 2. Enforce Rate Limit
-    wait_or_success = await mam_autosuggest_limiter.acquire()
-    if wait_or_success is not True:
-        await asyncio.sleep(wait_or_success)
-
-    # 3. Prepare MAM Request
+    # 2. Prepare MAM Request
     if not mam_session_cookies.get("mam_id"):
         return jsonify([])
 
@@ -1642,8 +1682,10 @@ async def mam_autosuggest():
     main_cats = [m for m in request.args.getlist("main_cat") if m]
     if not main_cats:
         main_cats = [m for m in request.args.getlist("media_type") if m]
+    effective_main_cats = []
     if main_cats and "all" not in main_cats:
-        params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
+        effective_main_cats = list(dict.fromkeys(main_cats))
+        params["tor[main_cat][]"] = effective_main_cats
 
     def fuzzy_score(query_text, candidate_text):
         query_norm = normalize_spaces(query_text)
@@ -1666,6 +1708,23 @@ async def mam_autosuggest():
         selected_primary_fields = ["title"]
     field_priority = {"title": 0, "series": 1, "author": 2, "narrator": 3}
     seen_by_primary_type = {"title": set(), "author": set(), "series": set(), "narrator": set()}
+
+    cache_key = make_autosuggest_cache_key(
+        raw_query=raw_query,
+        query_candidates=query_candidates,
+        lang_ids=lang_ids,
+        main_cats=effective_main_cats,
+        selected_fields=selected_primary_fields,
+        suggestion_limit=suggestion_limit,
+    )
+    cached_payload = await get_cached_autosuggest_response(cache_key)
+    if cached_payload is not None:
+        return jsonify(cached_payload)
+
+    # 3. Enforce Rate Limit before calling upstream
+    wait_or_success = await mam_autosuggest_limiter.acquire()
+    if wait_or_success is not True:
+        await asyncio.sleep(wait_or_success)
 
     def normalize_dedupe_text(value):
         return normalize_spaces(value).lower()
@@ -1762,6 +1821,7 @@ async def mam_autosuggest():
                 for item in phrase_candidates[:suggestion_limit]
             ]
 
+            await set_cached_autosuggest_response(cache_key, suggestions)
             return jsonify(suggestions)
 
     except Exception as e:

@@ -26,6 +26,10 @@ let legacyCategoryPromise = null;
 let categoryMainCatMap = new Map();
 let mainCatSelectSyncing = false;
 let categoryAllowedMainCats = null;
+const AUTOSUGGEST_CACHE_MAX_ENTRIES = 300;
+const AUTOSUGGEST_CACHE_TTL_MS = 60 * 60 * 1000;
+const autosuggestCache = window.__autosuggestCache instanceof Map ? window.__autosuggestCache : new Map();
+window.__autosuggestCache = autosuggestCache;
 const UPLOAD_AMOUNT_STEP = 50;
 const UPLOAD_AMOUNT_MIN = 50;
 const UPLOAD_AMOUNT_MAX = 200;
@@ -4631,8 +4635,84 @@ function initAutosuggest(inputId) {
         return rect.bottom > 0 && rect.top < window.innerHeight;
     };
 
+    const getCachedSuggestions = (key) => {
+        const cached = autosuggestCache.get(key);
+        if (!cached) return null;
+        if (cached.expiresAt <= Date.now()) {
+            autosuggestCache.delete(key);
+            return null;
+        }
+        // Promote to most recently used.
+        autosuggestCache.delete(key);
+        autosuggestCache.set(key, cached);
+        return Array.isArray(cached.data) ? cached.data : null;
+    };
+
+    const setCachedSuggestions = (key, data) => {
+        if (!Array.isArray(data) || data.length === 0) {
+            autosuggestCache.delete(key);
+            return;
+        }
+        autosuggestCache.delete(key);
+        autosuggestCache.set(key, {
+            data,
+            expiresAt: Date.now() + AUTOSUGGEST_CACHE_TTL_MS
+        });
+        while (autosuggestCache.size > AUTOSUGGEST_CACHE_MAX_ENTRIES) {
+            const oldestKey = autosuggestCache.keys().next().value;
+            if (oldestKey === undefined) break;
+            autosuggestCache.delete(oldestKey);
+        }
+    };
+
+    const renderSuggestions = (data, val) => {
+        container.innerHTML = '';
+
+        if (!Array.isArray(data) || data.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        data.forEach(item => {
+            const a = document.createElement('a');
+            a.className = 'list-group-item list-group-item-action py-2';
+            a.href = '#';
+
+            const primaryType = item.primary_type || 'title';
+            const primaryText = item.primary_text || item.title || item.author || item.series || '';
+            const badgeClass = getTypeBadgeClass(primaryType);
+            const badgeLabel = getTypeLabel(primaryType);
+            a.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between gap-2 w-100">
+                    <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
+                    <span class="badge rounded-pill ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
+                </div>
+            `;
+
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (abortController) abortController.abort();
+                clearTimeout(debounceTimer);
+
+                input.value = primaryText;
+
+                const mainQuery = document.getElementById('query');
+                if (mainQuery && input.id !== 'query') {
+                    mainQuery.value = input.value;
+                }
+
+                container.style.display = 'none';
+                document.getElementById('searchButton').click();
+            });
+
+            container.appendChild(a);
+        });
+
+        updateContainerGeometry();
+        container.style.display = 'block';
+    };
+
     const performSearch = async (val) => {
-        // 1. Cancel any previous in-flight request
         if (abortController) {
             abortController.abort();
         }
@@ -4644,7 +4724,6 @@ function initAutosuggest(inputId) {
         }
 
         try {
-            // Gather filters
             const getCheck = (id) => document.getElementById(id)?.checked ? 'true' : 'false';
 
             const params = new URLSearchParams({
@@ -4668,61 +4747,24 @@ function initAutosuggest(inputId) {
                 params.append('language_ids', String(window.DEFAULT_LANGUAGE_ID));
             }
 
-            // 2. Fetch with AbortSignal
-            const res = await fetch(`/mam/autosuggest?${params.toString()}`, {
-                signal: abortController.signal
-            });
-            const data = await res.json();
-
-            // 3. Render
-            container.innerHTML = '';
-
-            if (data.length === 0) {
-                container.style.display = 'none';
+            const queryString = params.toString();
+            const cachedData = getCachedSuggestions(queryString);
+            if (cachedData) {
+                renderSuggestions(cachedData, val);
                 return;
             }
 
-            data.forEach(item => {
-                const a = document.createElement('a');
-                a.className = 'list-group-item list-group-item-action py-2';
-                a.href = '#';
-
-                const primaryType = item.primary_type || 'title';
-                const primaryText = item.primary_text || item.title || item.author || item.series || '';
-                const badgeClass = getTypeBadgeClass(primaryType);
-                const badgeLabel = getTypeLabel(primaryType);
-                a.innerHTML = `
-                    <div class="d-flex align-items-center justify-content-between gap-2 w-100">
-                        <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
-                        <span class="badge rounded-pill ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
-                    </div>
-                `;
-
-                a.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    // Kill any pending requests since we made a choice
-                    if (abortController) abortController.abort();
-                    clearTimeout(debounceTimer);
-
-                    input.value = primaryText;
-
-                    const mainQuery = document.getElementById('query');
-                    if (mainQuery && input.id !== 'query') {
-                        mainQuery.value = input.value;
-                    }
-
-                    container.style.display = 'none';
-                    document.getElementById('searchButton').click();
-                });
-
-                container.appendChild(a);
+            const res = await fetch(`/mam/autosuggest?${queryString}`, {
+                signal: abortController.signal
             });
+            if (!res.ok) {
+                throw new Error(`Autosuggest HTTP ${res.status}`);
+            }
+            const data = await res.json();
 
-            updateContainerGeometry();
-            container.style.display = 'block';
-
+            setCachedSuggestions(queryString, data);
+            renderSuggestions(data, val);
         } catch (e) {
-            // Ignore AbortErrors (caused by new typing or hitting Enter)
             if (e.name !== 'AbortError') {
                 console.error("Autosuggest error", e);
             }
