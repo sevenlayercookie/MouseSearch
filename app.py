@@ -1444,6 +1444,86 @@ async def push_mam_stats():
     })
     app.logger.debug("[MAM-STATS] Successfully pushed MAM stats via SSE")
 
+
+def normalize_spaces(text: str) -> str:
+    if text is None:
+        return ""
+    return re.sub(r"\s+", " ", str(text).strip())
+
+
+def build_wildcard_clause(text: str) -> str:
+    words = [w.strip("*").strip() for w in normalize_spaces(text).split() if w.strip("*").strip()]
+    meaningful_words = [w for w in words if len(re.sub(r"\W+", "", w, flags=re.UNICODE)) >= 2]
+    words_for_query = meaningful_words if meaningful_words else words
+    wildcard_words = [f"*{w}*" for w in words_for_query]
+    return " ".join(wildcard_words)
+
+
+def build_author_initials_variant(query: str) -> str | None:
+    """
+    Normalize likely author-initial patterns to MAM style:
+    "jk rowling" -> "j k rowling", "j.k. rowling" -> "j k rowling", "rr martin" -> "r r martin".
+    Returns None when no likely initials pattern is found or query seems advanced/operator-heavy.
+    """
+    if query is None:
+        return None
+    query = str(query)
+    if not query.strip():
+        return None
+    if re.search(r'[|()"*]', query):
+        return None
+
+    raw_tokens = [token for token in normalize_spaces(query).split(" ") if token]
+    if not raw_tokens:
+        return None
+
+    has_non_initial_word = any(len(re.sub(r"[^A-Za-z]", "", token)) >= 3 for token in raw_tokens)
+    if not has_non_initial_word:
+        return None
+
+    normalized_tokens = []
+    changed = False
+
+    for raw in raw_tokens:
+        token = raw.strip()
+        if not token:
+            continue
+
+        stripped = token.strip(".,;:!?")
+        if not stripped:
+            continue
+
+        # Dotted initials chunk like "j.k." or "j.r.r."
+        dotted_letters = re.findall(r"[A-Za-z]", stripped)
+        is_dotted_initials = "." in stripped and len(dotted_letters) >= 2 and re.fullmatch(r"[A-Za-z.]+", stripped)
+        if is_dotted_initials:
+            normalized_tokens.extend(dotted_letters)
+            changed = True
+            continue
+
+        letters_only = re.sub(r"[^A-Za-z]", "", stripped)
+        is_initial_cluster = (
+            len(letters_only) == 2
+            and letters_only.isalpha()
+            and not re.search(r"[AEIOUaeiou]", letters_only)
+        )
+        if is_initial_cluster:
+            normalized_tokens.extend(list(letters_only))
+            changed = True
+            continue
+
+        normalized_tokens.append(stripped)
+
+    if not changed:
+        return None
+
+    variant = normalize_spaces(" ".join(normalized_tokens))
+    if not variant:
+        return None
+    if variant.lower() == normalize_spaces(query).lower():
+        return None
+    return variant
+
 # --- QUART ROUTES ---
 @app.route('/mam/autosuggest', methods=['GET'])
 async def mam_autosuggest():
@@ -1465,20 +1545,6 @@ async def mam_autosuggest():
 
     url = f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php"
     
-    # Build wildcard terms from query words.
-    # If the query includes longer tokens, drop 1-char tokens (e.g. "j k rowling" -> "*rowling*")
-    # to avoid over-constraining the upstream search on initials.
-    words = [w.strip('*').strip() for w in raw_query.split() if w.strip('*').strip()]
-    meaningful_words = [w for w in words if len(re.sub(r"\W+", "", w, flags=re.UNICODE)) >= 2]
-    words_for_query = meaningful_words if meaningful_words else words
-    wildcard_words = [f"*{w}*" for w in words_for_query]
-    
-    if not wildcard_words:
-        return jsonify([])
-        
-    wildcard_query = " ".join(wildcard_words)
-    # ------------------------------
-
     def get_nonempty_list(name):
         return [v for v in request.args.getlist(name) if v]
 
@@ -1517,6 +1583,27 @@ async def mam_autosuggest():
     if author_on and not title_on:
         title_on = True
 
+    base_wildcard_clause = build_wildcard_clause(raw_query)
+    author_variant = build_author_initials_variant(raw_query) if author_on else None
+    variant_wildcard_clause = build_wildcard_clause(author_variant) if author_variant else ""
+    quoted_variant = author_variant.replace('"', '').strip() if author_variant else ""
+
+    # Query fallback order for autosuggest (loadSearchJSONbasic.php):
+    # 1) normalized author-friendly variant for initials (best recall)
+    # 2) original wildcard query
+    # 3) exact normalized phrase
+    query_candidates = []
+    if variant_wildcard_clause:
+        query_candidates.append(variant_wildcard_clause)
+    if base_wildcard_clause:
+        query_candidates.append(base_wildcard_clause)
+    if quoted_variant:
+        query_candidates.append(f"\"{quoted_variant}\"")
+    query_candidates = list(dict.fromkeys([clause for clause in query_candidates if clause]))
+
+    if not query_candidates:
+        return jsonify([])
+
     suggestion_limit = app.config.get("MAX_AUTOCOMPLETE_RESULTS", FALLBACK_CONFIG["MAX_AUTOCOMPLETE_RESULTS"])
     try:
         suggestion_limit = int(suggestion_limit)
@@ -1530,7 +1617,7 @@ async def mam_autosuggest():
 
     # Construct parameters to match the main search filters
     params = {
-        "tor[text]": wildcard_query,
+        "tor[text]": query_candidates[0],
         "tor[sortType]": "seeders",
         "perpage": fetch_perpage,
         "thumbnail": "true",
@@ -1552,8 +1639,8 @@ async def mam_autosuggest():
         params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
 
     def fuzzy_score(query_text, candidate_text):
-        query_norm = (query_text or "").strip()
-        candidate_norm = (candidate_text or "").strip()
+        query_norm = normalize_spaces(query_text)
+        candidate_norm = normalize_spaces(candidate_text)
         if not query_norm or not candidate_norm:
             return 0.0
         if fuzz is not None:
@@ -1573,18 +1660,24 @@ async def mam_autosuggest():
     seen_by_primary_type = {"title": set(), "author": set(), "series": set()}
 
     def normalize_dedupe_text(value):
-        return re.sub(r"\s+", " ", (value or "").strip()).lower()
+        return normalize_spaces(value).lower()
 
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params=params, cookies=mam_session_cookies, timeout=5.0)
-            update_cookies(resp)
-            
-            if resp.status_code != 200:
-                return jsonify([])
+            raw_results = []
+            for query_text in query_candidates:
+                params["tor[text]"] = query_text
+                resp = await client.get(url, params=params, cookies=mam_session_cookies, timeout=5.0)
+                update_cookies(resp)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                raw_results = data.get('data', [])
+                if raw_results:
+                    break
 
-            data = resp.json()
-            raw_results = data.get('data', [])
+            if not raw_results:
+                return jsonify([])
             phrase_candidates = []
 
             for row_index, row in enumerate(raw_results):
@@ -1593,7 +1686,7 @@ async def mam_autosuggest():
                 try:
                     if row.get('author_info'):
                         auth_data = json.loads(row['author_info'])
-                        author_str = ", ".join(auth_data.values())
+                        author_str = ", ".join(str(v) for v in auth_data.values())
                 except:
                     pass
 
@@ -1605,18 +1698,18 @@ async def mam_autosuggest():
                         if ser_data:
                             first_series = next(iter(ser_data.values()))
                             name = first_series[0]
-                            series_str = name
+                            series_str = str(name)
                 except:
                     pass
 
-                title_str = row.get('title', 'Unknown')
+                title_str = str(row.get('title', 'Unknown'))
                 candidate_texts = {
                     "title": title_str,
                     "author": author_str,
                     "series": series_str,
                 }
                 for field in selected_primary_fields:
-                    primary_text = (candidate_texts.get(field, "") or "").strip()
+                    primary_text = normalize_spaces(candidate_texts.get(field, ""))
                     dedupe_key = normalize_dedupe_text(primary_text)
                     if not dedupe_key:
                         continue
@@ -2609,7 +2702,14 @@ async def mam_search():
         "isbn": "true", "description": "true", "mediaInfo": "true"
     }
     if query:
-        params["tor[text]"] = query
+        search_text = query
+        if author_on:
+            author_variant = build_author_initials_variant(query)
+            if author_variant:
+                quoted_variant = author_variant.replace('"', '').strip()
+                if quoted_variant:
+                    search_text = f"({query} | \"{quoted_variant}\")"
+        params["tor[text]"] = search_text
     main_cats = [m for m in request.args.getlist("main_cat") if m]
     if not main_cats:
         main_cats = [m for m in request.args.getlist("media_type") if m]
