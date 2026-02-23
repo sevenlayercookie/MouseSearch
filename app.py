@@ -34,6 +34,7 @@ try:
     from rapidfuzz import fuzz
 except ImportError:
     fuzz = None
+RAPIDFUZZ_AVAILABLE = fuzz is not None
 
 from clients import get_torrent_client, get_client_display_name, get_available_clients
 from hashing import calculate_torrent_hash_from_url, calculate_torrent_hash_from_bytes
@@ -334,6 +335,12 @@ def apply_default_destination_path(default_path, destination_paths):
 async def startup():
     # 1. Load the configuration FIRST
     await load_new_app_config()
+
+    if not RAPIDFUZZ_AVAILABLE:
+        app.logger.warning(
+            "rapidfuzz is not installed; autosuggest fuzzy scoring is using difflib fallback. "
+            "Install requirements to enable rapidfuzz-based matching."
+        )
 
     # 2. Use app.config (instead of initial_config) to check settings
     if app.config.get("ENABLE_FILESYSTEM_THUMBNAIL_CACHE", True):
@@ -1732,13 +1739,14 @@ async def mam_autosuggest():
                     })
 
             phrase_candidates.sort(
-                key=lambda item: (-item["score"], item["field_priority"], item["row_index"], -item["seeders"])
+                key=lambda item: (-item["score"], item["field_priority"], -item["seeders"], item["row_index"])
             )
             suggestions = [
                 {
                     "primary_type": item["primary_type"],
                     "primary_text": item["primary_text"],
                     "seeders": item["seeders"],
+                    "match_score": round(item["score"], 2),
                 }
                 for item in phrase_candidates[:suggestion_limit]
             ]
