@@ -4480,6 +4480,66 @@ function initAutosuggest(inputId) {
     let debounceTimer = null;
     let abortController = null;
 
+    const escapeHtml = (value) => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const highlightQueryMatch = (text, query) => {
+        const rawText = String(text || '');
+        const normalizedQuery = String(query || '')
+            .replace(/\*/g, ' ')
+            .trim()
+            .replace(/\s+/g, ' ');
+
+        if (!rawText) return escapeHtml(rawText);
+
+        // Prefer highlighting the full phrase when it exists.
+        if (normalizedQuery.length > 1) {
+            const phraseIdx = rawText.toLowerCase().indexOf(normalizedQuery.toLowerCase());
+            if (phraseIdx !== -1) {
+                const start = rawText.slice(0, phraseIdx);
+                const match = rawText.slice(phraseIdx, phraseIdx + normalizedQuery.length);
+                const end = rawText.slice(phraseIdx + normalizedQuery.length);
+                return `${escapeHtml(start)}<strong>${escapeHtml(match)}</strong>${escapeHtml(end)}`;
+            }
+        }
+
+        const cleanedWords = normalizedQuery
+            .split(/\s+/)
+            .map(word => word.replace(/\*/g, '').trim())
+            .filter(word => word.length > 1)
+            .sort((a, b) => b.length - a.length);
+
+        if (!cleanedWords.length) return escapeHtml(rawText);
+
+        const lowerText = rawText.toLowerCase();
+        for (const word of cleanedWords) {
+            const idx = lowerText.indexOf(word.toLowerCase());
+            if (idx === -1) continue;
+            const start = rawText.slice(0, idx);
+            const match = rawText.slice(idx, idx + word.length);
+            const end = rawText.slice(idx + word.length);
+            return `${escapeHtml(start)}<strong>${escapeHtml(match)}</strong>${escapeHtml(end)}`;
+        }
+
+        return escapeHtml(rawText);
+    };
+
+    const getTypeBadgeClass = (type) => {
+        if (type === 'author') return 'bg-info-subtle text-info-emphasis';
+        if (type === 'series') return 'bg-warning-subtle text-warning-emphasis';
+        return 'bg-primary-subtle text-primary-emphasis';
+    };
+
+    const getTypeLabel = (type) => {
+        if (type === 'author') return 'Author';
+        if (type === 'series') return 'Series';
+        return 'Title';
+    };
+
     const performSearch = async (val) => {
         // 1. Cancel any previous in-flight request
         if (abortController) {
@@ -4494,7 +4554,6 @@ function initAutosuggest(inputId) {
 
         try {
             // Gather filters
-            const getVal = (id) => document.getElementById(id)?.value || '';
             const getCheck = (id) => document.getElementById(id)?.checked ? 'true' : 'false';
 
             const params = new URLSearchParams({
@@ -4534,29 +4593,18 @@ function initAutosuggest(inputId) {
 
             data.forEach(item => {
                 const a = document.createElement('a');
-                a.className = 'list-group-item list-group-item-action d-flex align-items-center gap-3 py-2';
+                a.className = 'list-group-item list-group-item-action py-2';
                 a.href = '#';
 
-                const seriesHtml = item.series
-                    ? `<div class="text-xs text-body-secondary text-truncate"><i class="bi bi-collection me-1"></i>${item.series}</div>`
-                    : '';
-
-                const seederHtml = `<span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill ms-auto" style="font-size: 0.65rem;">${item.seeders} <i class="bi bi-arrow-up-short"></i></span>`;
-                let thumbnailEl = `<img src="${item.thumbnail || '/static/icons/no_cover.png'}" 
-                         class="rounded object-fit-cover" 
-                         width="40" height="40" 
-                         alt="Cover"
-                         onerror="this.src='/static/icons/no_cover.png'">`
-
-                thumbnailEl = `` // disable thumbnails to reduce MAM load
+                const primaryType = item.primary_type || 'title';
+                const primaryText = item.primary_text || item.title || item.author || item.series || '';
+                const badgeClass = getTypeBadgeClass(primaryType);
+                const badgeLabel = getTypeLabel(primaryType);
                 a.innerHTML = `
-                    ${thumbnailEl}
-                    <div class="overflow-hidden flex-grow-1">
-                        <div class="fw-bold text-truncate text-sm">${item.title}</div>
-                        <div class="text-xs text-body-secondary text-truncate">${item.author}</div>
-                        ${seriesHtml}
+                    <div class="d-flex align-items-center justify-content-between gap-2 w-100">
+                        <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
+                        <span class="badge rounded-pill ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
                     </div>
-                    ${seederHtml}
                 `;
 
                 a.addEventListener('click', (e) => {
@@ -4565,7 +4613,7 @@ function initAutosuggest(inputId) {
                     if (abortController) abortController.abort();
                     clearTimeout(debounceTimer);
 
-                    input.value = `${item.title} ${item.author}`;
+                    input.value = primaryText;
 
                     const mainQuery = document.getElementById('query');
                     if (mainQuery && input.id !== 'query') {

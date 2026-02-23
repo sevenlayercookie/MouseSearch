@@ -4,3 +4,4 @@ httpx==0.28.1
 Hypercorn==0.17.3
 python-dotenv==1.2.1
 Quart==0.20.0
+rapidfuzz==3.14.1

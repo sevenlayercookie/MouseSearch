@@ -12,13 +12,14 @@ import collections
 import math
 import shutil
 import uuid
+from difflib import SequenceMatcher
 
 from datetime import datetime, timedelta
 from dotenv import load_dotenv, dotenv_values
 from httpx import Limits, Timeout, AsyncHTTPTransport
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 import re
 from pathlib import Path
@@ -29,6 +30,10 @@ import sys # for stderr logging
 from static.language_dict import language_dict
 
 import asyncio
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    fuzz = None
 
 from clients import get_torrent_client, get_client_display_name, get_available_clients
 from hashing import calculate_torrent_hash_from_url, calculate_torrent_hash_from_bytes
@@ -633,6 +638,7 @@ FALLBACK_CONFIG = {
     "ENABLE_FILESYSTEM_THUMBNAIL_CACHE": True,
     "THUMBNAIL_CACHE_MAX_SIZE_MB": 500,
     "MAX_SEARCH_RESULTS": 50,
+    "MAX_AUTOCOMPLETE_RESULTS": 20,
     "RESULTS_DISPLAY_FIELDS": ["narrator", "series", "file_size", "file_type", "seeders"],
     "SEARCH_FILTER_DEFAULTS": copy.deepcopy(DEFAULT_SEARCH_FILTER_DEFAULTS),
 }
@@ -694,7 +700,8 @@ def load_config():
         "AUTO_BUY_VIP_INTERVAL_HOURS",
         "AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS",
         "THUMBNAIL_CACHE_MAX_SIZE_MB",
-        "MAX_SEARCH_RESULTS"
+        "MAX_SEARCH_RESULTS",
+        "MAX_AUTOCOMPLETE_RESULTS",
     ]:
         try:
             config[key] = int(config[key])
@@ -703,6 +710,8 @@ def load_config():
     
     if config["MAX_SEARCH_RESULTS"] <= 0:
         config["MAX_SEARCH_RESULTS"] = FALLBACK_CONFIG["MAX_SEARCH_RESULTS"]
+    if config["MAX_AUTOCOMPLETE_RESULTS"] <= 0:
+        config["MAX_AUTOCOMPLETE_RESULTS"] = FALLBACK_CONFIG["MAX_AUTOCOMPLETE_RESULTS"]
 
     # Floats
     for key in [
@@ -1507,11 +1516,22 @@ async def mam_autosuggest():
     if author_on and not title_on:
         title_on = True
 
+    suggestion_limit = app.config.get("MAX_AUTOCOMPLETE_RESULTS", FALLBACK_CONFIG["MAX_AUTOCOMPLETE_RESULTS"])
+    try:
+        suggestion_limit = int(suggestion_limit)
+    except (TypeError, ValueError):
+        suggestion_limit = FALLBACK_CONFIG["MAX_AUTOCOMPLETE_RESULTS"]
+    if suggestion_limit <= 0:
+        suggestion_limit = FALLBACK_CONFIG["MAX_AUTOCOMPLETE_RESULTS"]
+
+    # Over-fetch to better fill the final deduped list.
+    fetch_perpage = min(max(suggestion_limit * 3, suggestion_limit), 200)
+
     # Construct parameters to match the main search filters
     params = {
         "tor[text]": wildcard_query,
         "tor[sortType]": "seeders",
-        "perpage": 7,
+        "perpage": fetch_perpage,
         "thumbnail": "true",
         
         # Dynamic Filters from URL params
@@ -1530,6 +1550,30 @@ async def mam_autosuggest():
     if main_cats and "all" not in main_cats:
         params["tor[main_cat][]"] = list(dict.fromkeys(main_cats))
 
+    def fuzzy_score(query_text, candidate_text):
+        query_norm = (query_text or "").strip()
+        candidate_norm = (candidate_text or "").strip()
+        if not query_norm or not candidate_norm:
+            return 0.0
+        if fuzz is not None:
+            return float(fuzz.WRatio(query_norm, candidate_norm))
+        return float(SequenceMatcher(None, query_norm.lower(), candidate_norm.lower()).ratio() * 100.0)
+
+    selected_primary_fields = [
+        name for name, enabled in (
+            ("title", title_on),
+            ("author", author_on),
+            ("series", series_on),
+        ) if enabled
+    ]
+    if not selected_primary_fields:
+        selected_primary_fields = ["title"]
+    field_priority = {"title": 0, "series": 1, "author": 2}
+    seen_by_primary_type = {"title": set(), "author": set(), "series": set()}
+
+    def normalize_dedupe_text(value):
+        return re.sub(r"\s+", " ", (value or "").strip()).lower()
+
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, params=params, cookies=mam_session_cookies, timeout=5.0)
@@ -1540,9 +1584,9 @@ async def mam_autosuggest():
 
             data = resp.json()
             raw_results = data.get('data', [])
-            suggestions = []
+            phrase_candidates = []
 
-            for row in raw_results:
+            for row_index, row in enumerate(raw_results):
                 # -- Parse Author --
                 author_str = "Unknown"
                 try:
@@ -1560,26 +1604,50 @@ async def mam_autosuggest():
                         if ser_data:
                             first_series = next(iter(ser_data.values()))
                             name = first_series[0]
-                            seq = first_series[1]
-                            series_str = f"{name} #{seq}" if seq else name
+                            series_str = name
                 except:
                     pass
 
-                # -- Generate Proxied Thumbnail URL --
-                thumb = ""
-                tid = row.get('id')
-                if tid:
-                    upstream_url = f"https://cdn.myanonamouse.net/t/p/small/{tid}.webp"
-                    encoded_url = quote(upstream_url)
-                    thumb = f"/proxy_thumbnail?url={encoded_url}"
+                title_str = row.get('title', 'Unknown')
+                candidate_texts = {
+                    "title": title_str,
+                    "author": author_str,
+                    "series": series_str,
+                }
+                for field in selected_primary_fields:
+                    primary_text = (candidate_texts.get(field, "") or "").strip()
+                    dedupe_key = normalize_dedupe_text(primary_text)
+                    if not dedupe_key:
+                        continue
+                    if dedupe_key in seen_by_primary_type[field]:
+                        continue
 
-                suggestions.append({
-                    'title': row.get('title', 'Unknown'),
-                    'author': author_str,
-                    'series': series_str,
-                    'thumbnail': thumb,
-                    'seeders': row.get('seeders', 0)
-                })
+                    seen_by_primary_type[field].add(dedupe_key)
+                    try:
+                        seeders = int(row.get("seeders", 0) or 0)
+                    except (TypeError, ValueError):
+                        seeders = 0
+
+                    phrase_candidates.append({
+                        "primary_type": field,
+                        "primary_text": primary_text,
+                        "seeders": seeders,
+                        "score": fuzzy_score(raw_query, primary_text),
+                        "row_index": row_index,
+                        "field_priority": field_priority[field],
+                    })
+
+            phrase_candidates.sort(
+                key=lambda item: (-item["score"], item["field_priority"], item["row_index"], -item["seeders"])
+            )
+            suggestions = [
+                {
+                    "primary_type": item["primary_type"],
+                    "primary_text": item["primary_text"],
+                    "seeders": item["seeders"],
+                }
+                for item in phrase_candidates[:suggestion_limit]
+            ]
 
             return jsonify(suggestions)
 
