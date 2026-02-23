@@ -1659,12 +1659,13 @@ async def mam_autosuggest():
             ("title", title_on),
             ("author", author_on),
             ("series", series_on),
+            ("narrator", narrator_on),
         ) if enabled
     ]
     if not selected_primary_fields:
         selected_primary_fields = ["title"]
-    field_priority = {"title": 0, "series": 1, "author": 2}
-    seen_by_primary_type = {"title": set(), "author": set(), "series": set()}
+    field_priority = {"title": 0, "series": 1, "author": 2, "narrator": 3}
+    seen_by_primary_type = {"title": set(), "author": set(), "series": set(), "narrator": set()}
 
     def normalize_dedupe_text(value):
         return normalize_spaces(value).lower()
@@ -1697,6 +1698,15 @@ async def mam_autosuggest():
                 except:
                     pass
 
+                # -- Parse Narrator --
+                narrator_str = ""
+                try:
+                    if row.get('narrator_info'):
+                        narr_data = json.loads(row['narrator_info'])
+                        narrator_str = ", ".join(str(v) for v in narr_data.values())
+                except:
+                    pass
+
                 # -- Parse Series --
                 series_str = ""
                 try:
@@ -1714,6 +1724,7 @@ async def mam_autosuggest():
                     "title": title_str,
                     "author": author_str,
                     "series": series_str,
+                    "narrator": narrator_str,
                 }
                 for field in selected_primary_fields:
                     primary_text = normalize_spaces(candidate_texts.get(field, ""))

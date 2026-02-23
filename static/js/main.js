@@ -4545,12 +4545,14 @@ function initAutosuggest(inputId) {
     const getTypeBadgeClass = (type) => {
         if (type === 'author') return 'bg-info-subtle text-info-emphasis';
         if (type === 'series') return 'bg-warning-subtle text-warning-emphasis';
+        if (type === 'narrator') return 'bg-success-subtle text-success-emphasis';
         return 'bg-primary-subtle text-primary-emphasis';
     };
 
     const getTypeLabel = (type) => {
         if (type === 'author') return 'Author';
         if (type === 'series') return 'Series';
+        if (type === 'narrator') return 'Narrator';
         return 'Title';
     };
 
