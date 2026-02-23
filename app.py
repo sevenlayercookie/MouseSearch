@@ -89,7 +89,7 @@ class LeakyBucket:
 
 # 120 requests per 60 seconds (Shared limit)
 mam_autosuggest_limiter = LeakyBucket(120, 60.0)
-AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS = 3600.0
+AUTOSUGGEST_RESPONSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60.0
 AUTOSUGGEST_RESPONSE_CACHE_MAX_ENTRIES = 1000
 autosuggest_cache_db_conn = None
 autosuggest_cache_db_lock = asyncio.Lock()
