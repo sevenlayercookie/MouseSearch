@@ -4616,6 +4616,21 @@ function initAutosuggest(inputId) {
         performSearch(val);
     };
 
+    const hideAllAutosuggestContainers = () => {
+        document.querySelectorAll('.autosuggest-results').forEach((el) => {
+            el.style.display = 'none';
+        });
+    };
+
+    const isContainerVisibleInViewport = () => {
+        if (container.style.display === 'none') return false;
+        const computed = window.getComputedStyle(container);
+        if (computed.display === 'none' || computed.visibility === 'hidden') return false;
+        const rect = container.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+    };
+
     const performSearch = async (val) => {
         // 1. Cancel any previous in-flight request
         if (abortController) {
@@ -4742,18 +4757,24 @@ function initAutosuggest(inputId) {
         }
     });
 
-    // 3. Click Outside
+    // 3. Click Shield
+    // If autosuggest is open+visible, outside clicks should only close the list,
+    // not activate underlying clickable UI (except allowed search parameter controls).
     document.addEventListener('click', (e) => {
-        if (isSearchFieldToggleTarget(e.target) && container.style.display !== 'none') {
+        if (!isContainerVisibleInViewport()) return;
+        if (isSearchFieldToggleTarget(e.target)) {
             return;
         }
-        if (isMainCatTomSelectTarget(e.target) && container.style.display !== 'none') {
+        if (isMainCatTomSelectTarget(e.target)) {
             return;
         }
-        if (!inputAnchor.contains(e.target) && !container.contains(e.target)) {
-            container.style.display = 'none';
+        if (inputAnchor.contains(e.target) || container.contains(e.target)) {
+            return;
         }
-    });
+        hideAllAutosuggestContainers();
+        if (e.cancelable) e.preventDefault();
+        e.stopImmediatePropagation();
+    }, true);
 
     searchFilterElements.forEach((element) => {
         element.addEventListener('change', refreshVisibleSuggestions);
