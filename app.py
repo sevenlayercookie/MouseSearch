@@ -1465,12 +1465,13 @@ async def mam_autosuggest():
 
     url = f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php"
     
-    # --- UPDATED WILDCARD LOGIC ---
-    # Split query into words, strip existing * to prevent duplication, 
-    # then wrap EACH word in wildcards.
-    # Example: "dune mess" -> "*dune* *mess*"
-    words = raw_query.split()
-    wildcard_words = [f"*{w.strip('*')}*" for w in words if w.strip('*')]
+    # Build wildcard terms from query words.
+    # If the query includes longer tokens, drop 1-char tokens (e.g. "j k rowling" -> "*rowling*")
+    # to avoid over-constraining the upstream search on initials.
+    words = [w.strip('*').strip() for w in raw_query.split() if w.strip('*').strip()]
+    meaningful_words = [w for w in words if len(re.sub(r"\W+", "", w, flags=re.UNICODE)) >= 2]
+    words_for_query = meaningful_words if meaningful_words else words
+    wildcard_words = [f"*{w}*" for w in words_for_query]
     
     if not wildcard_words:
         return jsonify([])
