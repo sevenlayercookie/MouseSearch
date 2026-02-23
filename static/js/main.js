@@ -4488,6 +4488,9 @@ function initAutosuggest(inputId) {
     // State management for cancellation
     let debounceTimer = null;
     let abortController = null;
+    let hasIssuedInitialSearch = false;
+    const MIN_AUTOSUGGEST_LENGTH = 3;
+    const INITIAL_AUTOSUGGEST_TRIGGER_LENGTH = 5;
 
     const updateContainerGeometry = () => {
         if (!isMainSearchInput) return;
@@ -4712,47 +4715,60 @@ function initAutosuggest(inputId) {
         container.style.display = 'block';
     };
 
+    const buildAutosuggestQueryString = (val) => {
+        if (!val || val.length < MIN_AUTOSUGGEST_LENGTH) return null;
+        const getCheck = (id) => document.getElementById(id)?.checked ? 'true' : 'false';
+
+        const params = new URLSearchParams({
+            q: val,
+            search_in_title: getCheck('search_in_title'),
+            search_in_author: getCheck('search_in_author'),
+            search_in_narrator: getCheck('search_in_narrator'),
+            search_in_series: getCheck('search_in_series')
+        });
+
+        const mainCatValues = mainCatPrimaryTomSelect ? getTomSelectValues(mainCatPrimaryTomSelect) : [];
+        const normalizedMainCats = normalizeMainCatValues(mainCatValues);
+        if (normalizedMainCats.length) {
+            normalizedMainCats.forEach(id => params.append('main_cat', id));
+        }
+
+        const langIds = langTomSelect ? getTomSelectValues(langTomSelect) : [];
+        if (langIds.length) {
+            langIds.forEach(id => params.append('language_ids', id));
+        } else if (window.DEFAULT_LANGUAGE_ID) {
+            params.append('language_ids', String(window.DEFAULT_LANGUAGE_ID));
+        }
+
+        return params.toString();
+    };
+
     const performSearch = async (val) => {
         if (abortController) {
             abortController.abort();
         }
         abortController = new AbortController();
 
-        if (val.length < 3) {
+        if (val.length < MIN_AUTOSUGGEST_LENGTH) {
             container.style.display = 'none';
             return;
         }
 
         try {
-            const getCheck = (id) => document.getElementById(id)?.checked ? 'true' : 'false';
-
-            const params = new URLSearchParams({
-                q: val,
-                search_in_title: getCheck('search_in_title'),
-                search_in_author: getCheck('search_in_author'),
-                search_in_narrator: getCheck('search_in_narrator'),
-                search_in_series: getCheck('search_in_series')
-            });
-
-            const mainCatValues = mainCatPrimaryTomSelect ? getTomSelectValues(mainCatPrimaryTomSelect) : [];
-            const normalizedMainCats = normalizeMainCatValues(mainCatValues);
-            if (normalizedMainCats.length) {
-                normalizedMainCats.forEach(id => params.append('main_cat', id));
+            const queryString = buildAutosuggestQueryString(val);
+            if (!queryString) {
+                container.style.display = 'none';
+                return;
             }
-
-            const langIds = langTomSelect ? getTomSelectValues(langTomSelect) : [];
-            if (langIds.length) {
-                langIds.forEach(id => params.append('language_ids', id));
-            } else if (window.DEFAULT_LANGUAGE_ID) {
-                params.append('language_ids', String(window.DEFAULT_LANGUAGE_ID));
-            }
-
-            const queryString = params.toString();
             const cachedData = getCachedSuggestions(queryString);
             if (cachedData) {
                 renderSuggestions(cachedData, val);
                 return;
             }
+            if (!hasIssuedInitialSearch && val.length < INITIAL_AUTOSUGGEST_TRIGGER_LENGTH) {
+                return;
+            }
+            hasIssuedInitialSearch = true;
 
             const res = await fetch(`/mam/autosuggest?${queryString}`, {
                 signal: abortController.signal
@@ -4777,6 +4793,30 @@ function initAutosuggest(inputId) {
     input.addEventListener('input', (e) => {
         clearTimeout(debounceTimer); // Clear previous timer
         const val = e.target.value.trim();
+        if (!val) {
+            hasIssuedInitialSearch = false;
+        }
+
+        if (val.length < MIN_AUTOSUGGEST_LENGTH) {
+            container.style.display = 'none';
+            return;
+        }
+
+        const queryString = buildAutosuggestQueryString(val);
+        if (queryString) {
+            const cachedData = getCachedSuggestions(queryString);
+            if (cachedData) {
+                renderSuggestions(cachedData, val);
+            }
+        }
+
+        if (!hasIssuedInitialSearch) {
+            if (val.length >= INITIAL_AUTOSUGGEST_TRIGGER_LENGTH) {
+                hasIssuedInitialSearch = true;
+                performSearch(val);
+            }
+            return;
+        }
 
         // Wait 300ms before searching
         debounceTimer = setTimeout(() => {
