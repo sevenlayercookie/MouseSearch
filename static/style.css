@@ -505,6 +505,17 @@ input:disabled, select:disabled {
     border-top-right-radius: 0;
 }
 
+.autosuggest-results--above {
+    top: auto;
+    bottom: calc(100% + 2px);
+    margin-top: 0;
+    margin-bottom: 2px;
+    border-top-left-radius: var(--bs-border-radius);
+    border-top-right-radius: var(--bs-border-radius);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
 /* Typography tweaks for compact suggestions */
 .text-xs {
     font-size: 0.75rem;

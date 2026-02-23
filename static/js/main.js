@@ -4470,15 +4470,28 @@ const debounce = (func, wait) => {
 function initAutosuggest(inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
+    const isMainSearchInput = inputId === 'query';
 
     // Create results dropdown container
     const container = document.createElement('div');
     container.className = 'autosuggest-results list-group shadow-sm';
+    if (isMainSearchInput) {
+        container.classList.add('autosuggest-results--above');
+    }
     input.parentNode.appendChild(container);
 
     // State management for cancellation
     let debounceTimer = null;
     let abortController = null;
+
+    const updateContainerGeometry = () => {
+        if (!isMainSearchInput) return;
+        const rect = input.getBoundingClientRect();
+        const topPageMargin = 8;
+        const availableHeight = Math.max(0, Math.floor(rect.top + window.scrollY - topPageMargin));
+        container.style.height = 'auto';
+        container.style.maxHeight = `${availableHeight}px`;
+    };
 
     const escapeHtml = (value) => String(value || '')
         .replace(/&/g, '&amp;')
@@ -4627,6 +4640,7 @@ function initAutosuggest(inputId) {
                 container.appendChild(a);
             });
 
+            updateContainerGeometry();
             container.style.display = 'block';
 
         } catch (e) {
@@ -4671,6 +4685,11 @@ function initAutosuggest(inputId) {
             container.style.display = 'none';
         }
     });
+
+    if (isMainSearchInput) {
+        window.addEventListener('resize', updateContainerGeometry);
+        window.addEventListener('scroll', updateContainerGeometry, { passive: true });
+    }
 }
 
 // Initialize
