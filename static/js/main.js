@@ -4691,14 +4691,22 @@ function initAutosuggest(inputId) {
 
             const primaryType = item.primary_type || 'title';
             const primaryText = item.primary_text || item.title || item.author || item.series || '';
+            const authorText = String(item.author_text || '').trim();
+            const showAuthorText = (primaryType === 'title' || primaryType === 'series') && authorText.length > 0;
             const badgeClass = getTypeBadgeClass(primaryType);
             const badgeLabel = getTypeLabel(primaryType);
             const iconClass = getTypeIconClass(primaryType);
+            const authorMetaHtml = showAuthorText
+                ? `<span class="text-body-secondary opacity-75 text-xs text-truncate" style="min-width: 0;">• ${escapeHtml(authorText)}</span>`
+                : '';
             a.innerHTML = `
                 <div class="d-flex align-items-center justify-content-between gap-2 w-100">
                     <div class="d-flex align-items-center gap-2 text-truncate" style="min-width: 0;">
                         <i class="bi ${iconClass} text-body-secondary flex-shrink-0" aria-hidden="true"></i>
-                        <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
+                        <div class="d-flex align-items-center gap-1 text-truncate" style="min-width: 0;">
+                            <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
+                            ${authorMetaHtml}
+                        </div>
                     </div>
                     <span class="badge rounded-pill ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
                 </div>

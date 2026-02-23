@@ -203,6 +203,7 @@ def normalize_string_list(value):
 
 def make_autosuggest_cache_key(raw_query, query_candidates, lang_ids, main_cats, selected_fields, suggestion_limit):
     payload = {
+        "schema": 2,
         "q": normalize_spaces(raw_query).lower(),
         "candidates": [str(item) for item in (query_candidates or [])],
         "lang_ids": sorted({str(item) for item in (lang_ids or [])}),
@@ -1915,6 +1916,9 @@ async def mam_autosuggest():
                     pass
 
                 title_str = str(row.get('title', 'Unknown'))
+                author_display = normalize_spaces(author_str)
+                if author_display.lower() == "unknown":
+                    author_display = ""
                 candidate_texts = {
                     "title": title_str,
                     "author": author_str,
@@ -1938,6 +1942,7 @@ async def mam_autosuggest():
                     phrase_candidates.append({
                         "primary_type": field,
                         "primary_text": primary_text,
+                        "author_text": author_display,
                         "seeders": seeders,
                         "score": fuzzy_score(raw_query, primary_text),
                         "row_index": row_index,
@@ -1951,6 +1956,7 @@ async def mam_autosuggest():
                 {
                     "primary_type": item["primary_type"],
                     "primary_text": item["primary_text"],
+                    "author_text": item.get("author_text", ""),
                     "seeders": item["seeders"],
                     "match_score": round(item["score"], 2),
                 }
