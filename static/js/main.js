@@ -4564,6 +4564,13 @@ function initAutosuggest(inputId) {
         return 'Title';
     };
 
+    const getTypeIconClass = (type) => {
+        if (type === 'author') return 'bi-person';
+        if (type === 'series') return 'bi-collection';
+        if (type === 'narrator') return 'bi-mic';
+        return 'bi-book';
+    };
+
     const searchFilterIds = new Set([
         'search_in_title',
         'search_in_author',
@@ -4686,9 +4693,13 @@ function initAutosuggest(inputId) {
             const primaryText = item.primary_text || item.title || item.author || item.series || '';
             const badgeClass = getTypeBadgeClass(primaryType);
             const badgeLabel = getTypeLabel(primaryType);
+            const iconClass = getTypeIconClass(primaryType);
             a.innerHTML = `
                 <div class="d-flex align-items-center justify-content-between gap-2 w-100">
-                    <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
+                    <div class="d-flex align-items-center gap-2 text-truncate" style="min-width: 0;">
+                        <i class="bi ${iconClass} text-body-secondary flex-shrink-0" aria-hidden="true"></i>
+                        <div class="text-truncate text-sm" style="min-width: 0;">${highlightQueryMatch(primaryText, val)}</div>
+                    </div>
                     <span class="badge rounded-pill ${badgeClass}" style="font-size: 0.65rem; flex-shrink: 0;">${badgeLabel}</span>
                 </div>
             `;
