@@ -13,6 +13,7 @@ import math
 import shutil
 import uuid
 import sqlite3
+import ipaddress
 from difflib import SequenceMatcher
 
 from datetime import datetime, timedelta
@@ -3213,17 +3214,67 @@ async def get_public_ip():
     """
     Fetches the backend's public IP address.
     """
-    
+
+    def extract_ip(raw_text):
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError:
+            payload = None
+
+        candidates = []
+        if isinstance(payload, dict):
+            candidates.extend(payload.get(key) for key in ("clientIp", "ip", "origin"))
+        candidates.append(raw_text)
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            for token in re.split(r"[\s,]+", str(candidate).strip()):
+                token = token.strip().strip("[]")
+                if not token:
+                    continue
+                try:
+                    return str(ipaddress.ip_address(token))
+                except ValueError:
+                    continue
+
+        return None
+
+    resolvers = [
+        ("icanhazip.com", "https://icanhazip.com"),
+        ("api.ipify.org", "https://api.ipify.org"),
+        ("ifconfig.me", "https://ifconfig.me/ip"),
+    ]
+
     try:
         # We use httpx instead of os.system('curl') because it is async,
         # non-blocking, and works reliably in serverless environments.
-        async with httpx.AsyncClient() as client:
-            # Fetch IPv4 address
-            response = await client.get('https://ifconfig.me/ip', timeout=5.0)
-            return jsonify({'ip': response.text.strip()})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            for resolver_name, resolver_url in resolvers:
+                try:
+                    response = await client.get(
+                        resolver_url,
+                        headers={"Accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+                        timeout=5.0,
+                    )
+                    response.raise_for_status()
+
+                    resolved_ip = extract_ip(response.text)
+                    if resolved_ip:
+                        return jsonify({'ip': resolved_ip})
+
+                    app.logger.warning(
+                        f"Public IP resolver {resolver_name} returned an unusable response"
+                    )
+                except Exception as resolver_error:
+                    app.logger.warning(
+                        f"Public IP resolver {resolver_name} failed: {resolver_error}"
+                    )
     except Exception as e:
         app.logger.error(f"Failed to fetch public IP: {e}")
-        return jsonify({'error': 'Could not fetch IP'}), 500
+
+    app.logger.error("Failed to fetch public IP from all configured resolvers")
+    return jsonify({'error': 'Could not fetch IP'}), 500
     
 FETCH_SEMAPHORE = asyncio.Semaphore(200)
 

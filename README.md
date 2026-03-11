@@ -199,7 +199,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 **How to find your `MAM_ID`:**
 1.  In any web browser, navigate to [Security](https://www.myanonamouse.net/preferences/index.php?view=security) on Myanonamouse
 2.  Create a new session
-    - IP address: run `curl ifconfig.me` from the server that will be hosting MouseSearch, and put output here
+    - IP address: run `curl icanhazip.com` from the server that will be hosting MouseSearch, and put output here
     - IP or ASN: `ASN` (ASN is more forgiving)
     - Dynamic Seedbox: choose `Yes` to allow MouseSearch to keep IP updated
     - Session Label: `MouseSearch`
