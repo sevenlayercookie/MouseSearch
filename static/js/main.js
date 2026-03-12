@@ -4763,6 +4763,7 @@ function initAutosuggest(inputId) {
     if (!input) return;
     const isMainSearchInput = inputId === 'query';
     const inputAnchor = input.closest('.form-floating, .input-group') || input.parentNode;
+    const associatedForm = input.form || input.closest('form');
 
     // Create results dropdown container
     const container = document.createElement('div');
@@ -4905,6 +4906,23 @@ function initAutosuggest(inputId) {
         if (tsInstance.control?.contains(target)) return true;
         if (tsInstance.dropdown?.contains(target)) return true;
         return false;
+    };
+
+    const isSearchSubmitTarget = (target) => {
+        if (!(target instanceof Element)) return false;
+        const submitControl = target.closest('button, input[type="submit"], input[type="button"]');
+        if (!submitControl) return false;
+
+        let submitForm = submitControl.form || null;
+        if (!submitForm) {
+            const explicitFormId = submitControl.getAttribute('form');
+            if (explicitFormId) {
+                submitForm = document.getElementById(explicitFormId);
+            }
+        }
+
+        if (!submitForm) return false;
+        return submitForm.id === 'search-form' || submitForm.id === 'nav-search-form';
     };
 
     const refreshVisibleSuggestions = () => {
@@ -5196,10 +5214,18 @@ function initAutosuggest(inputId) {
         if (inputAnchor.contains(e.target) || container.contains(e.target)) {
             return;
         }
+        if (isSearchSubmitTarget(e.target)) {
+            hideAllAutosuggestContainers();
+            return;
+        }
         hideAllAutosuggestContainers();
         if (e.cancelable) e.preventDefault();
         e.stopImmediatePropagation();
     }, true);
+
+    associatedForm?.addEventListener('submit', () => {
+        hideAllAutosuggestContainers();
+    });
 
     searchFilterElements.forEach((element) => {
         element.addEventListener('change', refreshVisibleSuggestions);
