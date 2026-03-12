@@ -68,7 +68,7 @@
 
                   <div class="form-floating text-dark">
                     <select name="category" class="form-select shadow-sm category-dropdown"
-                        style="font-size: 0.85rem; min-width: 140px;" id="detail-cat-select">
+                        style="font-size: 0.85rem; min-width: 140px;" id="detail-cat-select" data-main-cat="">
                         <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
                         {% for category_name, category_info in categories.items() %}
                         <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{%

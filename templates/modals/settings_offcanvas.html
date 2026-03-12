@@ -1,5 +1,38 @@
 <div class="offcanvas offcanvas-end w-md-50" tabindex="-1" id="settingsOffcanvas"
   aria-labelledby="settingsOffcanvasLabel">
+  <style>
+    #destination-paths-list .destination-path-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid var(--bs-border-color-translucent);
+      border-radius: 0.75rem;
+      background: var(--bs-body-tertiary);
+    }
+
+    #destination-paths-list .destination-path-row-header {
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+
+    #destination-paths-list .destination-path-row-main-type {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    #destination-paths-list .destination-path-row .form-floating {
+      width: 100%;
+    }
+
+    #destination-paths-list .destination-path-row .remove-path-btn {
+      flex: 0 0 auto;
+      width: 3rem;
+      min-width: 3rem;
+      height: calc(3.5rem + 2px);
+    }
+  </style>
   <div class="offcanvas-header bg-body-tertiary border-bottom">
     <h5 class="offcanvas-title" id="settingsOffcanvasLabel">
       <i class="bi bi-gear-fill me-2"></i>Settings
@@ -285,39 +318,52 @@
 
             <div class="mb-3">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <label class="form-label small fw-bold mb-0">Additional Destination Paths</label>
+                <label class="form-label small fw-bold mb-0">Type-Specific Paths</label>
                 <button type="button" class="btn btn-sm btn-outline-primary py-0" id="add-destination-path-btn">
                   <i class="bi bi-plus-lg"></i> Add Path
                 </button>
               </div>
               <div class="form-text small mb-3">
-                Add optional extra destination paths and assign a media-type default for future downloads.
+                Assign a main category type to a destination path and optional default torrent client category.
               </div>
 
               <div id="destination-paths-list">
                 {% set configured_destinations = DESTINATION_PATHS[1:] if DESTINATION_PATHS and DESTINATION_PATHS|length > 1 else [] %}
                 {% for dest in configured_destinations %}
-                <div class="destination-path-row d-flex gap-2 mb-2 align-items-center">
-                  <div class="form-floating flex-grow-1">
+                <div class="destination-path-row mb-2">
+                  <div class="destination-path-row-header">
+                    <div class="form-floating destination-path-row-main-type">
+                      <select class="form-select destination-default-select" name="extra_dest_defaults[]">
+                        <option value="">None (Global)</option>
+                        {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
+                        <option value="{{ media.id }}" {% if dest.default_main_cat==media.id %}selected{% endif %}>
+                          {{ media.label }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                      <label>Main Type</label>
+                    </div>
+                    <button type="button" class="btn btn-outline-danger remove-path-btn" title="Remove Path"
+                      aria-label="Remove Path">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                  <div class="form-floating">
                     <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
                       value="{{ dest.path }}" placeholder="/data/media" required>
-                    <label>Path</label>
+                    <label>Destination Path</label>
                   </div>
-                  <div class="form-floating" style="min-width: 140px; max-width: 180px;">
-                    <select class="form-select destination-default-select" name="extra_dest_defaults[]">
-                      <option value="">None (Global)</option>
-                      {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
-                      <option value="{{ media.id }}" {% if dest.default_main_cat==media.id %}selected{% endif %}>
-                        {{ media.label }}
+                  <div class="form-floating">
+                    <select class="form-select destination-category-select" name="extra_dest_categories[]">
+                      <option value="">Use Global Default</option>
+                      {% for category_name, category_info in categories.items() %}
+                      <option value="{{ category_name }}" {% if dest.default_torrent_category==category_name %}selected{% endif %}>
+                        {{ category_name }}
                       </option>
                       {% endfor %}
                     </select>
-                    <label>Default For</label>
+                    <label>Default Client Category</label>
                   </div>
-                  <button type="button" class="btn btn-outline-danger remove-path-btn" title="Remove Path"
-                    style="height: 58px;">
-                    <i class="bi bi-trash"></i>
-                  </button>
                 </div>
                 {% endfor %}
               </div>

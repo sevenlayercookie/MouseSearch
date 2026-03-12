@@ -750,6 +750,86 @@ function pollTorrentStatus(hash, resultItem) {
     }
 }
 
+function getSettingsCategoryOptions() {
+    const settingsCategorySelect = document.getElementById('TORRENT_CLIENT_CATEGORY');
+    const options = [{ value: '', label: 'Use Global Default' }];
+    const seen = new Set(['']);
+
+    if (!settingsCategorySelect) return options;
+
+    Array.from(settingsCategorySelect.options).forEach(option => {
+        const value = String(option.value || '').trim();
+        const label = String(option.textContent || '').trim();
+        if (!value || seen.has(value)) return;
+        seen.add(value);
+        options.push({ value, label: label || value });
+    });
+
+    return options;
+}
+
+function getConfiguredDestinationEntriesForCategoryDefaults() {
+    const destinationPathsList = document.getElementById('destination-paths-list');
+    const defaultPath = String(
+        document.getElementById('ORGANIZED_PATH')?.value
+        || window.DESTINATION_PATHS?.[0]?.path
+        || '/downloads/organized'
+    ).trim() || '/downloads/organized';
+
+    const domEntries = destinationPathsList
+        ? Array.from(destinationPathsList.querySelectorAll('.destination-path-row')).map(row => ({
+            path: String(row.querySelector('.destination-path-input')?.value || '').trim(),
+            default_main_cat: String(row.querySelector('.destination-default-select')?.value || '').trim(),
+            default_torrent_category: String(row.querySelector('.destination-category-select')?.value || '').trim()
+        })).filter(entry => entry.path)
+        : [];
+
+    if (domEntries.length) {
+        return [{ path: defaultPath, default_main_cat: '', default_torrent_category: '' }, ...domEntries];
+    }
+
+    const savedEntries = Array.isArray(window.DESTINATION_PATHS) ? window.DESTINATION_PATHS : [];
+    if (savedEntries.length) return savedEntries;
+
+    return [{ path: defaultPath, default_main_cat: '', default_torrent_category: '' }];
+}
+
+function getPreferredClientCategoryForMainCat(mainCat = '') {
+    const entries = getConfiguredDestinationEntriesForCategoryDefaults();
+    const mappedDefault = entries.find(entry => String(entry?.default_main_cat || '') === String(mainCat || ''));
+    const typeSpecificCategory = String(mappedDefault?.default_torrent_category || '').trim();
+    if (typeSpecificCategory) return typeSpecificCategory;
+    return String(document.getElementById('TORRENT_CLIENT_CATEGORY')?.value || '').trim();
+}
+
+function syncDestinationCategoryOptions() {
+    const destinationPathsList = document.getElementById('destination-paths-list');
+    if (!destinationPathsList) return;
+
+    const optionData = getSettingsCategoryOptions();
+
+    destinationPathsList.querySelectorAll('.destination-category-select').forEach(select => {
+        const currentValue = String(select.value || '').trim();
+        select.innerHTML = '';
+
+        optionData.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.value;
+            option.textContent = item.label;
+            select.appendChild(option);
+        });
+
+        if (currentValue && !Array.from(select.options).some(option => option.value === currentValue)) {
+            const option = document.createElement('option');
+            option.value = currentValue;
+            option.textContent = currentValue;
+            select.appendChild(option);
+        }
+
+        select.value = currentValue;
+    });
+}
+
 function checkClientStatus() {
     const statusSpan = document.getElementById("client-status");
     const statusIconSpan = document.getElementById("client-status-icon");
@@ -789,11 +869,12 @@ function refreshCategories() {
             resultDropdowns.forEach(dropdown => {
                 dropdown.disabled = false; // <--- ADD THIS
                 const currentVal = dropdown.value;
+                const preferredDefault = getPreferredClientCategoryForMainCat(dropdown.dataset.mainCat || '');
                 dropdown.innerHTML = '<option value="">Category</option>';
                 if (data && typeof data === 'object') {
                     for (const key in data) dropdown.add(new Option(data[key].name, data[key].name));
                 }
-                dropdown.value = currentVal || defaultCategory;
+                dropdown.value = currentVal || preferredDefault || defaultCategory;
             });
 
             const settingsDropdown = document.getElementById('TORRENT_CLIENT_CATEGORY');
@@ -814,6 +895,7 @@ function refreshCategories() {
                     settingsDropdown.add(option);
                 }
             }
+            syncDestinationCategoryOptions();
         });
 }
 
@@ -1104,9 +1186,11 @@ document.addEventListener("DOMContentLoaded", async function () {
         if (destinationPathsList) {
             const paths = Array.isArray(settingsSnapshot['extra_dest_paths[]']) ? settingsSnapshot['extra_dest_paths[]'] : [];
             const defaults = Array.isArray(settingsSnapshot['extra_dest_defaults[]']) ? settingsSnapshot['extra_dest_defaults[]'] : [];
+            const categories = Array.isArray(settingsSnapshot['extra_dest_categories[]']) ? settingsSnapshot['extra_dest_categories[]'] : [];
             const rows = paths.map((path, idx) => ({
                 path,
-                default_main_cat: defaults[idx] || ''
+                default_main_cat: defaults[idx] || '',
+                default_torrent_category: categories[idx] || ''
             }));
             renderDestinationRows(rows);
         }
@@ -3014,6 +3098,24 @@ document.addEventListener("DOMContentLoaded", async function () {
     const allowedDestinationDefaults = new Set(mediaTypeOptions.map(item => item.id));
     let destinationPathEntries = [];
 
+    function getSettingsCategoryOptions() {
+        const settingsCategorySelect = document.getElementById('TORRENT_CLIENT_CATEGORY');
+        const options = [{ value: '', label: 'Use Global Default' }];
+        const seen = new Set(['']);
+
+        if (!settingsCategorySelect) return options;
+
+        Array.from(settingsCategorySelect.options).forEach(option => {
+            const value = String(option.value || '').trim();
+            const label = String(option.textContent || '').trim();
+            if (!value || seen.has(value)) return;
+            seen.add(value);
+            options.push({ value, label: label || value });
+        });
+
+        return options;
+    }
+
     function normalizeDestinationEntries(entries, fallbackPath = '/downloads/organized', requireFallback = true) {
         const normalized = [];
         const seenDefaults = new Set();
@@ -3033,11 +3135,19 @@ document.addEventListener("DOMContentLoaded", async function () {
                 seenDefaults.add(defaultMainCat);
             }
 
-            normalized.push({ path, default_main_cat: defaultMainCat });
+            normalized.push({
+                path,
+                default_main_cat: defaultMainCat,
+                default_torrent_category: String(entry?.default_torrent_category || '').trim()
+            });
         });
 
         if (requireFallback && !normalized.length) {
-            normalized.push({ path: String(fallbackPath || '/downloads/organized').trim() || '/downloads/organized', default_main_cat: '' });
+            normalized.push({
+                path: String(fallbackPath || '/downloads/organized').trim() || '/downloads/organized',
+                default_main_cat: '',
+                default_torrent_category: ''
+            });
         }
 
         return normalized;
@@ -3052,40 +3162,31 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     function buildConfiguredDestinationEntries() {
         const defaultPath = getDefaultDestinationPath();
-        const extras = normalizeDestinationEntries(readDestinationRows(), defaultPath, false)
-            .filter(entry => entry.path !== defaultPath);
-        return [{ path: defaultPath, default_main_cat: '' }, ...extras];
+        const currentRows = readDestinationRows();
+        const sourceEntries = currentRows.length ? currentRows : (window.DESTINATION_PATHS || []).slice(1);
+        const extras = normalizeDestinationEntries(sourceEntries, defaultPath, false)
+            .filter(entry => entry.path !== defaultPath || entry.default_main_cat || entry.default_torrent_category);
+        return [{ path: defaultPath, default_main_cat: '', default_torrent_category: '' }, ...extras];
     }
 
     function readDestinationRows() {
         if (!destinationPathsList) return [];
         return Array.from(destinationPathsList.querySelectorAll('.destination-path-row')).map(row => ({
             path: row.querySelector('.destination-path-input')?.value || '',
-            default_main_cat: row.querySelector('.destination-default-select')?.value || ''
+            default_main_cat: row.querySelector('.destination-default-select')?.value || '',
+            default_torrent_category: row.querySelector('.destination-category-select')?.value || ''
         }));
     }
 
-    function buildDestinationRow(path = '', defaultMainCat = '') {
+    function buildDestinationRow(path = '', defaultMainCat = '', defaultTorrentCategory = '') {
         const row = document.createElement('div');
-        row.className = 'destination-path-row d-flex gap-2 mb-2 align-items-center';
+        row.className = 'destination-path-row mb-2';
 
-        const pathWrap = document.createElement('div');
-        pathWrap.className = 'form-floating flex-grow-1';
-        const pathInput = document.createElement('input');
-        pathInput.type = 'text';
-        pathInput.className = 'form-control destination-path-input';
-        pathInput.name = 'extra_dest_paths[]';
-        pathInput.placeholder = '/data/media';
-        pathInput.required = true;
-        pathInput.value = path;
-        const pathLabel = document.createElement('label');
-        pathLabel.textContent = 'Path';
-        pathWrap.append(pathInput, pathLabel);
+        const header = document.createElement('div');
+        header.className = 'destination-path-row-header';
 
         const defaultWrap = document.createElement('div');
-        defaultWrap.className = 'form-floating';
-        defaultWrap.style.minWidth = '140px';
-        defaultWrap.style.maxWidth = '180px';
+        defaultWrap.className = 'form-floating destination-path-row-main-type';
         const defaultSelect = document.createElement('select');
         defaultSelect.className = 'form-select destination-default-select';
         defaultSelect.name = 'extra_dest_defaults[]';
@@ -3106,18 +3207,87 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         const defaultLabel = document.createElement('label');
-        defaultLabel.textContent = 'Default For';
+        defaultLabel.textContent = 'Main Type';
         defaultWrap.append(defaultSelect, defaultLabel);
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'btn btn-outline-danger remove-path-btn';
         removeBtn.title = 'Remove Path';
-        removeBtn.style.height = '58px';
+        removeBtn.setAttribute('aria-label', 'Remove Path');
         removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
 
-        row.append(pathWrap, defaultWrap, removeBtn);
+        header.append(defaultWrap, removeBtn);
+
+        const pathWrap = document.createElement('div');
+        pathWrap.className = 'form-floating';
+        const pathInput = document.createElement('input');
+        pathInput.type = 'text';
+        pathInput.className = 'form-control destination-path-input';
+        pathInput.name = 'extra_dest_paths[]';
+        pathInput.placeholder = '/data/media';
+        pathInput.required = true;
+        pathInput.value = path;
+        const pathLabel = document.createElement('label');
+        pathLabel.textContent = 'Destination Path';
+        pathWrap.append(pathInput, pathLabel);
+
+        const categoryWrap = document.createElement('div');
+        categoryWrap.className = 'form-floating';
+        const categorySelect = document.createElement('select');
+        categorySelect.className = 'form-select destination-category-select';
+        categorySelect.name = 'extra_dest_categories[]';
+
+        getSettingsCategoryOptions().forEach(optionData => {
+            const option = document.createElement('option');
+            option.value = optionData.value;
+            option.textContent = optionData.label;
+            if (optionData.value === defaultTorrentCategory) {
+                option.selected = true;
+            }
+            categorySelect.appendChild(option);
+        });
+
+        if (defaultTorrentCategory && !Array.from(categorySelect.options).some(option => option.value === defaultTorrentCategory)) {
+            const option = document.createElement('option');
+            option.value = defaultTorrentCategory;
+            option.textContent = defaultTorrentCategory;
+            option.selected = true;
+            categorySelect.appendChild(option);
+        }
+
+        const categoryLabel = document.createElement('label');
+        categoryLabel.textContent = 'Default Client Category';
+        categoryWrap.append(categorySelect, categoryLabel);
+
+        row.append(header, pathWrap, categoryWrap);
         return row;
+    }
+
+    function syncDestinationCategoryOptions() {
+        if (!destinationPathsList) return;
+        const optionData = getSettingsCategoryOptions();
+
+        destinationPathsList.querySelectorAll('.destination-category-select').forEach(select => {
+            const currentValue = String(select.value || '').trim();
+            select.innerHTML = '';
+
+            optionData.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.value;
+                option.textContent = item.label;
+                select.appendChild(option);
+            });
+
+            if (currentValue && !Array.from(select.options).some(option => option.value === currentValue)) {
+                const option = document.createElement('option');
+                option.value = currentValue;
+                option.textContent = currentValue;
+                select.appendChild(option);
+            }
+
+            select.value = currentValue;
+        });
     }
 
     function updateDestinationRowUI() {
@@ -3177,19 +3347,34 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 
+    function getPreferredClientCategoryForMainCat(mainCat = '') {
+        const liveEntries = buildConfiguredDestinationEntries();
+        const mappedDefault = liveEntries.find(entry => entry.default_main_cat === String(mainCat || ''));
+        const typeSpecificCategory = String(mappedDefault?.default_torrent_category || '').trim();
+        if (typeSpecificCategory) {
+            return typeSpecificCategory;
+        }
+        return String(document.getElementById('TORRENT_CLIENT_CATEGORY')?.value || '').trim();
+    }
+
     function renderDestinationRows(entries) {
         if (!destinationPathsList) return;
         const fallbackPath = getDefaultDestinationPath();
         const normalized = normalizeDestinationEntries(entries, fallbackPath, false)
-            .filter(entry => entry.path !== fallbackPath);
+            .filter(entry => entry.path !== fallbackPath || entry.default_main_cat || entry.default_torrent_category);
         destinationPathEntries = normalized;
 
         destinationPathsList.innerHTML = '';
         normalized.forEach(entry => {
-            destinationPathsList.appendChild(buildDestinationRow(entry.path, entry.default_main_cat));
+            destinationPathsList.appendChild(buildDestinationRow(
+                entry.path,
+                entry.default_main_cat,
+                entry.default_torrent_category
+            ));
         });
 
         updateDestinationRowUI();
+        syncDestinationCategoryOptions();
         syncConfirmDestinationOptions();
     }
 
@@ -3212,8 +3397,9 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
 
         addDestinationPathBtn?.addEventListener('click', () => {
-            destinationPathsList.appendChild(buildDestinationRow('', ''));
+            destinationPathsList.appendChild(buildDestinationRow('', '', ''));
             updateDestinationRowUI();
+            syncDestinationCategoryOptions();
             syncConfirmDestinationOptions();
             updateConfirmPathPreview();
             if (!isRestoringSettings) settingsDirty = true;
@@ -4198,6 +4384,12 @@ document.addEventListener("DOMContentLoaded", async function () {
         dlBtn.dataset.free = data.free;
         dlBtn.dataset.personalFreeleech = data.personal_freeleech;
         dlBtn.dataset.flVip = data.fl_vip;
+
+        const detailCategorySelect = document.getElementById('detail-cat-select');
+        if (detailCategorySelect) {
+            detailCategorySelect.dataset.mainCat = data.main_cat || '';
+            detailCategorySelect.value = getPreferredClientCategoryForMainCat(data.main_cat || '');
+        }
 
         const newDlBtn = dlBtn.cloneNode(true);
         dlBtn.parentNode.replaceChild(newDlBtn, dlBtn);

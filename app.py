@@ -459,9 +459,17 @@ def normalize_destination_paths(value, fallback_path):
             if isinstance(item, dict):
                 raw_path = item.get("path") or item.get("root_path") or item.get("destination")
                 raw_default = item.get("default_main_cat") or item.get("default_for") or item.get("media_type") or ""
+                raw_torrent_category = (
+                    item.get("default_torrent_category")
+                    or item.get("default_client_category")
+                    or item.get("torrent_category")
+                    or item.get("client_category")
+                    or ""
+                )
             elif isinstance(item, str):
                 raw_path = item
                 raw_default = ""
+                raw_torrent_category = ""
             else:
                 continue
 
@@ -472,18 +480,20 @@ def normalize_destination_paths(value, fallback_path):
             default_main_cat = str(raw_default or "").strip()
             if default_main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS:
                 default_main_cat = ""
+            default_torrent_category = str(raw_torrent_category or "").strip()
 
             entries.append({
                 "path": path,
                 "default_main_cat": default_main_cat,
+                "default_torrent_category": default_torrent_category,
             })
     elif isinstance(value, str):
         path = value.strip()
         if path:
-            entries.append({"path": path, "default_main_cat": ""})
+            entries.append({"path": path, "default_main_cat": "", "default_torrent_category": ""})
 
     if not entries:
-        entries = [{"path": fallback_root, "default_main_cat": ""}]
+        entries = [{"path": fallback_root, "default_main_cat": "", "default_torrent_category": ""}]
 
     seen_defaults = set()
     for entry in entries:
@@ -505,14 +515,20 @@ def apply_default_destination_path(default_path, destination_paths):
     extras = []
     for entry in normalized:
         path = str(entry.get("path") or "").strip()
-        if not path or path == default_root:
+        default_main_cat = str(entry.get("default_main_cat") or "").strip()
+        default_torrent_category = str(entry.get("default_torrent_category") or "").strip()
+        has_type_specific_mapping = bool(default_main_cat or default_torrent_category)
+        if not path:
+            continue
+        if path == default_root and not has_type_specific_mapping:
             continue
         extras.append({
             "path": path,
-            "default_main_cat": str(entry.get("default_main_cat") or "").strip(),
+            "default_main_cat": default_main_cat,
+            "default_torrent_category": default_torrent_category,
         })
 
-    combined = [{"path": default_root, "default_main_cat": ""}] + extras
+    combined = [{"path": default_root, "default_main_cat": "", "default_torrent_category": ""}] + extras
     return default_root, combined
 
 
@@ -811,7 +827,7 @@ FALLBACK_CONFIG = {
     "DATA_PATH": "./data",
     "ORGANIZED_PATH": "/downloads/organized",
     "DESTINATION_PATHS": [
-        {"path": "/downloads/organized", "default_main_cat": ""}
+        {"path": "/downloads/organized", "default_main_cat": "", "default_torrent_category": ""}
     ],
     "LOCAL_TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
     "REMOTE_TORRENT_DOWNLOAD_PATH": "",
@@ -3540,21 +3556,27 @@ async def update_settings():
 
     raw_dest_paths = form.getlist("extra_dest_paths[]")
     raw_dest_defaults = form.getlist("extra_dest_defaults[]")
+    raw_dest_categories = form.getlist("extra_dest_categories[]")
     destination_rows = []
     for i, raw_path in enumerate(raw_dest_paths):
         path = str(raw_path or "").strip()
         if not path:
             continue
         default_main_cat = str(raw_dest_defaults[i] if i < len(raw_dest_defaults) else "").strip()
+        default_torrent_category = str(raw_dest_categories[i] if i < len(raw_dest_categories) else "").strip()
         destination_rows.append({
             "path": path,
             "default_main_cat": default_main_cat,
+            "default_torrent_category": default_torrent_category,
         })
 
     default_path = str(config_to_update.get("ORGANIZED_PATH", FALLBACK_CONFIG["ORGANIZED_PATH"]) or "").strip() or FALLBACK_CONFIG["ORGANIZED_PATH"]
     normalized_extras = normalize_destination_paths(destination_rows, default_path)
-    normalized_destinations = [{"path": default_path, "default_main_cat": ""}] + [
-        row for row in normalized_extras if row.get("path") != default_path
+    normalized_destinations = [{"path": default_path, "default_main_cat": "", "default_torrent_category": ""}] + [
+        row for row in normalized_extras
+        if row.get("path") != default_path
+        or row.get("default_main_cat")
+        or row.get("default_torrent_category")
     ]
     config_to_update["DESTINATION_PATHS"] = normalized_destinations
     config_to_update["ORGANIZED_PATH"] = normalized_destinations[0]["path"]

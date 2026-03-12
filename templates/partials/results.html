@@ -245,11 +245,15 @@
                 </button>
 
                 <div class="form-floating mt-1">
+                    {% set category_ns = namespace(selected=TORRENT_CLIENT_CATEGORY) %}
+                    {% for dest in DESTINATION_PATHS[1:] if dest.default_main_cat == (result.main_cat | string) and dest.default_torrent_category %}
+                    {% set category_ns.selected = dest.default_torrent_category %}
+                    {% endfor %}
                     <select name="category" class="form-select form-select-sm shadow-sm category-dropdown"
-                        style="font-size: 0.85rem;" id="catSelect{{ result.id }}">
-                        <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
+                        style="font-size: 0.85rem;" id="catSelect{{ result.id }}" data-main-cat="{{ result.main_cat }}">
+                        <option value="" {% if not category_ns.selected %}selected{% endif %}>Default</option>
                         {% for category_name, category_info in categories.items() %}
-                        <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{%
+                        <option value="{{ category_name }}" {% if category_ns.selected==category_name %}selected{%
                             endif %}>
                             {{ category_name }}
                         </option>
