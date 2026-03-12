@@ -182,7 +182,8 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `AUTO_ORGANIZE_USE_COPY` | No | Set to `true` to copy files instead of hardlinking. Useful if download/organize paths are on different filesystems. Defaults to `false`. |
 | `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, and `{Title}` tokens. Defaults to `{Author}/{Title}`. |
 | `ORGANIZED_PATH` | If auto-organization is enabled | The default *container* path for your organized library (e.g., `/downloads/organized/`). Additional destination paths can be configured from the Settings UI and assigned to media types. |
-| `TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The *container* path where your torrent client saves completed files for this category (e.g., `/downloads/torrents/`). |
+| `LOCAL_TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The local path MouseSearch can access for completed torrent files (e.g., `/downloads/torrents/`). |
+| `REMOTE_TORRENT_DOWNLOAD_PATH` | No | Optional remote/client-side view of that same download directory. Recommended when your torrent client runs in a different filesystem namespace, such as Docker vs bare metal. |
 | `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` | No | Set to `true` to enable filesystem caching of thumbnail images (stores in `DATA_PATH/cache/thumbnails`). Defaults to `false`. **Enable this if you experience slow thumbnail loading or suspect you're hitting MAM rate limits.** Cached thumbnails expire after 30 days. |
 | `THUMBNAIL_CACHE_MAX_SIZE_MB` | No | Maximum cache size in megabytes (only applies when `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` is enabled). Oldest files are deleted first when limit is exceeded. Defaults to `500`. |
 | `MAX_SEARCH_RESULTS` | No | Maximum number of search results returned per query. Defaults to `50`. |
@@ -195,6 +196,8 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `ACCESS_LOGFILE` | No | Hypercorn raw access log destination (`/dev/null` disables, `-` logs to stdout). Defaults to `/dev/null`. |
 | `PUID` | No | (Docker only) User ID to run the container as. Set to your host user's UID for correct file permissions. |
 | `PGID` | No | (Docker only) Group ID to run the container as. Set to your host user's GID for correct file permissions. |
+
+Legacy compatibility: `TORRENT_DOWNLOAD_PATH` is still accepted as an alias for `LOCAL_TORRENT_DOWNLOAD_PATH`, but new installs should use the new name.
 
 **How to find your `MAM_ID`:**
 1.  In any web browser, navigate to [Security](https://www.myanonamouse.net/preferences/index.php?view=security) on Myanonamouse
@@ -298,7 +301,7 @@ You can control two separate aspects of auto-organization:
 
 **If using the default Hardlink mode (`AUTO_ORGANIZE_USE_COPY=false`):**
 
-Your source (`TORRENT_DOWNLOAD_PATH`) and destination directories (`ORGANIZED_PATH` and/or any additional destination paths) **must**:
+Your source (`LOCAL_TORRENT_DOWNLOAD_PATH`) and destination directories (`ORGANIZED_PATH` and/or any additional destination paths) **must**:
 1. exist on the same filesystem
 2. **AND** within the same volume mount (if using Docker)
 
@@ -316,8 +319,10 @@ You may use different filesystems or Docker volumes, but be aware that this will
 
 * **Host Path:** `/mnt/storage/downloads`
 * **Volume Mount (Docker):** `- /mnt/storage/downloads:/downloads`
-* **.env `TORRENT_DOWNLOAD_PATH`:** `/downloads/torrents/`
+* **.env `LOCAL_TORRENT_DOWNLOAD_PATH`:** `/downloads/torrents/`
 * **.env `ORGANIZED_PATH`:** `/downloads/organized/`
+
+If your torrent client reports a different path than MouseSearch can access locally, also set `REMOTE_TORRENT_DOWNLOAD_PATH`. Example: `REMOTE_TORRENT_DOWNLOAD_PATH=/data/torrents` and `LOCAL_TORRENT_DOWNLOAD_PATH=/downloads/torrents`.
 
 This setup guarantees that both paths point to the same underlying device, allowing hard links to be created.
 

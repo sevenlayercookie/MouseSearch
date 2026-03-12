@@ -260,9 +260,21 @@
             <h6 class="text-uppercase mb-3">Path Configuration</h6>
 
             <div class="mb-3">
-              <label for="TORRENT_DOWNLOAD_PATH" class="form-label small">Download Source Path</label>
-              <input type="text" class="form-control" id="TORRENT_DOWNLOAD_PATH" name="TORRENT_DOWNLOAD_PATH"
-                value="{{ TORRENT_DOWNLOAD_PATH }}">
+              <label for="LOCAL_TORRENT_DOWNLOAD_PATH" class="form-label small">Local Download Source Path</label>
+              <input type="text" class="form-control" id="LOCAL_TORRENT_DOWNLOAD_PATH" name="LOCAL_TORRENT_DOWNLOAD_PATH"
+                value="{{ LOCAL_TORRENT_DOWNLOAD_PATH }}">
+              <div class="form-text small">
+                The path MouseSearch can access locally for completed torrent files.
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="REMOTE_TORRENT_DOWNLOAD_PATH" class="form-label small">Remote Download Source Path</label>
+              <input type="text" class="form-control" id="REMOTE_TORRENT_DOWNLOAD_PATH" name="REMOTE_TORRENT_DOWNLOAD_PATH"
+                value="{{ REMOTE_TORRENT_DOWNLOAD_PATH }}">
+              <div class="form-text small">
+                Optional but recommended when your torrent client reports a different filesystem path, such as bare metal vs Docker.
+              </div>
             </div>
 
             <div class="mb-3">

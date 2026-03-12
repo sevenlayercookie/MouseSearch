@@ -158,7 +158,7 @@ class QBittorrentClient(TorrentClient):
                 response.raise_for_status()
                 data = response.json()
                 if data:
-                    return data[0]  # qB returns a list
+                    return self.normalize_torrent_info(data[0])  # qB returns a list
                 return None
         except (RequestError, HTTPStatusError):
             return None
@@ -175,8 +175,8 @@ class QBittorrentClient(TorrentClient):
                 response.raise_for_status()
                 torrent_list = response.json()
                 # Return dict indexed by hash for easy lookup
-                torrents_by_hash = {t['hash']: t for t in torrent_list}
-                return {'torrents': torrents_by_hash}
+                torrents_by_hash = {t['hash']: t for t in torrent_list if t.get('hash')}
+                return {'torrents': self.normalize_torrent_info_map(torrents_by_hash)}
         except (RequestError, HTTPStatusError) as e:
             return {'error': f'Failed to fetch batch torrent info: {e}'}
 
@@ -188,6 +188,6 @@ class QBittorrentClient(TorrentClient):
             async with httpx.AsyncClient(cookies=self.session_cookies) as client:
                 response = await client.get(f"{self.base_url}/api/v2/torrents/info")
                 response.raise_for_status()
-                return response.json()
+                return self.normalize_torrent_metadata_list(response.json())
         except (RequestError, HTTPStatusError):
             return []

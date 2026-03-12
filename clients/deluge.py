@@ -222,7 +222,7 @@ class DelugeClient(TorrentClient):
             data = await self._request("core.get_torrent_status", [hash_val, keys])
             if not data: return None
 
-            return {
+            return self.normalize_torrent_info({
                 'hash': hash_val,
                 'name': data.get('name'),
                 'save_path': data.get('save_path'),
@@ -233,7 +233,7 @@ class DelugeClient(TorrentClient):
                 'eta': data.get('eta', -1),
                 'state': self._map_state(data.get('state')),
                 'category': data.get('label', ''),
-            }
+            }, hash_val=hash_val)
         except Exception:
             return None
 
@@ -245,7 +245,7 @@ class DelugeClient(TorrentClient):
             
             result = {}
             for h, info in data.items():
-                result[h] = {
+                result[h] = self.normalize_torrent_info({
                     'hash': h,
                     'name': info.get('name'),
                     'save_path': info.get('save_path'),
@@ -256,8 +256,8 @@ class DelugeClient(TorrentClient):
                     'eta': info.get('eta', -1),
                     'state': self._map_state(info.get('state')),
                     'category': info.get('label', ''),
-                }
-            return {'torrents': result}
+                }, hash_val=h)
+            return {'torrents': self.normalize_torrent_info_map(result)}
         except Exception as e:
             return {'error': str(e)}
 
@@ -298,6 +298,6 @@ class DelugeClient(TorrentClient):
                     'save_path': info.get('save_path'),
                     'comment': info.get('comment', ''),
                 })
-            return result
+            return self.normalize_torrent_metadata_list(result)
         except Exception:
             return []

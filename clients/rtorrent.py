@@ -1,6 +1,7 @@
 import httpx
 import xml.etree.ElementTree as ET
 from clients.base import TorrentClient
+from pathlib import Path
 from urllib.parse import unquote
 
 class RTorrentClient(TorrentClient):
@@ -15,6 +16,7 @@ class RTorrentClient(TorrentClient):
         
         # Standard ruTorrent label field is usually d.custom1
         self.label_attr = "d.custom1" 
+        self.comment_attr = "d.custom2"
 
     async def _request(self, method: str, params: list = None):
         """
@@ -143,6 +145,7 @@ class RTorrentClient(TorrentClient):
             version = await self._request("system.client_version")
             return {
                 "status": "success",
+                "message": f"{self.display_name} is connected.",
                 "version": f"rTorrent {version}",
                 "display_name": self.display_name
             }
@@ -182,7 +185,7 @@ class RTorrentClient(TorrentClient):
                 
                 # Optional: If you want ruTorrent to parse URLS, add VRS24mrker prefix, 
                 # but plain text is safer for your app's regex.
-                cmds.append(f'd.custom2.set="{comment}"')
+                cmds.append(f'{self.comment_attr}.set="{comment}"')
 
             await self._request("load.start_verbose", cmds)
             return {"status": "success", "message": "Torrent added to rTorrent"}
@@ -194,10 +197,13 @@ class RTorrentClient(TorrentClient):
             # Fetch specific fields
             # d.state (1=open/0=closed), d.is_active (1=started/0=stopped), d.complete (1=done)
             name = await self._request("d.name", [torrent_hash])
+            directory = await self._request("d.directory", [torrent_hash])
+            is_multi_file = await self._request("d.is_multi_file", [torrent_hash])
             down_rate = await self._request("d.down.rate", [torrent_hash])
             done = await self._request("d.completed_bytes", [torrent_hash])
             size = await self._request("d.size_bytes", [torrent_hash])
             label = await self._request(self.label_attr, [torrent_hash])
+            comment = await self._request(self.comment_attr, [torrent_hash])
             
             is_open = await self._request("d.state", [torrent_hash]) 
             is_active = await self._request("d.is_active", [torrent_hash]) 
@@ -205,7 +211,7 @@ class RTorrentClient(TorrentClient):
             is_complete = await self._request("d.complete", [torrent_hash])
 
             return self._format_data(
-                torrent_hash, name, down_rate, done, size, label, 
+                torrent_hash, name, directory, is_multi_file, down_rate, done, size, label, comment,
                 is_open, is_active, is_hash_checking, is_complete
             )
         except:
@@ -214,21 +220,15 @@ class RTorrentClient(TorrentClient):
     async def get_torrent_info_batch(self, hashes: list):
         if not hashes: return {"torrents": {}}
         try:
-            # Fetch ALL torrents in "main" view (most efficient in XMLRPC)
-            cmds = [
-                "d.hash=", "d.name=", "d.down.rate=", "d.completed_bytes=", "d.size_bytes=", 
-                self.label_attr + "=", "d.state=", "d.is_active=", "d.is_hash_checking=", "d.complete="
-            ]
-            data = await self._request("d.multicall2", ["", "main"] + cmds)
-            
             result = {}
-            target_hashes = set(hashes)
-            
-            for row in data:
-                h = row[0]
-                if h in target_hashes:
-                    result[h] = self._format_data(h, *row[1:])
-            return {"torrents": result}
+            for raw_hash in hashes:
+                normalized_hash = self._normalize_hash(raw_hash)
+                if not normalized_hash:
+                    continue
+                info = await self.get_torrent_info(normalized_hash)
+                if info:
+                    result[normalized_hash] = info
+            return {"torrents": self.normalize_torrent_info_map(result)}
         except:
             return {"torrents": {}}
 
@@ -238,45 +238,78 @@ class RTorrentClient(TorrentClient):
         Decodes URL-encoded comments common in ruTorrent (e.g., MID%3D123 -> MID=123).
         """
         try:
-            # Fetch hash and comment (d.custom2)
-            data = await self._request("d.multicall2", ["", "main", "d.hash=", "d.custom2="])
+            data = await self._request(
+                "d.multicall2",
+                ["", "main", "d.hash=", "d.name=", "d.directory=", "d.is_multi_file=", self.label_attr + "=", self.comment_attr + "="]
+            )
             
             results = []
             for r in data:
-                raw_hash = r[0]
-                raw_comment = r[1] or ""
+                raw_hash = self._normalize_hash(r[0] if len(r) > 0 else "")
+                raw_name = r[1] if len(r) > 1 else ""
+                raw_directory = r[2] if len(r) > 2 else ""
+                raw_is_multi_file = r[3] if len(r) > 3 else 0
+                raw_category = r[4] if len(r) > 4 else ""
+                raw_comment = r[5] if len(r) > 5 else ""
                 
                 # FIX: Unquote the comment to handle URL-encoded characters
                 # 'MID%3D123' becomes 'MID=123'
                 clean_comment = unquote(raw_comment)
                 
-                results.append({
-                    "hash": raw_hash, 
-                    "comment": clean_comment
-                })
+                results.append(self.normalize_torrent_info({
+                    "hash": raw_hash,
+                    "name": raw_name,
+                    "save_path": self._build_save_path(raw_directory, raw_name, raw_is_multi_file),
+                    "category": raw_category,
+                    "comment": clean_comment,
+                }, hash_val=raw_hash))
             
             return results
         except Exception:
             return []
 
-    def _format_data(self, hash_val, name, down_rate, done, size, label, is_open, is_active, is_hashing, is_complete):
-        state = "paused"
-        if is_hashing: state = "checkingUP" if is_complete else "checkingDL"
-        elif is_open == 0 or is_active == 0: state = "paused"
-        elif is_complete: state = "uploading"
-        else: state = "downloading"
+    def _normalize_hash(self, value) -> str:
+        return str(value or "").strip().lower()
+
+    def _is_truthy(self, value) -> bool:
+        try:
+            return int(value) != 0
+        except (TypeError, ValueError):
+            return bool(value)
+
+    def _build_save_path(self, directory, name, is_multi_file) -> str:
+        directory_str = str(directory or "").strip()
+        if not directory_str:
+            return ""
+        if self._is_truthy(is_multi_file):
+            return str(Path(directory_str).parent)
+        return directory_str
+
+    def _map_state(self, is_open, is_active, is_hashing, is_complete) -> str:
+        complete = self._is_truthy(is_complete)
+        if self._is_truthy(is_hashing):
+            return "checkingUP" if complete else "checkingDL"
+        if not self._is_truthy(is_open) or not self._is_truthy(is_active):
+            return "pausedUP" if complete else "pausedDL"
+        return "uploading" if complete else "downloading"
+
+    def _format_data(self, hash_val, name, directory, is_multi_file, down_rate, done, size, label, comment, is_open, is_active, is_hashing, is_complete):
+        state = self._map_state(is_open, is_active, is_hashing, is_complete)
 
         progress = (done / size) if size > 0 else 0
-        eta = 8640000
+        eta = -1
         if state == "downloading" and down_rate > 0:
             eta = int((size - done) / down_rate)
 
-        return {
+        return self.normalize_torrent_info({
             "name": name,
-            "hash": hash_val,
+            "hash": self._normalize_hash(hash_val),
             "progress": progress,
             "eta": eta,
             "state": state,
             "category": label,
-            "save_path": "" 
-        }
+            "save_path": self._build_save_path(directory, name, is_multi_file),
+            "comment": unquote(str(comment or "").strip()),
+            "total_size": size,
+            "tracker_error": "",
+        }, hash_val=self._normalize_hash(hash_val))

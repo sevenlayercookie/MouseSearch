@@ -6,6 +6,7 @@ import copy
 import html
 import argparse
 import os
+import posixpath
 import time
 import hashlib
 import collections
@@ -137,6 +138,10 @@ DEFAULT_SEARCH_FILTER_DEFAULTS = {
     "max_snatched": "",
 }
 
+LEGACY_CONFIG_ALIASES = {
+    "LOCAL_TORRENT_DOWNLOAD_PATH": ("TORRENT_DOWNLOAD_PATH",),
+}
+
 def normalize_result_display_fields(value, fallback):
     allowed = set(RESULT_DISPLAY_FIELDS)
     if isinstance(value, list):
@@ -200,6 +205,25 @@ def normalize_string_list(value):
         seen.add(item)
         unique.append(item)
     return unique
+
+
+def normalize_info_hash(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def normalize_monitoring_state_keys():
+    normalized_state = {}
+    for raw_hash, state in list(monitoring_state.items()):
+        normalized_hash = normalize_info_hash(raw_hash)
+        if not normalized_hash:
+            continue
+        existing = normalized_state.get(normalized_hash, {})
+        merged = dict(existing)
+        merged.update(state or {})
+        normalized_state[normalized_hash] = merged
+
+    monitoring_state.clear()
+    monitoring_state.update(normalized_state)
 
 
 def make_autosuggest_cache_key(raw_query, query_candidates, lang_ids, main_cats, selected_fields, suggestion_limit):
@@ -586,7 +610,9 @@ async def startup():
         app.logger.info(f"Startup: Found {len(pending)} pending torrents. Starting active monitoring.")
         current_time = time.time()
         for h in pending:
-            monitoring_state[h] = {"added_at": current_time - 20} 
+            normalized_hash = normalize_info_hash(h)
+            if normalized_hash:
+                monitoring_state[normalized_hash] = {"added_at": current_time - 20}
         start_monitoring_loop()
 
 
@@ -787,7 +813,8 @@ FALLBACK_CONFIG = {
     "DESTINATION_PATHS": [
         {"path": "/downloads/organized", "default_main_cat": ""}
     ],
-    "TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
+    "LOCAL_TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
+    "REMOTE_TORRENT_DOWNLOAD_PATH": "",
     "REL_PATH_TEMPLATE": DEFAULT_RELATIVE_PATH_TEMPLATE,
     "AUTO_ORGANIZE_ON_ADD": False,
     "AUTO_ORGANIZE_ON_SCHEDULE": False,
@@ -843,7 +870,101 @@ THUMB_CACHE_DIR = DATA_PATH / "cache/thumbnails"
 
 # These will be set from config
 ORGANIZED_PATH = None
-TORRENT_DOWNLOAD_PATH = None
+LOCAL_TORRENT_DOWNLOAD_PATH = None
+REMOTE_TORRENT_DOWNLOAD_PATH = None
+
+
+def apply_legacy_config_aliases(target: dict, source):
+    for canonical_key, aliases in LEGACY_CONFIG_ALIASES.items():
+        canonical_value = source.get(canonical_key)
+        if canonical_value not in (None, ""):
+            target[canonical_key] = canonical_value
+            continue
+
+        for alias in aliases:
+            legacy_value = source.get(alias)
+            if legacy_value not in (None, ""):
+                target[canonical_key] = legacy_value
+                break
+
+
+def get_local_torrent_download_path(config: dict) -> str:
+    value = (
+        config.get("LOCAL_TORRENT_DOWNLOAD_PATH")
+        or config.get("TORRENT_DOWNLOAD_PATH")
+        or FALLBACK_CONFIG["LOCAL_TORRENT_DOWNLOAD_PATH"]
+    )
+    return str(value).strip()
+
+
+def get_remote_torrent_download_path(config: dict) -> str:
+    return str(config.get("REMOTE_TORRENT_DOWNLOAD_PATH") or "").strip()
+
+
+def _is_relative_to_remote_base(remote_path: str, remote_base: str) -> str | None:
+    normalized_remote_path = posixpath.normpath(str(remote_path or "").strip())
+    normalized_remote_base = posixpath.normpath(str(remote_base or "").strip())
+    if not normalized_remote_path or not normalized_remote_base:
+        return None
+
+    rel_path = posixpath.relpath(normalized_remote_path, normalized_remote_base)
+    if rel_path in {".", ""}:
+        return ""
+    if rel_path == ".." or rel_path.startswith("../"):
+        return None
+    return rel_path
+
+
+def resolve_local_save_path(config: dict, remote_save_path: str | None) -> Path | None:
+    local_base = get_local_torrent_download_path(config)
+    remote_base = get_remote_torrent_download_path(config)
+    raw_save_path = str(remote_save_path or "").strip()
+
+    if raw_save_path:
+        candidate = Path(raw_save_path)
+        if local_base:
+            local_base_path = Path(local_base).resolve()
+            try:
+                candidate_resolved = candidate.resolve()
+            except Exception:
+                candidate_resolved = candidate
+
+            try:
+                candidate_resolved.relative_to(local_base_path)
+                return candidate_resolved
+            except Exception:
+                pass
+
+        if remote_base and local_base:
+            rel_path = _is_relative_to_remote_base(raw_save_path, remote_base)
+            if rel_path is not None:
+                mapped = Path(local_base)
+                if rel_path:
+                    mapped = mapped / Path(rel_path)
+                return mapped.resolve()
+
+        if candidate.exists():
+            return candidate.resolve()
+
+    if local_base:
+        return Path(local_base).resolve()
+
+    if raw_save_path:
+        return Path(raw_save_path).resolve()
+
+    return None
+
+
+def resolve_local_content_path(config: dict, torrent_info: dict) -> Path | None:
+    name = str((torrent_info or {}).get("name") or "").strip()
+    if not name:
+        return None
+
+    save_path = resolve_local_save_path(config, (torrent_info or {}).get("save_path"))
+    if save_path is not None:
+        return save_path / Path(name)
+
+    return Path(name)
 
 def load_config():
     # 1. Start with Hardcoded Defaults (Lowest Priority)
@@ -851,7 +972,8 @@ def load_config():
     
     # 2. Update with Environment Variables (Medium Priority)
     # These act as fallbacks if the key is missing in config.json
-    env_config = {key: os.getenv(key) for key in config.keys() if os.getenv(key) is not None}
+    env_config = {key: os.getenv(key) for key in FALLBACK_CONFIG.keys() if os.getenv(key) is not None}
+    apply_legacy_config_aliases(env_config, os.environ)
     config.update(env_config)
 
     # 3. Update with config.json (Highest Priority - The Source of Truth)
@@ -863,8 +985,10 @@ def load_config():
                 json_config = json.load(f)
             except json.JSONDecodeError:
                 pass # corrupted config, ignore
-    
-    config.update(json_config)
+
+    json_overrides = dict(json_config)
+    apply_legacy_config_aliases(json_overrides, json_config)
+    config.update(json_overrides)
 
     # --- TYPE CASTING BLOCK (Safety) ---
     # Now that we have the final values, we force them into the correct types
@@ -938,6 +1062,9 @@ def load_config():
     )
     config["ORGANIZED_PATH"] = organized_path
     config["DESTINATION_PATHS"] = destination_paths
+    config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(config)
+    config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(config)
+    config["TORRENT_DOWNLOAD_PATH"] = config["LOCAL_TORRENT_DOWNLOAD_PATH"]
 
     return config
 
@@ -1069,6 +1196,9 @@ async def load_new_app_config():
     )
     new_config["ORGANIZED_PATH"] = organized_path
     new_config["DESTINATION_PATHS"] = destination_paths
+    new_config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(new_config)
+    new_config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(new_config)
+    new_config["TORRENT_DOWNLOAD_PATH"] = new_config["LOCAL_TORRENT_DOWNLOAD_PATH"]
 
     app.secret_key = new_config["QUART_SECRET_KEY"]
     app.config.update(new_config)
@@ -1077,9 +1207,12 @@ async def load_new_app_config():
     app.config["UPLOAD_OPTIONS"] = load_upload_options()
     
     # Update path globals
-    global ORGANIZED_PATH, TORRENT_DOWNLOAD_PATH
+    global ORGANIZED_PATH, LOCAL_TORRENT_DOWNLOAD_PATH, REMOTE_TORRENT_DOWNLOAD_PATH
     ORGANIZED_PATH = Path(new_config.get("ORGANIZED_PATH", FALLBACK_CONFIG["ORGANIZED_PATH"])).resolve()
-    TORRENT_DOWNLOAD_PATH = Path(new_config.get("TORRENT_DOWNLOAD_PATH", FALLBACK_CONFIG["TORRENT_DOWNLOAD_PATH"])).resolve()
+    LOCAL_TORRENT_DOWNLOAD_PATH = Path(
+        new_config.get("LOCAL_TORRENT_DOWNLOAD_PATH", FALLBACK_CONFIG["LOCAL_TORRENT_DOWNLOAD_PATH"])
+    ).resolve()
+    REMOTE_TORRENT_DOWNLOAD_PATH = new_config.get("REMOTE_TORRENT_DOWNLOAD_PATH") or None
     
     global mam_session_cookies
     mam_session_cookies = {"mam_id": app.config.get("MAM_ID")}
@@ -1106,6 +1239,8 @@ async def monitor_downloads_loop():
     client_session_active = False
     
     while True:
+        normalize_monitoring_state_keys()
+
         # First, check and process pending MID resolutions
         if pending_mid_resolutions and torrent_client:
             try:
@@ -1120,7 +1255,7 @@ async def monitor_downloads_loop():
                         
                         if mid_match and mid_match.group(1) == mid:
                             # Found the torrent! Extract hash and move to monitoring_state
-                            torrent_hash = torrent.get('hash', '')
+                            torrent_hash = normalize_info_hash(torrent.get('hash', ''))
                             if torrent_hash:
                                 app.logger.info(f"Resolved MID {mid} to hash {torrent_hash}")
                                 
@@ -1173,7 +1308,7 @@ async def monitor_downloads_loop():
                     await asyncio.sleep(5)
                     continue
 
-            active_hashes = list(monitoring_state.keys())
+            active_hashes = [normalize_info_hash(h) for h in monitoring_state.keys() if normalize_info_hash(h)]
             torrents_info = {}
             
             # FETCH DATA
@@ -2541,7 +2676,7 @@ async def client_add_torrent():
             series_info = parse_series_info(incoming_data.get('series_info', ''))
             main_cat = incoming_data.get('main_cat', '')
             download_link = incoming_data.get('download_link', '')
-            resolved_hash = str(result.get('hash') or hash_val or '').strip().lower()
+            resolved_hash = normalize_info_hash(result.get('hash') or hash_val or '')
 
             metadata_payload = {
                 "mid": id,
@@ -2564,7 +2699,7 @@ async def client_add_torrent():
                     save_database(metadata)
                     app.logger.info(f"Saved metadata for torrent hash: {resolved_hash}")
 
-                monitoring_state[resolved_hash] = {
+                monitoring_state[normalize_info_hash(resolved_hash)] = {
                     "added_at": time.time()
                 }
                 start_monitoring_loop()
@@ -2601,7 +2736,8 @@ async def client_add_torrent():
             download_link = incoming_data.get('download_link', '')
             
             metadata = load_database()
-            metadata[hash_val] = {
+            normalized_hash = normalize_info_hash(hash_val)
+            metadata[normalized_hash] = {
                 "mid": id, "author": author, "title": title,
                 "added_on": datetime.now().isoformat(),
                 "status": "pending", "retry_count": 0,
@@ -2612,15 +2748,15 @@ async def client_add_torrent():
                 "custom_destination_path": custom_destination_path,
             }
             save_database(metadata)
-            app.logger.info(f"Saved metadata for torrent hash: {hash_val}")
+            app.logger.info(f"Saved metadata for torrent hash: {normalized_hash}")
     
     result = await torrent_client.add_torrent(torrent_url, category, **client_add_kwargs)
     
     if result['status'] == 'success':
-        resolved_hash = str(result.get('hash') or hash_val or '').strip().lower()
+        resolved_hash = normalize_info_hash(result.get('hash') or hash_val or '')
         # Start progress monitoring regardless of auto-organize setting.
         if resolved_hash:
-            monitoring_state[resolved_hash] = {
+            monitoring_state[normalize_info_hash(resolved_hash)] = {
                 "added_at": time.time()
             }
             start_monitoring_loop()
@@ -3547,7 +3683,9 @@ async def _perform_organization(hash_val: str) -> tuple[bool, str]:
 
     if not info: return False, f"Torrent {hash_val} not found in client."
     
-    content_path = Path(TORRENT_DOWNLOAD_PATH) / info.get('name')
+    content_path = resolve_local_content_path(app.config, info)
+    if content_path is None:
+        return False, f"Unable to resolve source path for torrent {hash_val}."
     torrent_meta = metadata[hash_val]
 
     destination_root = str(torrent_meta.get('custom_destination_path') or ORGANIZED_PATH or "").strip()

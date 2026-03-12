@@ -181,11 +181,19 @@ class TransmissionClient(TorrentClient):
         if not remote_dir:
             return None
 
-        local_base = str(self.config.get("TORRENT_DOWNLOAD_PATH") or "").strip()
+        local_base = str(
+            self.config.get("LOCAL_TORRENT_DOWNLOAD_PATH")
+            or self.config.get("TORRENT_DOWNLOAD_PATH")
+            or ""
+        ).strip()
         if not local_base:
             return remote_dir
 
-        remote_base = str(session_download_dir or "").strip()
+        remote_base = str(
+            self.config.get("REMOTE_TORRENT_DOWNLOAD_PATH")
+            or session_download_dir
+            or ""
+        ).strip()
         if not remote_base:
             return local_base
 
@@ -206,25 +214,7 @@ class TransmissionClient(TorrentClient):
         download_dir: str | None,
         session_download_dir: str | None,
     ) -> str:
-        name = str(torrent_name or "").strip()
-        if not name:
-            return ""
-
-        remote_dir = str(download_dir or "").strip()
-        remote_base = str(session_download_dir or "").strip()
-        if not remote_dir or not remote_base:
-            return name
-
-        normalized_remote = posixpath.normpath(remote_dir)
-        normalized_base = posixpath.normpath(remote_base)
-        rel_dir = posixpath.relpath(normalized_remote, normalized_base)
-
-        if rel_dir in {".", ""}:
-            return name
-        if rel_dir.startswith("../") or rel_dir == "..":
-            return name
-
-        return posixpath.join(rel_dir, name)
+        return str(torrent_name or "").strip()
 
     async def _compute_download_dir(self, category: str) -> str | None:
         """Returns Transmission download directory for this add operation.
@@ -437,7 +427,7 @@ class TransmissionClient(TorrentClient):
                     remote_download_dir,
                     session_download_dir,
                 )
-                return {
+                return self.normalize_torrent_info({
                     'hash': self._normalize_hash(self._get_any(info, 'hash_string', 'hashString')),
                     'name': mapped_name,
                     'save_path': mapped_save_path,
@@ -447,7 +437,7 @@ class TransmissionClient(TorrentClient):
                     'eta': info.get('eta', -1),
                     'state': self._map_status(info.get('status', 0)),
                     'tracker_error': self._extract_tracker_error(info),
-                }
+                })
             return {}
         except Exception:
             return {}
@@ -475,7 +465,7 @@ class TransmissionClient(TorrentClient):
                         self._get_any(t, 'download_dir', 'downloadDir'),
                         session_download_dir
                     )
-                    torrents_by_hash[h] = {
+                    torrents_by_hash[h] = self.normalize_torrent_info({
                         'hash': h,
                         'name': t.get('name'),
                         'save_path': mapped_save_path,
@@ -485,9 +475,9 @@ class TransmissionClient(TorrentClient):
                         'eta': t.get('eta', -1),
                         'state': self._map_status(t.get('status', 0)),
                         'tracker_error': self._extract_tracker_error(t),
-                    }
+                    }, hash_val=h)
             
-            return {'torrents': torrents_by_hash}
+            return {'torrents': self.normalize_torrent_info_map(torrents_by_hash)}
         except Exception as e:
             return {'error': f'Batch fetch failed: {e}'}
             
@@ -540,6 +530,6 @@ class TransmissionClient(TorrentClient):
                     'save_path': mapped_save_path,
                     'comment': t.get('comment', ''),
                 })
-            return mapped
+            return self.normalize_torrent_metadata_list(mapped)
         except Exception:
             return []
