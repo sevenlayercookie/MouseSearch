@@ -1,7 +1,8 @@
 <div class="offcanvas offcanvas-end w-md-50" tabindex="-1" id="settingsOffcanvas"
   aria-labelledby="settingsOffcanvasLabel">
   <style>
-    #destination-paths-list .destination-path-row {
+    #destination-paths-list .destination-path-row,
+    #type-category-rules-list .type-category-row {
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
@@ -11,22 +12,26 @@
       background: var(--bs-body-tertiary);
     }
 
-    #destination-paths-list .destination-path-row-header {
+    #destination-paths-list .destination-path-row-header,
+    #type-category-rules-list .type-category-row-header {
       display: flex;
       gap: 0.5rem;
       align-items: flex-start;
     }
 
-    #destination-paths-list .destination-path-row-main-type {
+    #destination-paths-list .destination-path-row-main-type,
+    #type-category-rules-list .type-category-row-main-type {
       flex: 1 1 auto;
       min-width: 0;
     }
 
-    #destination-paths-list .destination-path-row .form-floating {
+    #destination-paths-list .destination-path-row .form-floating,
+    #type-category-rules-list .type-category-row .form-floating {
       width: 100%;
     }
 
-    #destination-paths-list .destination-path-row .remove-path-btn {
+    #destination-paths-list .destination-path-row .remove-path-btn,
+    #type-category-rules-list .type-category-row .remove-type-category-btn {
       flex: 0 0 auto;
       width: 3rem;
       min-width: 3rem;
@@ -116,6 +121,53 @@
                   <option value="{{ TORRENT_CLIENT_CATEGORY }}" selected>{{ TORRENT_CLIENT_CATEGORY }}</option>
                 </select>
                 <label for="TORRENT_CLIENT_CATEGORY">Default category</label>
+              </div>
+
+              <div class="mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <label class="form-label small fw-bold mb-0">Type-Specific Default Categories</label>
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0" id="add-type-category-btn">
+                    <i class="bi bi-plus-lg"></i> Add Rule
+                  </button>
+                </div>
+                <div class="form-text small mb-3">
+                  Optionally choose a default client category by torrent type, even if auto-organize is disabled.
+                </div>
+
+                <div id="type-category-rules-list">
+                  {% for rule in TYPE_SPECIFIC_TORRENT_CATEGORIES %}
+                  <div class="type-category-row mb-2">
+                    <div class="type-category-row-header">
+                      <div class="form-floating type-category-row-main-type">
+                        <select class="form-select type-category-default-select" name="type_category_defaults[]">
+                          <option value="">Choose Type</option>
+                          {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
+                          <option value="{{ media.id }}" {% if rule.default_main_cat==media.id %}selected{% endif %}>
+                            {{ media.label }}
+                          </option>
+                          {% endfor %}
+                        </select>
+                        <label>Main Type</label>
+                      </div>
+                      <button type="button" class="btn btn-outline-danger remove-type-category-btn" title="Remove Rule"
+                        aria-label="Remove Rule">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                    <div class="form-floating">
+                      <select class="form-select type-category-select" name="type_category_values[]">
+                        <option value="">Use Global Default</option>
+                        {% for category_name, category_info in categories.items() %}
+                        <option value="{{ category_name }}" {% if rule.default_torrent_category==category_name %}selected{% endif %}>
+                          {{ category_name }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                      <label>Default Client Category</label>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
               </div>
             </div>
           </div>
@@ -324,7 +376,7 @@
                 </button>
               </div>
               <div class="form-text small mb-3">
-                Assign a main category type to a destination path and optional default torrent client category.
+                Assign a main category type to a destination path for auto-organize placement.
               </div>
 
               <div id="destination-paths-list">
@@ -352,17 +404,6 @@
                     <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
                       value="{{ dest.path }}" placeholder="/data/media" required>
                     <label>Destination Path</label>
-                  </div>
-                  <div class="form-floating">
-                    <select class="form-select destination-category-select" name="extra_dest_categories[]">
-                      <option value="">Use Global Default</option>
-                      {% for category_name, category_info in categories.items() %}
-                      <option value="{{ category_name }}" {% if dest.default_torrent_category==category_name %}selected{% endif %}>
-                        {{ category_name }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                    <label>Default Client Category</label>
                   </div>
                 </div>
                 {% endfor %}

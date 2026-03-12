@@ -7,7 +7,7 @@
     No results found. Please try a different search query.
 </div>
 {% else %}
-{% set destination_paths = DESTINATION_PATHS | default([], true) %}
+{% set type_specific_torrent_categories = TYPE_SPECIFIC_TORRENT_CATEGORIES | default([], true) %}
 {% set default_client_category = TORRENT_CLIENT_CATEGORY | default('', true) %}
 
 <style>
@@ -248,8 +248,8 @@
 
                 <div class="form-floating mt-1">
                     {% set category_ns = namespace(selected=default_client_category) %}
-                    {% for dest in destination_paths[1:] if dest.default_main_cat == (result.main_cat | string) and dest.default_torrent_category %}
-                    {% set category_ns.selected = dest.default_torrent_category %}
+                    {% for rule in type_specific_torrent_categories if rule.default_main_cat == (result.main_cat | string) and rule.default_torrent_category %}
+                    {% set category_ns.selected = rule.default_torrent_category %}
                     {% endfor %}
                     <select name="category" class="form-select form-select-sm shadow-sm category-dropdown"
                         style="font-size: 0.85rem;" id="catSelect{{ result.id }}" data-main-cat="{{ result.main_cat }}">

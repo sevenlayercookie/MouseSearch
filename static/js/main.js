@@ -768,47 +768,36 @@ function getSettingsCategoryOptions() {
     return options;
 }
 
-function getConfiguredDestinationEntriesForCategoryDefaults() {
-    const destinationPathsList = document.getElementById('destination-paths-list');
-    const defaultPath = String(
-        document.getElementById('ORGANIZED_PATH')?.value
-        || window.DESTINATION_PATHS?.[0]?.path
-        || '/downloads/organized'
-    ).trim() || '/downloads/organized';
+function getConfiguredTypeCategoryEntries() {
+    const typeCategoryRulesList = document.getElementById('type-category-rules-list');
 
-    const domEntries = destinationPathsList
-        ? Array.from(destinationPathsList.querySelectorAll('.destination-path-row')).map(row => ({
-            path: String(row.querySelector('.destination-path-input')?.value || '').trim(),
-            default_main_cat: String(row.querySelector('.destination-default-select')?.value || '').trim(),
-            default_torrent_category: String(row.querySelector('.destination-category-select')?.value || '').trim()
-        })).filter(entry => entry.path)
-        : [];
-
-    if (domEntries.length) {
-        return [{ path: defaultPath, default_main_cat: '', default_torrent_category: '' }, ...domEntries];
+    if (typeCategoryRulesList) {
+        return Array.from(typeCategoryRulesList.querySelectorAll('.type-category-row')).map(row => ({
+            default_main_cat: String(row.querySelector('.type-category-default-select')?.value || '').trim(),
+            default_torrent_category: String(row.querySelector('.type-category-select')?.value || '').trim()
+        })).filter(entry => entry.default_main_cat && entry.default_torrent_category);
     }
 
-    const savedEntries = Array.isArray(window.DESTINATION_PATHS) ? window.DESTINATION_PATHS : [];
-    if (savedEntries.length) return savedEntries;
-
-    return [{ path: defaultPath, default_main_cat: '', default_torrent_category: '' }];
+    return Array.isArray(window.TYPE_SPECIFIC_TORRENT_CATEGORIES)
+        ? window.TYPE_SPECIFIC_TORRENT_CATEGORIES
+        : [];
 }
 
 function getPreferredClientCategoryForMainCat(mainCat = '') {
-    const entries = getConfiguredDestinationEntriesForCategoryDefaults();
+    const entries = getConfiguredTypeCategoryEntries();
     const mappedDefault = entries.find(entry => String(entry?.default_main_cat || '') === String(mainCat || ''));
     const typeSpecificCategory = String(mappedDefault?.default_torrent_category || '').trim();
     if (typeSpecificCategory) return typeSpecificCategory;
     return String(document.getElementById('TORRENT_CLIENT_CATEGORY')?.value || '').trim();
 }
 
-function syncDestinationCategoryOptions() {
-    const destinationPathsList = document.getElementById('destination-paths-list');
-    if (!destinationPathsList) return;
+function syncTypeCategoryOptions() {
+    const typeCategoryRulesList = document.getElementById('type-category-rules-list');
+    if (!typeCategoryRulesList) return;
 
     const optionData = getSettingsCategoryOptions();
 
-    destinationPathsList.querySelectorAll('.destination-category-select').forEach(select => {
+    typeCategoryRulesList.querySelectorAll('.type-category-select').forEach(select => {
         const currentValue = String(select.value || '').trim();
         select.innerHTML = '';
 
@@ -895,7 +884,7 @@ function refreshCategories() {
                     settingsDropdown.add(option);
                 }
             }
-            syncDestinationCategoryOptions();
+            syncTypeCategoryOptions();
         });
 }
 
@@ -1186,13 +1175,21 @@ document.addEventListener("DOMContentLoaded", async function () {
         if (destinationPathsList) {
             const paths = Array.isArray(settingsSnapshot['extra_dest_paths[]']) ? settingsSnapshot['extra_dest_paths[]'] : [];
             const defaults = Array.isArray(settingsSnapshot['extra_dest_defaults[]']) ? settingsSnapshot['extra_dest_defaults[]'] : [];
-            const categories = Array.isArray(settingsSnapshot['extra_dest_categories[]']) ? settingsSnapshot['extra_dest_categories[]'] : [];
             const rows = paths.map((path, idx) => ({
                 path,
-                default_main_cat: defaults[idx] || '',
-                default_torrent_category: categories[idx] || ''
+                default_main_cat: defaults[idx] || ''
             }));
             renderDestinationRows(rows);
+        }
+
+        if (typeCategoryRulesList) {
+            const defaults = Array.isArray(settingsSnapshot['type_category_defaults[]']) ? settingsSnapshot['type_category_defaults[]'] : [];
+            const categories = Array.isArray(settingsSnapshot['type_category_values[]']) ? settingsSnapshot['type_category_values[]'] : [];
+            const rows = defaults.map((defaultMainCat, idx) => ({
+                default_main_cat: defaultMainCat || '',
+                default_torrent_category: categories[idx] || ''
+            }));
+            renderTypeCategoryRows(rows);
         }
 
         settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
@@ -3085,6 +3082,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     const personalFlBtn = document.getElementById('use-personal-fl-btn');
     const freeleechIndicator = document.getElementById('confirm-freeleech-indicator');
 
+    const typeCategoryRulesList = document.getElementById('type-category-rules-list');
+    const addTypeCategoryBtn = document.getElementById('add-type-category-btn');
     const destinationPathsList = document.getElementById('destination-paths-list');
     const addDestinationPathBtn = document.getElementById('add-destination-path-btn');
     const mediaTypeOptions = Array.isArray(window.AUTO_ORGANIZE_MEDIA_TYPES) && window.AUTO_ORGANIZE_MEDIA_TYPES.length
@@ -3135,19 +3134,11 @@ document.addEventListener("DOMContentLoaded", async function () {
                 seenDefaults.add(defaultMainCat);
             }
 
-            normalized.push({
-                path,
-                default_main_cat: defaultMainCat,
-                default_torrent_category: String(entry?.default_torrent_category || '').trim()
-            });
+            normalized.push({ path, default_main_cat: defaultMainCat });
         });
 
         if (requireFallback && !normalized.length) {
-            normalized.push({
-                path: String(fallbackPath || '/downloads/organized').trim() || '/downloads/organized',
-                default_main_cat: '',
-                default_torrent_category: ''
-            });
+            normalized.push({ path: String(fallbackPath || '/downloads/organized').trim() || '/downloads/organized', default_main_cat: '' });
         }
 
         return normalized;
@@ -3163,22 +3154,21 @@ document.addEventListener("DOMContentLoaded", async function () {
     function buildConfiguredDestinationEntries() {
         const defaultPath = getDefaultDestinationPath();
         const currentRows = readDestinationRows();
-        const sourceEntries = currentRows.length ? currentRows : (window.DESTINATION_PATHS || []).slice(1);
+        const sourceEntries = destinationPathsList ? currentRows : (window.DESTINATION_PATHS || []).slice(1);
         const extras = normalizeDestinationEntries(sourceEntries, defaultPath, false)
-            .filter(entry => entry.path !== defaultPath || entry.default_main_cat || entry.default_torrent_category);
-        return [{ path: defaultPath, default_main_cat: '', default_torrent_category: '' }, ...extras];
+            .filter(entry => entry.path !== defaultPath || entry.default_main_cat);
+        return [{ path: defaultPath, default_main_cat: '' }, ...extras];
     }
 
     function readDestinationRows() {
         if (!destinationPathsList) return [];
         return Array.from(destinationPathsList.querySelectorAll('.destination-path-row')).map(row => ({
             path: row.querySelector('.destination-path-input')?.value || '',
-            default_main_cat: row.querySelector('.destination-default-select')?.value || '',
-            default_torrent_category: row.querySelector('.destination-category-select')?.value || ''
+            default_main_cat: row.querySelector('.destination-default-select')?.value || ''
         }));
     }
 
-    function buildDestinationRow(path = '', defaultMainCat = '', defaultTorrentCategory = '') {
+    function buildDestinationRow(path = '', defaultMainCat = '') {
         const row = document.createElement('div');
         row.className = 'destination-path-row mb-2';
 
@@ -3232,62 +3222,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         pathLabel.textContent = 'Destination Path';
         pathWrap.append(pathInput, pathLabel);
 
-        const categoryWrap = document.createElement('div');
-        categoryWrap.className = 'form-floating';
-        const categorySelect = document.createElement('select');
-        categorySelect.className = 'form-select destination-category-select';
-        categorySelect.name = 'extra_dest_categories[]';
-
-        getSettingsCategoryOptions().forEach(optionData => {
-            const option = document.createElement('option');
-            option.value = optionData.value;
-            option.textContent = optionData.label;
-            if (optionData.value === defaultTorrentCategory) {
-                option.selected = true;
-            }
-            categorySelect.appendChild(option);
-        });
-
-        if (defaultTorrentCategory && !Array.from(categorySelect.options).some(option => option.value === defaultTorrentCategory)) {
-            const option = document.createElement('option');
-            option.value = defaultTorrentCategory;
-            option.textContent = defaultTorrentCategory;
-            option.selected = true;
-            categorySelect.appendChild(option);
-        }
-
-        const categoryLabel = document.createElement('label');
-        categoryLabel.textContent = 'Default Client Category';
-        categoryWrap.append(categorySelect, categoryLabel);
-
-        row.append(header, pathWrap, categoryWrap);
+        row.append(header, pathWrap);
         return row;
-    }
-
-    function syncDestinationCategoryOptions() {
-        if (!destinationPathsList) return;
-        const optionData = getSettingsCategoryOptions();
-
-        destinationPathsList.querySelectorAll('.destination-category-select').forEach(select => {
-            const currentValue = String(select.value || '').trim();
-            select.innerHTML = '';
-
-            optionData.forEach(item => {
-                const option = document.createElement('option');
-                option.value = item.value;
-                option.textContent = item.label;
-                select.appendChild(option);
-            });
-
-            if (currentValue && !Array.from(select.options).some(option => option.value === currentValue)) {
-                const option = document.createElement('option');
-                option.value = currentValue;
-                option.textContent = currentValue;
-                select.appendChild(option);
-            }
-
-            select.value = currentValue;
-        });
     }
 
     function updateDestinationRowUI() {
@@ -3347,35 +3283,158 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 
-    function getPreferredClientCategoryForMainCat(mainCat = '') {
-        const liveEntries = buildConfiguredDestinationEntries();
-        const mappedDefault = liveEntries.find(entry => entry.default_main_cat === String(mainCat || ''));
-        const typeSpecificCategory = String(mappedDefault?.default_torrent_category || '').trim();
-        if (typeSpecificCategory) {
-            return typeSpecificCategory;
-        }
-        return String(document.getElementById('TORRENT_CLIENT_CATEGORY')?.value || '').trim();
-    }
-
     function renderDestinationRows(entries) {
         if (!destinationPathsList) return;
         const fallbackPath = getDefaultDestinationPath();
         const normalized = normalizeDestinationEntries(entries, fallbackPath, false)
-            .filter(entry => entry.path !== fallbackPath || entry.default_main_cat || entry.default_torrent_category);
+            .filter(entry => entry.path !== fallbackPath || entry.default_main_cat);
         destinationPathEntries = normalized;
 
         destinationPathsList.innerHTML = '';
         normalized.forEach(entry => {
-            destinationPathsList.appendChild(buildDestinationRow(
-                entry.path,
+            destinationPathsList.appendChild(buildDestinationRow(entry.path, entry.default_main_cat));
+        });
+
+        updateDestinationRowUI();
+        syncConfirmDestinationOptions();
+    }
+
+    function normalizeTypeCategoryEntries(entries) {
+        const normalized = [];
+        const seenDefaults = new Set();
+
+        (Array.isArray(entries) ? entries : []).forEach(entry => {
+            let defaultMainCat = String(entry?.default_main_cat || '').trim();
+            const defaultTorrentCategory = String(entry?.default_torrent_category || '').trim();
+            if (!allowedDestinationDefaults.has(defaultMainCat) || !defaultTorrentCategory) {
+                return;
+            }
+            if (seenDefaults.has(defaultMainCat)) {
+                return;
+            }
+            seenDefaults.add(defaultMainCat);
+            normalized.push({
+                default_main_cat: defaultMainCat,
+                default_torrent_category: defaultTorrentCategory
+            });
+        });
+
+        return normalized;
+    }
+
+    function readTypeCategoryRows() {
+        if (!typeCategoryRulesList) return [];
+        return Array.from(typeCategoryRulesList.querySelectorAll('.type-category-row')).map(row => ({
+            default_main_cat: row.querySelector('.type-category-default-select')?.value || '',
+            default_torrent_category: row.querySelector('.type-category-select')?.value || ''
+        }));
+    }
+
+    function buildTypeCategoryRow(defaultMainCat = '', defaultTorrentCategory = '') {
+        const row = document.createElement('div');
+        row.className = 'type-category-row mb-2';
+
+        const header = document.createElement('div');
+        header.className = 'type-category-row-header';
+
+        const defaultWrap = document.createElement('div');
+        defaultWrap.className = 'form-floating type-category-row-main-type';
+        const defaultSelect = document.createElement('select');
+        defaultSelect.className = 'form-select type-category-default-select';
+        defaultSelect.name = 'type_category_defaults[]';
+
+        const chooseOption = document.createElement('option');
+        chooseOption.value = '';
+        chooseOption.textContent = 'Choose Type';
+        defaultSelect.appendChild(chooseOption);
+
+        mediaTypeOptions.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.label;
+            if (item.id === defaultMainCat) {
+                option.selected = true;
+            }
+            defaultSelect.appendChild(option);
+        });
+
+        const defaultLabel = document.createElement('label');
+        defaultLabel.textContent = 'Main Type';
+        defaultWrap.append(defaultSelect, defaultLabel);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-outline-danger remove-type-category-btn';
+        removeBtn.title = 'Remove Rule';
+        removeBtn.setAttribute('aria-label', 'Remove Rule');
+        removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
+
+        header.append(defaultWrap, removeBtn);
+
+        const categoryWrap = document.createElement('div');
+        categoryWrap.className = 'form-floating';
+        const categorySelect = document.createElement('select');
+        categorySelect.className = 'form-select type-category-select';
+        categorySelect.name = 'type_category_values[]';
+
+        getSettingsCategoryOptions().forEach(optionData => {
+            const option = document.createElement('option');
+            option.value = optionData.value;
+            option.textContent = optionData.label;
+            if (optionData.value === defaultTorrentCategory) {
+                option.selected = true;
+            }
+            categorySelect.appendChild(option);
+        });
+
+        if (defaultTorrentCategory && !Array.from(categorySelect.options).some(option => option.value === defaultTorrentCategory)) {
+            const option = document.createElement('option');
+            option.value = defaultTorrentCategory;
+            option.textContent = defaultTorrentCategory;
+            option.selected = true;
+            categorySelect.appendChild(option);
+        }
+
+        const categoryLabel = document.createElement('label');
+        categoryLabel.textContent = 'Default Client Category';
+        categoryWrap.append(categorySelect, categoryLabel);
+
+        row.append(header, categoryWrap);
+        return row;
+    }
+
+    function updateTypeCategoryRowUI() {
+        if (!typeCategoryRulesList) return;
+
+        const rows = Array.from(typeCategoryRulesList.querySelectorAll('.type-category-row'));
+        const selectedDefaults = rows.map(row => row.querySelector('.type-category-default-select')?.value || '');
+
+        rows.forEach((row, index) => {
+            const select = row.querySelector('.type-category-default-select');
+            if (!select) return;
+            const ownValue = selectedDefaults[index];
+            Array.from(select.options).forEach(option => {
+                if (!option.value) {
+                    option.disabled = false;
+                    return;
+                }
+                option.disabled = selectedDefaults.includes(option.value) && ownValue !== option.value;
+            });
+        });
+    }
+
+    function renderTypeCategoryRows(entries) {
+        if (!typeCategoryRulesList) return;
+        const normalized = normalizeTypeCategoryEntries(entries);
+        typeCategoryRulesList.innerHTML = '';
+        normalized.forEach(entry => {
+            typeCategoryRulesList.appendChild(buildTypeCategoryRow(
                 entry.default_main_cat,
                 entry.default_torrent_category
             ));
         });
-
-        updateDestinationRowUI();
-        syncDestinationCategoryOptions();
-        syncConfirmDestinationOptions();
+        updateTypeCategoryRowUI();
+        syncTypeCategoryOptions();
     }
 
     function updateConfirmPathPreview() {
@@ -3397,9 +3456,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
 
         addDestinationPathBtn?.addEventListener('click', () => {
-            destinationPathsList.appendChild(buildDestinationRow('', '', ''));
+            destinationPathsList.appendChild(buildDestinationRow('', ''));
             updateDestinationRowUI();
-            syncDestinationCategoryOptions();
             syncConfirmDestinationOptions();
             updateConfirmPathPreview();
             if (!isRestoringSettings) settingsDirty = true;
@@ -3438,6 +3496,43 @@ document.addEventListener("DOMContentLoaded", async function () {
                 updateConfirmPathPreview();
                 if (!isRestoringSettings) settingsDirty = true;
             }
+        });
+    }
+
+    if (typeCategoryRulesList) {
+        const initialRows = readTypeCategoryRows();
+        if (initialRows.length) {
+            renderTypeCategoryRows(initialRows);
+        } else {
+            renderTypeCategoryRows(window.TYPE_SPECIFIC_TORRENT_CATEGORIES || []);
+        }
+
+        addTypeCategoryBtn?.addEventListener('click', () => {
+            typeCategoryRulesList.appendChild(buildTypeCategoryRow('', ''));
+            updateTypeCategoryRowUI();
+            syncTypeCategoryOptions();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+
+        typeCategoryRulesList.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('.remove-type-category-btn');
+            if (!removeBtn) return;
+
+            const row = removeBtn.closest('.type-category-row');
+            if (!row) return;
+
+            row.remove();
+            updateTypeCategoryRowUI();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+
+        typeCategoryRulesList.addEventListener('change', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.classList.contains('type-category-default-select')) {
+                updateTypeCategoryRowUI();
+            }
+            if (!isRestoringSettings) settingsDirty = true;
         });
     }
 
