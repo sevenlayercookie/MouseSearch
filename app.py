@@ -3239,6 +3239,7 @@ async def mam_search():
                 CLIENT_STATUS="CONNECTED" if client_connected else "NOT CONNECTED",
                 categories=categories,
                 TORRENT_CLIENT_CATEGORY=app.config.get("TORRENT_CLIENT_CATEGORY", ""),
+                DESTINATION_PATHS=app.config.get("DESTINATION_PATHS", FALLBACK_CONFIG["DESTINATION_PATHS"]),
                 IS_VIP_ACTIVE=is_vip_active,
                 RESULTS_DISPLAY_FIELDS=app.config.get(
                     "RESULTS_DISPLAY_FIELDS",
@@ -3250,6 +3251,8 @@ async def mam_search():
         return await render_template(
             "partials/results.html",
             error_message=f"Error: {e}",
+            DESTINATION_PATHS=app.config.get("DESTINATION_PATHS", FALLBACK_CONFIG["DESTINATION_PATHS"]),
+            TORRENT_CLIENT_CATEGORY=app.config.get("TORRENT_CLIENT_CATEGORY", ""),
             RESULTS_DISPLAY_FIELDS=app.config.get(
                 "RESULTS_DISPLAY_FIELDS",
                 FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]

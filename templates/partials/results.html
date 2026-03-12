@@ -7,6 +7,8 @@
     No results found. Please try a different search query.
 </div>
 {% else %}
+{% set destination_paths = DESTINATION_PATHS | default([], true) %}
+{% set default_client_category = TORRENT_CLIENT_CATEGORY | default('', true) %}
 
 <style>
     /* Card Styling */
@@ -245,8 +247,8 @@
                 </button>
 
                 <div class="form-floating mt-1">
-                    {% set category_ns = namespace(selected=TORRENT_CLIENT_CATEGORY) %}
-                    {% for dest in DESTINATION_PATHS[1:] if dest.default_main_cat == (result.main_cat | string) and dest.default_torrent_category %}
+                    {% set category_ns = namespace(selected=default_client_category) %}
+                    {% for dest in destination_paths[1:] if dest.default_main_cat == (result.main_cat | string) and dest.default_torrent_category %}
                     {% set category_ns.selected = dest.default_torrent_category %}
                     {% endfor %}
                     <select name="category" class="form-select form-select-sm shadow-sm category-dropdown"
