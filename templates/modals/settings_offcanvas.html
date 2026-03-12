@@ -1,46 +1,71 @@
-<div class="offcanvas offcanvas-end w-md-50" tabindex="-1" id="settingsOffcanvas"
+<div class="offcanvas offcanvas-end roundTop roundBottom w-md-50" tabindex="-1" id="settingsOffcanvas"
   aria-labelledby="settingsOffcanvasLabel">
   <style>
     #destination-paths-list .destination-path-row,
     #type-category-rules-list .type-category-row {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: 1fr auto;
       gap: 0.75rem;
       padding: 0.75rem;
       border: 1px solid var(--bs-border-color-translucent);
       border-radius: 0.75rem;
       background: var(--bs-body-tertiary);
+      /* or var(--bs-body-bg) if you want it darker */
     }
 
-    #destination-paths-list .destination-path-row-header,
-    #type-category-rules-list .type-category-row-header {
-      display: flex;
-      gap: 0.5rem;
-      align-items: flex-start;
-    }
-
-    #destination-paths-list .destination-path-row-main-type,
-    #type-category-rules-list .type-category-row-main-type {
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-
-    #destination-paths-list .destination-path-row .form-floating,
-    #type-category-rules-list .type-category-row .form-floating {
+    /* Mobile: First dropdown on top left */
+    #destination-paths-list .destination-path-row>.form-floating:first-of-type,
+    #type-category-rules-list .type-category-row>.form-floating:first-of-type {
+      grid-column: 1;
+      grid-row: 1;
       width: 100%;
     }
 
-    #destination-paths-list .destination-path-row .remove-path-btn,
-    #type-category-rules-list .type-category-row .remove-type-category-btn {
-      flex: 0 0 auto;
-      width: 3rem;
-      min-width: 3rem;
+    /* Mobile: Trash button on top right */
+    #destination-paths-list .destination-path-row>.btn,
+    #type-category-rules-list .type-category-row>.btn {
+      grid-column: 2;
+      grid-row: 1;
+      width: 3.5rem;
       height: calc(3.5rem + 2px);
+      /* Matches form-floating height exactly */
+    }
+
+    /* Mobile: Second input spans the whole bottom row */
+    #destination-paths-list .destination-path-row>.form-floating:nth-of-type(2),
+    #type-category-rules-list .type-category-row>.form-floating:nth-of-type(2) {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      width: 100%;
+    }
+
+    /* Desktop: Everything on a single line */
+    @media (min-width: 768px) {
+
+      #destination-paths-list .destination-path-row,
+      #type-category-rules-list .type-category-row {
+        grid-template-columns: 40% 1fr auto;
+        align-items: center;
+      }
+
+      /* Move second input to the middle */
+      #destination-paths-list .destination-path-row>.form-floating:nth-of-type(2),
+      #type-category-rules-list .type-category-row>.form-floating:nth-of-type(2) {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      /* Move trash button to the far right */
+      #destination-paths-list .destination-path-row>.btn,
+      #type-category-rules-list .type-category-row>.btn {
+        grid-column: 3;
+        grid-row: 1;
+      }
     }
   </style>
-  <div class="offcanvas-header bg-body-tertiary border-bottom">
-    <h5 class="offcanvas-title" id="settingsOffcanvasLabel">
-      <i class="bi bi-gear-fill me-2"></i>Settings
+  <div class="offcanvas-header border-bottom roundTop">
+    <h5 class="offcanvas-title fw-bold d-flex align-items-center" id="settingsOffcanvasLabel">
+      <i class="bi bi-gear-fill me-2 text-primary"></i>Settings
     </h5>
     <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
   </div>
@@ -48,8 +73,8 @@
   <div class="offcanvas-body p-0">
     <form id="settings-form" autocomplete="off" class="d-flex flex-column h-100">
 
-      <div class="px-3 pt-3">
-        <ul class="nav nav-tabs" id="settingTabs" role="tablist">
+      <div class="px-3 pt-3 border-bottom">
+        <ul class="nav nav-underline justify-content-center" id="settingTabs" role="tablist">
           <li class="nav-item" role="presentation">
             <button class="nav-link active" id="general-tab" data-bs-toggle="tab" data-bs-target="#general-pane"
               type="button" role="tab" aria-controls="general-pane" aria-selected="true">
@@ -71,13 +96,13 @@
         </ul>
       </div>
 
-      <div class="tab-content p-3 overflow-y-auto" id="settingsTabContent">
+      <div class="tab-content bg-body-tertiary p-3 overflow-y-auto" id="settingsTabContent">
 
         <div class="tab-pane fade show active" id="general-pane" role="tabpanel" aria-labelledby="general-tab"
           tabindex="0">
           <div id="torrent-client">
-            <h6 class="text-uppercase mb-3">Torrent Client</h6>
-            <div class="card card-body border-secondary-subtle mb-4">
+            <h6 class="text-uppercase section-title mb-3">Torrent Client</h6>
+            <div class="card card-body border-top border-secondary-subtle mb-4">
 
               <div class="form-floating mb-3">
                 <select class="form-select" id="TORRENT_CLIENT_TYPE" name="TORRENT_CLIENT_TYPE">
@@ -123,7 +148,7 @@
                 <label for="TORRENT_CLIENT_CATEGORY">Default category</label>
               </div>
 
-              <div class="mt-3">
+              <div class="mt-3 pt-3 border-top">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <label class="form-label small fw-bold mb-0">Type-Specific Default Categories</label>
                   <button type="button" class="btn btn-sm btn-outline-primary py-0" id="add-type-category-btn">
@@ -137,34 +162,33 @@
                 <div id="type-category-rules-list">
                   {% for rule in TYPE_SPECIFIC_TORRENT_CATEGORIES %}
                   <div class="type-category-row mb-2">
-                    <div class="type-category-row-header">
-                      <div class="form-floating type-category-row-main-type">
-                        <select class="form-select type-category-default-select" name="type_category_defaults[]">
-                          <option value="">Choose Type</option>
-                          {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
-                          <option value="{{ media.id }}" {% if rule.default_main_cat==media.id %}selected{% endif %}>
-                            {{ media.label }}
-                          </option>
-                          {% endfor %}
-                        </select>
-                        <label>Main Type</label>
-                      </div>
-                      <button type="button" class="btn btn-outline-danger remove-type-category-btn" title="Remove Rule"
-                        aria-label="Remove Rule">
-                        <i class="bi bi-trash"></i>
-                      </button>
+                    <div class="form-floating type-category-row-main-type">
+                      <select class="form-select type-category-default-select" name="type_category_defaults[]">
+                        <option value="">Choose Type</option>
+                        {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
+                        <option value="{{ media.id }}" {% if rule.default_main_cat==media.id %}selected{% endif %}>
+                          {{ media.label }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                      <label>Main Type</label>
                     </div>
                     <div class="form-floating">
                       <select class="form-select type-category-select" name="type_category_values[]">
                         <option value="">Use Global Default</option>
                         {% for category_name, category_info in categories.items() %}
-                        <option value="{{ category_name }}" {% if rule.default_torrent_category==category_name %}selected{% endif %}>
+                        <option value="{{ category_name }}" {% if rule.default_torrent_category==category_name
+                          %}selected{% endif %}>
                           {{ category_name }}
                         </option>
                         {% endfor %}
                       </select>
                       <label>Default Client Category</label>
                     </div>
+                    <button type="button" class="btn btn-outline-danger remove-type-category-btn" title="Remove Rule"
+                      aria-label="Remove Rule">
+                      <i class="bi bi-trash"></i>
+                    </button>
                   </div>
                   {% endfor %}
                 </div>
@@ -172,7 +196,7 @@
             </div>
           </div>
           <div id="MAM">
-            <h6 class="text-uppercase mb-3">MyAnonaMouse Auth</h6>
+            <h6 class="text-uppercase section-title mb-3">MyAnonaMouse Auth</h6>
             <div class="form-floating mb-3">
               <input type="text" class="form-control font-monospace" id="MAM_ID" name="MAM_ID" value="{{ MAM_ID }}"
                 placeholder="MAM Session ID" required />
@@ -194,23 +218,24 @@
             </div>
           </div>
 
-          <h6 class="text-uppercase mb-3 mt-4">Interface</h6>
+          <h6 class="text-uppercase section-title mb-3 mt-4">Interface</h6>
           <div class="card mb-3 border-secondary-subtle">
-            <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+            <div
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('HAPTICS_ENABLED')">
               <span class="d-flex small fw-bold">
                 <i class="bi bi-phone-vibrate me-2"></i> Haptics
               </span>
               <div class="form-check form-switch m-0">
-                <input class="form-check-input" type="checkbox" id="HAPTICS_ENABLED" name="HAPTICS_ENABLED" {% if HAPTICS_ENABLED %}checked{% endif %}
-                  onclick="event.stopPropagation()">
+                <input class="form-check-input" type="checkbox" id="HAPTICS_ENABLED" name="HAPTICS_ENABLED" {% if
+                  HAPTICS_ENABLED %}checked{% endif %} onclick="event.stopPropagation()">
               </div>
             </div>
           </div>
         </div>
 
         <div class="tab-pane fade" id="organize-pane" role="tabpanel" aria-labelledby="organize-tab" tabindex="0">
-          <h6 class=" text-uppercase mb-3 d-flex align-items-center gap-1">
+          <h6 class=" text-uppercase section-title mb-3 d-flex align-items-center gap-1">
             Triggers
             <i class="bi bi-info-circle-fill text-secondary ms-1" data-bs-html="true" data-bs-toggle="tooltip"
               data-bs-placement="top" title="<div class='text-start'>
@@ -224,7 +249,7 @@
           </h6>
           <div class="card mb-3 border-secondary-subtle">
             <div
-              class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('AUTO_ORGANIZE_ON_ADD')">
               <span class="d-flex small fw-bold">
                 <i class="bi bi-magic me-2"></i> Organize on Download
@@ -239,7 +264,7 @@
 
           <div class="card mb-3 border-secondary-subtle">
             <div
-              class="card-header bg-body-tertiary py-2 d-flex justify-content-between align-items-center cursor-pointer noselect"
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('AUTO_ORGANIZE_ON_SCHEDULE')">
               <span class="d-flex small fw-bold">
                 <i class="bi bi-clock-history me-2"></i> Organize on a Schedule
@@ -252,7 +277,7 @@
             </div>
 
             <div id="organize-interval-container" class="collapse {% if AUTO_ORGANIZE_ON_SCHEDULE %}show{% endif %}">
-              <div class="card-body pt-2 pb-2">
+              <div class="card-body border-top pt-2 pb-2">
                 <div class="mb-1">
                   <label for="AUTO_ORGANIZE_INTERVAL_HOURS" class="form-label small mb-1">Scan Interval
                     (hours)</label>
@@ -263,127 +288,133 @@
             </div>
           </div>
 
-          <div id="auto-organize-advanced-section" class="collapse {% if AUTO_ORGANIZE_ON_ADD or AUTO_ORGANIZE_ON_SCHEDULE %}show{% endif %}">
-          <hr class="border-secondary-subtle my-4">
+          <div id="auto-organize-advanced-section"
+            class="collapse {% if AUTO_ORGANIZE_ON_ADD or AUTO_ORGANIZE_ON_SCHEDULE %}show{% endif %}">
+            <hr class="border-secondary-subtle my-4">
 
-          <h6 class="text-uppercase mb-3">File Operation Mode</h6>
+            <h6 class="text-uppercase section-title mb-3">File Operation Mode</h6>
 
-          <div class="card mb-3 border-secondary-subtle">
-            <div
-              class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
-              onclick="toggleCardSwitch('AUTO_ORGANIZE_USE_COPY')">
-              <span class="d-flex small fw-bold">
-                <i class="bi bi-files me-2"></i> Copy Files (instead of hardlink)
-              </span>
-              <div class="form-check form-switch m-0">
-                <input class="form-check-input" type="checkbox" id="AUTO_ORGANIZE_USE_COPY" name="AUTO_ORGANIZE_USE_COPY"
-                  {% if AUTO_ORGANIZE_USE_COPY %}checked{% endif %} onclick="event.stopPropagation()">
+            <div class="card mb-3 border-secondary-subtle">
+              <div
+                class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+                onclick="toggleCardSwitch('AUTO_ORGANIZE_USE_COPY')">
+                <span class="d-flex small fw-bold">
+                  <i class="bi bi-files me-2"></i> Copy Files (instead of hardlink)
+                </span>
+                <div class="form-check form-switch m-0">
+                  <input class="form-check-input" type="checkbox" id="AUTO_ORGANIZE_USE_COPY"
+                    name="AUTO_ORGANIZE_USE_COPY" {% if AUTO_ORGANIZE_USE_COPY %}checked{% endif %}
+                    onclick="event.stopPropagation()">
+                </div>
+              </div>
+              <div class="card-body border-top pt-2 pb-2 small text-body-secondary">
+                <p class="mb-1"><strong>Hardlink (default):</strong> Fast, saves space, but files must be on same
+                  filesystem. Editing one location affects both.</p>
+                <p class="mb-0"><strong>Copy:</strong> Works across filesystems, allows independent file editing, but
+                  uses more disk space.</p>
               </div>
             </div>
-            <div class="card-body pt-2 pb-2 small text-body-secondary">
-              <p class="mb-1"><strong>Hardlink (default):</strong> Fast, saves space, but files must be on same filesystem. Editing one location affects both.</p>
-              <p class="mb-0"><strong>Copy:</strong> Works across filesystems, allows independent file editing, but uses more disk space.</p>
-            </div>
-          </div>
 
-          <hr class="border-secondary-subtle my-4">
+            <hr class="border-secondary-subtle my-4">
 
-          <h6 class="text-uppercase mb-3">Directory Structure</h6>
+            <h6 class="text-uppercase section-title mb-3">Directory Structure</h6>
 
-          <div class="card mb-3 border-secondary-subtle">
-            <div class="card-body">
-              <div class="mb-3">
-                <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold">Default Relative Path</label>
-                <div class="input-group mb-2">
-                  <input type="text" class="form-control font-monospace" id="REL_PATH_TEMPLATE"
-                    name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
-                    placeholder="e.g. {Author}/{Series}/{Title}">
-                  <button class="btn btn-outline-secondary" type="button" id="reset-template-btn"
-                    title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
-                </div>
-                
-                <div class="d-flex gap-2 mb-3 flex-wrap">
-                  <span class="small text-muted align-self-center me-1">Insert:</span>
-                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                    data-token="{Author}">
-                    <i class="bi bi-person-fill"></i> Author
-                  </button>
-                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                    data-token="{Series}">
-                    <i class="bi bi-collection-fill"></i> Series
-                  </button>
-                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                    data-token="{SeriesNumber}">
-                    <i class="bi bi-hash"></i> Series Number
-                  </button>
-                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                    data-token="{Title}">
-                    <i class="bi bi-book-fill"></i> Title
-                  </button>
-                  <!--
+            <div class="card mb-3 border-secondary-subtle">
+              <div class="card-body">
+                <div class="mb-3">
+                  <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold">Default Relative Path</label>
+                  <div class="input-group mb-2">
+                    <input type="text" class="form-control font-monospace" id="REL_PATH_TEMPLATE"
+                      name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
+                      placeholder="e.g. {Author}/{Series}/{Title}">
+                    <button class="btn btn-outline-secondary" type="button" id="reset-template-btn"
+                      title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
+                  </div>
+
+                  <div class="d-flex gap-2 mb-3 flex-wrap">
+                    <span class="small text-muted align-self-center me-1">Insert:</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Author}">
+                      <i class="bi bi-person-fill"></i> Author
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Series}">
+                      <i class="bi bi-collection-fill"></i> Series
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{SeriesNumber}">
+                      <i class="bi bi-hash"></i> Series Number
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Title}">
+                      <i class="bi bi-book-fill"></i> Title
+                    </button>
+                    <!--
                   <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill insert-token-btn"
                     data-token="/">
                     / (Folder)
                   </button>
                   -->
+                  </div>
+
+                  <div class="alert alert-light border small m-0">
+                    <div class="d-flex justify-content-between">
+                      <span class="text-muted text-uppercase"
+                        style="font-size: 0.7rem; letter-spacing: 1px;">Preview</span>
+                    </div>
+                    <div class="text-primary fw-bold text-break font-monospace mt-1" id="structure-preview-output">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <hr class="border-secondary-subtle my-4">
+
+            <div id="path-configuration-container">
+              <h6 class="text-uppercase section-title mb-3">Path Configuration</h6>
+
+              <div class="mb-3">
+                <label for="LOCAL_TORRENT_DOWNLOAD_PATH" class="form-label small">Local Download Source Path</label>
+                <input type="text" class="form-control" id="LOCAL_TORRENT_DOWNLOAD_PATH"
+                  name="LOCAL_TORRENT_DOWNLOAD_PATH" value="{{ LOCAL_TORRENT_DOWNLOAD_PATH }}">
+                <div class="form-text small">
+                  The path MouseSearch can access locally for completed torrent files.
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label for="REMOTE_TORRENT_DOWNLOAD_PATH" class="form-label small">Remote Download Source Path</label>
+                <input type="text" class="form-control" id="REMOTE_TORRENT_DOWNLOAD_PATH"
+                  name="REMOTE_TORRENT_DOWNLOAD_PATH" value="{{ REMOTE_TORRENT_DOWNLOAD_PATH }}">
+                <div class="form-text small">
+                  Optional but recommended when your torrent client reports a different filesystem path, such as bare
+                  metal vs Docker.
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label for="ORGANIZED_PATH" class="form-label small">Default Organized Destination Path</label>
+                <input type="text" class="form-control" id="ORGANIZED_PATH" name="ORGANIZED_PATH"
+                  value="{{ ORGANIZED_PATH }}" required>
+              </div>
+
+              <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <label class="form-label small fw-bold mb-0">Type-Specific Paths</label>
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0" id="add-destination-path-btn">
+                    <i class="bi bi-plus-lg"></i> Add Path
+                  </button>
+                </div>
+                <div class="form-text small mb-3">
+                  Assign a main category type to a destination path for auto-organize placement.
                 </div>
 
-                <div class="alert alert-light border small m-0">
-                  <div class="d-flex justify-content-between">
-                    <span class="text-muted text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Preview</span>
-                  </div>
-                  <div class="text-primary fw-bold text-break font-monospace mt-1" id="structure-preview-output">
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <hr class="border-secondary-subtle my-4">
-
-          <div id="path-configuration-container">
-            <h6 class="text-uppercase mb-3">Path Configuration</h6>
-
-            <div class="mb-3">
-              <label for="LOCAL_TORRENT_DOWNLOAD_PATH" class="form-label small">Local Download Source Path</label>
-              <input type="text" class="form-control" id="LOCAL_TORRENT_DOWNLOAD_PATH" name="LOCAL_TORRENT_DOWNLOAD_PATH"
-                value="{{ LOCAL_TORRENT_DOWNLOAD_PATH }}">
-              <div class="form-text small">
-                The path MouseSearch can access locally for completed torrent files.
-              </div>
-            </div>
-
-            <div class="mb-3">
-              <label for="REMOTE_TORRENT_DOWNLOAD_PATH" class="form-label small">Remote Download Source Path</label>
-              <input type="text" class="form-control" id="REMOTE_TORRENT_DOWNLOAD_PATH" name="REMOTE_TORRENT_DOWNLOAD_PATH"
-                value="{{ REMOTE_TORRENT_DOWNLOAD_PATH }}">
-              <div class="form-text small">
-                Optional but recommended when your torrent client reports a different filesystem path, such as bare metal vs Docker.
-              </div>
-            </div>
-
-            <div class="mb-3">
-              <label for="ORGANIZED_PATH" class="form-label small">Default Organized Destination Path</label>
-              <input type="text" class="form-control" id="ORGANIZED_PATH" name="ORGANIZED_PATH"
-                value="{{ ORGANIZED_PATH }}" required>
-            </div>
-
-            <div class="mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <label class="form-label small fw-bold mb-0">Type-Specific Paths</label>
-                <button type="button" class="btn btn-sm btn-outline-primary py-0" id="add-destination-path-btn">
-                  <i class="bi bi-plus-lg"></i> Add Path
-                </button>
-              </div>
-              <div class="form-text small mb-3">
-                Assign a main category type to a destination path for auto-organize placement.
-              </div>
-
-              <div id="destination-paths-list">
-                {% set configured_destinations = DESTINATION_PATHS[1:] if DESTINATION_PATHS and DESTINATION_PATHS|length > 1 else [] %}
-                {% for dest in configured_destinations %}
-                <div class="destination-path-row mb-2">
-                  <div class="destination-path-row-header">
+                <div id="destination-paths-list">
+                  {% set configured_destinations = DESTINATION_PATHS[1:] if DESTINATION_PATHS and
+                  DESTINATION_PATHS|length > 1 else [] %}
+                  {% for dest in configured_destinations %}
+                  <div class="destination-path-row mb-2">
                     <div class="form-floating destination-path-row-main-type">
                       <select class="form-select destination-default-select" name="extra_dest_defaults[]">
                         <option value="">None (Global)</option>
@@ -395,30 +426,29 @@
                       </select>
                       <label>Main Type</label>
                     </div>
+                    <div class="form-floating">
+                      <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
+                        value="{{ dest.path }}" placeholder="/data/media" required>
+                      <label>Destination Path</label>
+                    </div>
                     <button type="button" class="btn btn-outline-danger remove-path-btn" title="Remove Path"
                       aria-label="Remove Path">
                       <i class="bi bi-trash"></i>
                     </button>
                   </div>
-                  <div class="form-floating">
-                    <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
-                      value="{{ dest.path }}" placeholder="/data/media" required>
-                    <label>Destination Path</label>
-                  </div>
+                  {% endfor %}
                 </div>
-                {% endfor %}
               </div>
             </div>
           </div>
         </div>
-      </div>
 
 
         <div class="tab-pane fade" id="helpers-pane" role="tabpanel" aria-labelledby="helpers-tab" tabindex="0">
 
           <div class="card mb-3 border-secondary-subtle toggle-card">
             <div
-              class="card-header bg-body-tertiary py-2 d-flex justify-content-between align-items-center cursor-pointer noselect"
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('ENABLE_DYNAMIC_IP_UPDATE')">
               <span class="small fw-bold d-flex align-items-center"><i class="bi bi-hdd-network me-2"></i> Auto-Update
                 IP</span>
@@ -429,7 +459,7 @@
               </div>
             </div>
             <div id="collapse-ip" class="collapse {% if ENABLE_DYNAMIC_IP_UPDATE %}show{% endif %}">
-              <div class="card-body pt-2 pb-2">
+              <div class="card-body border-top pt-2 pb-2">
                 <div class="form-floating">
                   <input type="number" class="form-control" id="DYNAMIC_IP_UPDATE_INTERVAL_HOURS"
                     name="DYNAMIC_IP_UPDATE_INTERVAL_HOURS" min="1" value="{{ DYNAMIC_IP_UPDATE_INTERVAL_HOURS }}"
@@ -442,7 +472,7 @@
 
           <div class="card mb-3 border-secondary-subtle toggle-card">
             <div
-              class="card-header bg-body-tertiary py-2 d-flex justify-content-between align-items-center cursor-pointer noselect"
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('AUTO_BUY_VIP')">
               <span class="small fw-bold d-flex align-items-center"><i class="bi bi-star-fill me-2"></i> Auto-Max
                 VIP</span>
@@ -452,7 +482,7 @@
               </div>
             </div>
             <div id="collapse-vip" class="collapse {% if AUTO_BUY_VIP %}show{% endif %}">
-              <div class="card-body pt-2 pb-2">
+              <div class="card-body border-top pt-2 pb-2">
                 <div class="form-floating">
                   <input type="number" class="form-control" id="AUTO_BUY_VIP_INTERVAL_HOURS"
                     name="AUTO_BUY_VIP_INTERVAL_HOURS" min="1" value="{{ AUTO_BUY_VIP_INTERVAL_HOURS }}"
@@ -465,7 +495,7 @@
 
           <div class="card mb-3 border-secondary-subtle">
             <div
-              class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD')">
               <span class="d-flex small fw-bold">
                 <i class="me-2 align-content-center text-warning">
@@ -479,19 +509,20 @@
                   onclick="event.stopPropagation()">
               </div>
             </div>
-            <div class="card-body pt-2 pb-2 small text-body-secondary">
-              Before each download, MouseSearch attempts to spend one personal Freeleech wedge. If purchase fails, the download still proceeds.
+            <div class="card-body border-top pt-2 pb-2 small text-body-secondary">
+              Before each download, MouseSearch attempts to spend one personal Freeleech wedge. If purchase fails, the
+              download still proceeds.
             </div>
           </div>
 
           <hr class="border-secondary-subtle my-4">
-          <h6 class="text-uppercase mb-3">Upload Credit Automation</h6>
+          <h6 class="text-uppercase section-title mb-3">Upload Credit Automation</h6>
 
           <div class="row g-3 mb-3">
             <div class="col-12">
               <div class="card h-100 border-secondary-subtle toggle-card">
                 <div
-                  class="card-header bg-body-tertiary py-2 d-flex justify-content-between align-items-center cursor-pointer noselect"
+                  class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
                   onclick="toggleCardSwitch('AUTO_BUY_UPLOAD_ON_RATIO')">
                   <span class="d-flex small fw-bold"><i class="bi bi-shield-check me-2 text-primary"></i>Protect Minimum
                     Ratio</span>
@@ -502,7 +533,7 @@
                   </div>
                 </div>
                 <div id="collapse-ratio" class="collapse {% if AUTO_BUY_UPLOAD_ON_RATIO %}show{% endif %}">
-                  <div class="card-body p-2">
+                  <div class="card-body border-top p-2">
                     <div class="row g-2">
                       <div class="col-7">
                         <label class="small text-body-secondary">If ratio falls below...</label>
@@ -531,7 +562,7 @@
             <div class="col-12">
               <div class="card h-100 border-secondary-subtle toggle-card">
                 <div
-                  class="card-header bg-body-tertiary py-2 d-flex justify-content-between align-items-center cursor-pointer noselect"
+                  class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
                   onclick="toggleCardSwitch('AUTO_BUY_UPLOAD_ON_BUFFER')">
                   <span class="d-flex small fw-bold"><i class="bi bi-safe2 me-2 text-success"></i>Maintain Credit
                     Reserve</span>
@@ -542,7 +573,7 @@
                   </div>
                 </div>
                 <div id="collapse-buffer" class="collapse {% if AUTO_BUY_UPLOAD_ON_BUFFER %}show{% endif %}">
-                  <div class="card-body p-2">
+                  <div class="card-body border-top p-2">
                     <div class="row g-2">
                       <div class="col-7">
                         <label class="small text-body-secondary">If upload credit falls below...</label>
@@ -572,9 +603,10 @@
             <div class="col-12">
               <div class="card h-100 border-secondary-subtle toggle-card">
                 <div
-                  class="card-header bg-body-tertiary py-2 d-flex justify-content-between align-items-center cursor-pointer noselect"
+                  class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
                   onclick="toggleCardSwitch('AUTO_BUY_UPLOAD_ON_BONUS')">
-                  <span class="d-flex small fw-bold"><i class="bi bi-piggy-bank me-2 text-warning"></i>Spend Excess Bonus
+                  <span class="d-flex small fw-bold"><i class="bi bi-piggy-bank me-2 text-warning"></i>Spend Excess
+                    Bonus
                     Points</span>
                   <div class="form-check form-switch m-0">
                     <input class="form-check-input" type="checkbox" id="AUTO_BUY_UPLOAD_ON_BONUS"
@@ -583,7 +615,7 @@
                   </div>
                 </div>
                 <div id="collapse-bonus" class="collapse {% if AUTO_BUY_UPLOAD_ON_BONUS %}show{% endif %}">
-                  <div class="card-body p-2">
+                  <div class="card-body border-top p-2">
                     <div class="row g-2">
                       <div class="col-7">
                         <label class="small text-body-secondary">If bonus points exceed...</label>
@@ -627,7 +659,7 @@
         </div>
       </div>
 
-      <div class="p-3 border-top bg-body-tertiary mt-auto">
+      <div class="p-3 border-top bg-body-tertiary roundBottom mt-auto">
         <button type="button" class="btn btn-primary w-100" id="save-settings-button">
           <i class="bi bi-save me-2"></i>Save Settings
         </button>

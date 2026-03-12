@@ -371,12 +371,27 @@ input:disabled, select:disabled {
 /* Force this specific modal to be on top of the mode toggler */
 #settingsOffcanvas {
     z-index: 1070;
+    --bs-offcanvas-width: 500px;
 }
 
 .settings-menu-icon {
     height: 1em !important;
     width: 1em !important;
 }
+
+#settingTabs {
+    --bs-nav-underline-link-active-color: var(--bs-primary);
+    --bs-nav-link-color: var(--bs-secondary-color);
+}
+
+.roundTop {
+    border-start-start-radius: 1rem;
+}
+
+.roundBottom {
+    border-end-start-radius: 1rem;
+}
+
 /* Custom class to apply rounding ONLY on small (sm) screens and up */
 .rounded-sm {
   /* Targets screens with a viewport width of 576px or greater */
@@ -639,6 +654,13 @@ input:disabled, select:disabled {
     margin-bottom: 0.75rem;
     border-bottom: 1px solid var(--bs-border-color);
     padding-bottom: 0.25rem;
+}
+
+.section-title {
+    font-size: 0.75rem;
+    letter-spacing: 1px;
+    font-weight: 700;
+    color: var(--bs-secondary-color);
 }
 
 .input-group > .form-floating {

@@ -3172,9 +3172,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         const row = document.createElement('div');
         row.className = 'destination-path-row mb-2';
 
-        const header = document.createElement('div');
-        header.className = 'destination-path-row-header';
-
         const defaultWrap = document.createElement('div');
         defaultWrap.className = 'form-floating destination-path-row-main-type';
         const defaultSelect = document.createElement('select');
@@ -3207,8 +3204,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         removeBtn.setAttribute('aria-label', 'Remove Path');
         removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
 
-        header.append(defaultWrap, removeBtn);
-
         const pathWrap = document.createElement('div');
         pathWrap.className = 'form-floating';
         const pathInput = document.createElement('input');
@@ -3222,7 +3217,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         pathLabel.textContent = 'Destination Path';
         pathWrap.append(pathInput, pathLabel);
 
-        row.append(header, pathWrap);
+        row.append(defaultWrap, pathWrap, removeBtn);
         return row;
     }
 
@@ -3334,9 +3329,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         const row = document.createElement('div');
         row.className = 'type-category-row mb-2';
 
-        const header = document.createElement('div');
-        header.className = 'type-category-row-header';
-
         const defaultWrap = document.createElement('div');
         defaultWrap.className = 'form-floating type-category-row-main-type';
         const defaultSelect = document.createElement('select');
@@ -3369,8 +3361,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         removeBtn.setAttribute('aria-label', 'Remove Rule');
         removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
 
-        header.append(defaultWrap, removeBtn);
-
         const categoryWrap = document.createElement('div');
         categoryWrap.className = 'form-floating';
         const categorySelect = document.createElement('select');
@@ -3399,7 +3389,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         categoryLabel.textContent = 'Default Client Category';
         categoryWrap.append(categorySelect, categoryLabel);
 
-        row.append(header, categoryWrap);
+        row.append(defaultWrap, categoryWrap, removeBtn);
         return row;
     }
 
