@@ -40,7 +40,16 @@ class TorrentClient(ABC):
             normalized_progress = 0
         normalized_eta = normalized.get("eta", -1)
         normalized_state = normalized.get("state") or "unknown"
+        normalized_labels = normalized.get("labels")
+        if isinstance(normalized_labels, str):
+            normalized_labels = [normalized_labels]
+        elif not isinstance(normalized_labels, list):
+            normalized_labels = []
+        normalized_labels = [str(item).strip() for item in normalized_labels if str(item).strip()]
+
         normalized_category = normalized.get("category") or normalized.get("label") or ""
+        if not normalized_category and normalized_labels:
+            normalized_category = normalized_labels[0]
         normalized_tracker_error = normalized.get("tracker_error") or normalized.get("errorString") or ""
 
         try:
@@ -72,6 +81,7 @@ class TorrentClient(ABC):
         normalized["eta"] = eta_value
         normalized["state"] = str(normalized_state or "unknown").strip() or "unknown"
         normalized["category"] = str(normalized_category or "").strip()
+        normalized["labels"] = normalized_labels
         normalized["tracker_error"] = str(normalized_tracker_error or "").strip()
         return normalized
 

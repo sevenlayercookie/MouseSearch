@@ -329,32 +329,28 @@ class TransmissionClient(TorrentClient):
 
     async def get_categories(self) -> dict:
         """
-        Retrieves groups to act as categories.
+        Retrieves Transmission labels to act as MouseSearch categories.
         """
         try:
-            # Transmission 4.0.x might not support group-get widely yet, handling graceful fallback
-            try:
-                result = await self._rpc_request("group-get")
-                groups = result.get('group', []) # Transmission 4.0 returns 'group' list, not 'groups'
-            except:
-                groups = []
-            
-            categories = {
-                g['name']: {'name': g['name'], 'savePath': None} 
-                for g in groups if 'name' in g
-            }
+            result = await self._rpc_request("torrent-get", {"fields": ["labels"]})
+            torrents = result.get('torrents', [])
+            label_names = set()
 
-            # Add default download directory
-            session_result = await self._rpc_request("session-get", {"fields": ["download-dir"]})
-            default_dir = self._get_any(session_result, 'download_dir', 'download-dir', default='/downloads')
-            
-            if 'default' not in categories:
-                categories['default'] = {'name': 'Default', 'savePath': default_dir}
-            
-            return categories
+            for torrent in torrents:
+                labels = torrent.get('labels') or []
+                if isinstance(labels, str):
+                    labels = [labels]
+                for label in labels:
+                    name = str(label or "").strip()
+                    if name:
+                        label_names.add(name)
+
+            return {
+                label: {'name': label, 'savePath': None}
+                for label in sorted(label_names, key=str.casefold)
+            }
         except Exception:
-            # Fallback if group-get fails entirely
-            return {'default': {'name': 'Default', 'savePath': ''}}
+            return {}
 
     async def add_torrent(self, torrent_url: str, category: str, is_auto_organize: bool = False, **kwargs) -> dict:
         """
@@ -403,7 +399,7 @@ class TransmissionClient(TorrentClient):
     async def get_torrent_info(self, hash_val: str) -> dict:
         """Returns specific torrent info."""
         fields = [
-            "hashString", "name", "downloadDir", "totalSize", "comment",
+            "hashString", "name", "downloadDir", "totalSize", "comment", "labels",
             "percentDone", "rateDownload", "rateUpload", "status",
             "errorString", "eta", "queuePosition", "trackerStats"
         ]
@@ -433,6 +429,7 @@ class TransmissionClient(TorrentClient):
                     'save_path': mapped_save_path,
                     'total_size': self._get_any(info, 'total_size', 'totalSize'),
                     'comment': info.get('comment'),
+                    'labels': info.get('labels', []),
                     'progress': self._get_any(info, 'percent_done', 'percentDone', default=0),
                     'eta': info.get('eta', -1),
                     'state': self._map_status(info.get('status', 0)),
@@ -445,7 +442,7 @@ class TransmissionClient(TorrentClient):
     async def get_torrent_info_batch(self, hash_list: list) -> dict:
         """Optimized batch fetch for multiple torrents."""
         fields = [
-            "hashString", "name", "downloadDir", "totalSize", "comment",
+            "hashString", "name", "downloadDir", "totalSize", "comment", "labels",
             "percentDone", "rateDownload", "rateUpload", "status",
             "errorString", "eta", "queuePosition", "trackerStats"
         ]
@@ -471,6 +468,7 @@ class TransmissionClient(TorrentClient):
                         'save_path': mapped_save_path,
                         'total_size': self._get_any(t, 'total_size', 'totalSize'),
                         'comment': t.get('comment'),
+                        'labels': t.get('labels', []),
                         'progress': self._get_any(t, 'percent_done', 'percentDone', default=0),
                         'eta': t.get('eta', -1),
                         'state': self._map_status(t.get('status', 0)),
@@ -513,7 +511,7 @@ class TransmissionClient(TorrentClient):
             return "Unknown"
 
     async def get_torrents_with_metadata(self) -> list:
-        fields = ["hashString", "name", "comment", "downloadDir", "totalSize"]
+        fields = ["hashString", "name", "comment", "downloadDir", "totalSize", "labels"]
         try:
             session_download_dir = await self._get_session_download_dir()
             result = await self._rpc_request("torrent-get", {"fields": fields})
@@ -529,6 +527,7 @@ class TransmissionClient(TorrentClient):
                     'name': t.get('name'),
                     'save_path': mapped_save_path,
                     'comment': t.get('comment', ''),
+                    'labels': t.get('labels', []),
                 })
             return self.normalize_torrent_metadata_list(mapped)
         except Exception:
