@@ -2025,15 +2025,14 @@ async def mam_autosuggest():
         "tor[sortType]": "seeders",
         "perpage": fetch_perpage,
         "thumbnail": "true",
-        
+
         # Dynamic Filters from URL params
         "tor[browse_lang][]": lang_ids,
-        "tor[srchIn][title]": "on" if title_on else "off",
-        "tor[srchIn][author]": "on" if author_on else "off",
-        "tor[srchIn][narrator]": "on" if narrator_on else "off",
-        "tor[srchIn][series]": "on" if series_on else "off",
         "tor[searchType]": "all"
     }
+    for field, enabled in {"title": title_on, "author": author_on, "narrator": narrator_on, "series": series_on}.items():
+        if enabled:
+            params[f"tor[srchIn][{field}]"] = "true"
 
     # Apply Category Filter
     main_cats = [m for m in request.args.getlist("main_cat") if m]
@@ -3135,16 +3134,17 @@ async def mam_search():
         "thumbnail": "true",
         "dlLink": "true",
         "tor[browse_lang][]": lang_ids,
-        "tor[srchIn][title]": "on" if title_on else "off",
-        "tor[srchIn][author]": "on" if author_on else "off",
-        "tor[srchIn][narrator]": "on" if narrator_on else "off",
-        "tor[srchIn][series]": "on" if series_on else "off",
-        "tor[srchIn][description]": "on" if description_on else "off",
-        "tor[srchIn][tags]": "on" if tags_on else "off",
-        "tor[srchIn][filenames]": "on" if filenames_on else "off",
         "tor[searchType]": request.args.get("searchType", "all"),
         "isbn": "true", "description": "true", "mediaInfo": "true"
     }
+    srch_in_fields = {
+        "title": title_on, "author": author_on, "narrator": narrator_on,
+        "series": series_on, "description": description_on,
+        "tags": tags_on, "filenames": filenames_on,
+    }
+    for field, enabled in srch_in_fields.items():
+        if enabled:
+            params[f"tor[srchIn][{field}]"] = "true"
     if query:
         search_text = query
         if author_on:
