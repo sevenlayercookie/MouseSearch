@@ -3086,6 +3086,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const addTypeCategoryBtn = document.getElementById('add-type-category-btn');
     const destinationPathsList = document.getElementById('destination-paths-list');
     const addDestinationPathBtn = document.getElementById('add-destination-path-btn');
+    const typePathsCountBadge = document.getElementById('type-paths-count');
     const mediaTypeOptions = Array.isArray(window.AUTO_ORGANIZE_MEDIA_TYPES) && window.AUTO_ORGANIZE_MEDIA_TYPES.length
         ? window.AUTO_ORGANIZE_MEDIA_TYPES.map(item => ({ id: String(item.id), label: String(item.label) }))
         : [
@@ -3221,6 +3222,11 @@ document.addEventListener("DOMContentLoaded", async function () {
         return row;
     }
 
+    function updateDestinationPathCount() {
+        if (!typePathsCountBadge || !destinationPathsList) return;
+        typePathsCountBadge.textContent = String(destinationPathsList.querySelectorAll('.destination-path-row').length);
+    }
+
     function updateDestinationRowUI() {
         if (!destinationPathsList) return;
 
@@ -3290,6 +3296,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             destinationPathsList.appendChild(buildDestinationRow(entry.path, entry.default_main_cat));
         });
 
+        updateDestinationPathCount();
         updateDestinationRowUI();
         syncConfirmDestinationOptions();
     }
@@ -3447,6 +3454,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         addDestinationPathBtn?.addEventListener('click', () => {
             destinationPathsList.appendChild(buildDestinationRow('', ''));
+            updateDestinationPathCount();
             updateDestinationRowUI();
             syncConfirmDestinationOptions();
             updateConfirmPathPreview();
@@ -3461,6 +3469,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             if (!row) return;
 
             row.remove();
+            updateDestinationPathCount();
             updateDestinationRowUI();
             syncConfirmDestinationOptions();
             updateConfirmPathPreview();

@@ -384,6 +384,73 @@ input:disabled, select:disabled {
     --bs-nav-link-color: var(--bs-secondary-color);
 }
 
+#settingsOffcanvas .settings-divider {
+    border: 0;
+    border-top: 1px solid var(--bs-border-color-translucent);
+    opacity: 1;
+}
+
+#settingsOffcanvas .settings-collapse-toggle {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+#settingsOffcanvas .settings-collapse-toggle:hover {
+    background-color: var(--bs-tertiary-bg);
+}
+
+#settingsOffcanvas #destination-paths-list .destination-path-row,
+#settingsOffcanvas #type-category-rules-list .type-category-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: 0.75rem;
+    background: var(--bs-body-tertiary);
+}
+
+#settingsOffcanvas #destination-paths-list .destination-path-row > .form-floating:first-of-type,
+#settingsOffcanvas #type-category-rules-list .type-category-row > .form-floating:first-of-type {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+}
+
+#settingsOffcanvas #destination-paths-list .destination-path-row > .btn,
+#settingsOffcanvas #type-category-rules-list .type-category-row > .btn {
+    grid-column: 2;
+    grid-row: 1;
+    width: 3.5rem;
+    height: calc(3.5rem + 2px);
+}
+
+#settingsOffcanvas #destination-paths-list .destination-path-row > .form-floating:nth-of-type(2),
+#settingsOffcanvas #type-category-rules-list .type-category-row > .form-floating:nth-of-type(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+}
+
+@media (min-width: 768px) {
+    #settingsOffcanvas #destination-paths-list .destination-path-row,
+    #settingsOffcanvas #type-category-rules-list .type-category-row {
+        grid-template-columns: 40% 1fr auto;
+        align-items: center;
+    }
+
+    #settingsOffcanvas #destination-paths-list .destination-path-row > .form-floating:nth-of-type(2),
+    #settingsOffcanvas #type-category-rules-list .type-category-row > .form-floating:nth-of-type(2) {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    #settingsOffcanvas #destination-paths-list .destination-path-row > .btn,
+    #settingsOffcanvas #type-category-rules-list .type-category-row > .btn {
+        grid-column: 3;
+        grid-row: 1;
+    }
+}
+
 .roundTop {
     border-start-start-radius: 1rem;
 }
