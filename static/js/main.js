@@ -3084,6 +3084,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     const typeCategoryRulesList = document.getElementById('type-category-rules-list');
     const addTypeCategoryBtn = document.getElementById('add-type-category-btn');
+    const typeCategoriesCountBadge = document.getElementById('type-categories-count');
     const destinationPathsList = document.getElementById('destination-paths-list');
     const addDestinationPathBtn = document.getElementById('add-destination-path-btn');
     const typePathsCountBadge = document.getElementById('type-paths-count');
@@ -3224,7 +3225,9 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     function updateDestinationPathCount() {
         if (!typePathsCountBadge || !destinationPathsList) return;
-        typePathsCountBadge.textContent = String(destinationPathsList.querySelectorAll('.destination-path-row').length);
+        const count = destinationPathsList.querySelectorAll('.destination-path-row').length;
+        typePathsCountBadge.textContent = String(count);
+        typePathsCountBadge.classList.toggle('d-none', count < 1);
     }
 
     function updateDestinationRowUI() {
@@ -3400,6 +3403,13 @@ document.addEventListener("DOMContentLoaded", async function () {
         return row;
     }
 
+    function updateTypeCategoryCount() {
+        if (!typeCategoriesCountBadge || !typeCategoryRulesList) return;
+        const count = typeCategoryRulesList.querySelectorAll('.type-category-row').length;
+        typeCategoriesCountBadge.textContent = String(count);
+        typeCategoriesCountBadge.classList.toggle('d-none', count < 1);
+    }
+
     function updateTypeCategoryRowUI() {
         if (!typeCategoryRulesList) return;
 
@@ -3430,6 +3440,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 entry.default_torrent_category
             ));
         });
+        updateTypeCategoryCount();
         updateTypeCategoryRowUI();
         syncTypeCategoryOptions();
     }
@@ -3508,6 +3519,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         addTypeCategoryBtn?.addEventListener('click', () => {
             typeCategoryRulesList.appendChild(buildTypeCategoryRow('', ''));
+            updateTypeCategoryCount();
             updateTypeCategoryRowUI();
             syncTypeCategoryOptions();
             if (!isRestoringSettings) settingsDirty = true;
@@ -3521,6 +3533,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             if (!row) return;
 
             row.remove();
+            updateTypeCategoryCount();
             updateTypeCategoryRowUI();
             if (!isRestoringSettings) settingsDirty = true;
         });

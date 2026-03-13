@@ -91,10 +91,14 @@
                 class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect collapsed settings-collapse-toggle"
                 data-bs-toggle="collapse" data-bs-target="#type-category-container" aria-expanded="false"
                 aria-controls="type-category-container">
-                <span class="d-flex small fw-bold">
+                <span class="d-flex small fw-bold align-items-center">
                   <i class="bi bi-diagram-3 me-2"></i> Type-Specific Default Categories
                 </span>
-                <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
+                <span class="d-flex align-items-center gap-2">
+                  <span class="badge bg-secondary-subtle text-secondary border rounded-pill {% if TYPE_SPECIFIC_TORRENT_CATEGORIES|length < 1 %}d-none{% endif %}"
+                    id="type-categories-count">{{ TYPE_SPECIFIC_TORRENT_CATEGORIES|length }}</span>
+                  <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
+                </span>
               </div>
 
               <div id="type-category-container" class="collapse">
@@ -156,7 +160,7 @@
               <div class="form-text">The <code class="text-primary">mam_id</code> value from MyAnonaMouse
                 <a href="https://www.myanonamouse.net/preferences/index.php?view=security">Settings</a>.
                 <div
-                  class="mt-2 p-2 bg-body-secondary rounded border d-flex justify-content-between align-items-center">
+                  class="mt-4 p-2 bg-body-secondary rounded border d-flex justify-content-between align-items-center">
                   <div class="small">
                     Your Server IP: <strong
                       class="backend-ip-display font-monospace text-body-emphasis">Loading...</strong>
@@ -363,10 +367,12 @@
                   aria-controls="type-paths-container">
                   <span class="d-flex small fw-bold align-items-center">
                     <i class="bi bi-folder-symlink me-2"></i> Type-Specific Paths
-                    <span class="badge bg-secondary-subtle text-secondary border rounded-pill ms-2"
-                      id="type-paths-count">{{ configured_destinations|length }}</span>
                   </span>
-                  <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
+                  <span class="d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary-subtle text-secondary border rounded-pill {% if configured_destinations|length < 1 %}d-none{% endif %}"
+                      id="type-paths-count">{{ configured_destinations|length }}</span>
+                    <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
+                  </span>
                 </div>
 
                 <div id="type-paths-container" class="collapse">
