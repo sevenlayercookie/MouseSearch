@@ -1041,9 +1041,14 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     });
 
+    const settingsTabContent = document.getElementById('settingsTabContent');
+
     document.querySelectorAll('#settingTabs [data-bs-toggle="tab"]').forEach(tabButton => {
         tabButton.addEventListener('click', () => {
             triggerHaptic('tab');
+            if (settingsTabContent) {
+                settingsTabContent.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         });
     });
 
