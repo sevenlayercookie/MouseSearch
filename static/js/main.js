@@ -3865,8 +3865,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                 applyHideDownloadedResultsFilter();
             })
             .catch(error => {
+                const errorText = error?.message ? `Search failed: ${error.message}` : 'Search failed.';
                 wrapper.style.display = 'block';
-                resultsContainer.innerHTML = `<div class="alert alert-danger">Search failed.</div>`;
+                resultsContainer.innerHTML = `<div class="alert alert-danger">${errorText}</div>`;
             })
             .finally(() => {
                 activeSearchRequests = Math.max(0, activeSearchRequests - 1);

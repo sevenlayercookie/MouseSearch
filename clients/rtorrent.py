@@ -220,14 +220,21 @@ class RTorrentClient(TorrentClient):
     async def get_torrent_info_batch(self, hashes: list):
         if not hashes: return {"torrents": {}}
         try:
+            data = await self._request(
+                "d.multicall2",
+                ["", "main"] + self._get_torrent_info_multicall_cmds()
+            )
+
             result = {}
-            for raw_hash in hashes:
-                normalized_hash = self._normalize_hash(raw_hash)
-                if not normalized_hash:
-                    continue
-                info = await self.get_torrent_info(normalized_hash)
-                if info:
-                    result[normalized_hash] = info
+            target_hashes = {
+                self._normalize_hash(raw_hash) for raw_hash in hashes if self._normalize_hash(raw_hash)
+            }
+
+            for row in data:
+                hash_val, info = self._parse_torrent_info_multicall_row(row)
+                if hash_val and info and hash_val in target_hashes:
+                    result[hash_val] = info
+
             return {"torrents": self.normalize_torrent_info_map(result)}
         except:
             return {"torrents": {}}
@@ -270,6 +277,45 @@ class RTorrentClient(TorrentClient):
 
     def _normalize_hash(self, value) -> str:
         return str(value or "").strip().lower()
+
+    def _get_torrent_info_multicall_cmds(self):
+        return [
+            "d.hash=",
+            "d.name=",
+            "d.directory=",
+            "d.is_multi_file=",
+            "d.down.rate=",
+            "d.completed_bytes=",
+            "d.size_bytes=",
+            self.label_attr + "=",
+            self.comment_attr + "=",
+            "d.state=",
+            "d.is_active=",
+            "d.is_hash_checking=",
+            "d.complete=",
+        ]
+
+    def _parse_torrent_info_multicall_row(self, row):
+        hash_val = self._normalize_hash(row[0] if len(row) > 0 else "")
+        if not hash_val:
+            return "", None
+
+        info = self._format_data(
+            hash_val,
+            row[1] if len(row) > 1 else "",
+            row[2] if len(row) > 2 else "",
+            row[3] if len(row) > 3 else 0,
+            row[4] if len(row) > 4 else 0,
+            row[5] if len(row) > 5 else 0,
+            row[6] if len(row) > 6 else 0,
+            row[7] if len(row) > 7 else "",
+            row[8] if len(row) > 8 else "",
+            row[9] if len(row) > 9 else 0,
+            row[10] if len(row) > 10 else 0,
+            row[11] if len(row) > 11 else 0,
+            row[12] if len(row) > 12 else 0,
+        )
+        return hash_val, info
 
     def _is_truthy(self, value) -> bool:
         try:

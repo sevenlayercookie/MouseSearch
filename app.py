@@ -3055,6 +3055,29 @@ def rank_results(results):
         r['score'] = round(filetype_score + seeders_score, 1)
     return sorted(results, key=lambda x: x['score'], reverse=True)
 
+
+def format_mam_search_error(exc: Exception) -> str:
+    detail = str(exc).strip()
+
+    if isinstance(exc, httpx.ConnectTimeout):
+        return "MAM timed out while connecting to the server. Please try again."
+    if isinstance(exc, httpx.ReadTimeout):
+        return "MAM timed out while waiting for a response. Please try again."
+    if isinstance(exc, httpx.TimeoutException):
+        return "MAM search timed out. Please try again."
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code if exc.response is not None else "unknown"
+        return f"MAM returned an HTTP {status_code} error."
+    if isinstance(exc, httpx.RequestError):
+        error_name = exc.__class__.__name__
+        if detail:
+            return f"MAM request failed ({error_name}: {detail})."
+        return f"MAM request failed ({error_name})."
+
+    if detail:
+        return f"MAM search failed: {detail}"
+    return "MAM search failed due to an unexpected error."
+
 @app.route('/mam/search', methods=['GET'])
 async def mam_search():
     if not await login_mam(): 
@@ -3321,10 +3344,14 @@ async def mam_search():
                 ),
             )
     except Exception as e:
-        app.logger.error(f"[SEARCH] Failed query_len={len(query)}: {e}", exc_info=True)
+        error_message = format_mam_search_error(e)
+        app.logger.error(
+            f"[SEARCH] Failed query_len={len(query)}: {error_message}",
+            exc_info=True,
+        )
         return await render_template(
             "partials/results.html",
-            error_message=f"Error: {e}",
+            error_message=error_message,
             DESTINATION_PATHS=app.config.get("DESTINATION_PATHS", FALLBACK_CONFIG["DESTINATION_PATHS"]),
             TORRENT_CLIENT_CATEGORY=app.config.get("TORRENT_CLIENT_CATEGORY", ""),
             TYPE_SPECIFIC_TORRENT_CATEGORIES=app.config.get(
