@@ -4427,7 +4427,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         // ... (The rest of your function remains exactly the same) ...
 
         // 1. ADD VISUAL CUE & CLICK HANDLER (New Code)
-        imgEl.style.cursor = 'zoom-in';
+        imgEl.style.cursor = 'pointer';
 
         // Remove old listeners to prevent stacking if function runs multiple times
         const newImgEl = imgEl.cloneNode(true);
