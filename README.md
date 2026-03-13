@@ -67,7 +67,10 @@ MouseSearch can be deployed in two ways:
     curl -o .env https://raw.githubusercontent.com/sevenlayercookie/MouseSearch/main/.env.example
     ```
 
-3.  Create a `compose.yaml` file (see configuration below)
+3.  Copy the example Compose file:
+    ```bash
+    cp compose-example.yaml compose.yaml
+    ```
 
 4.  (Optional) Edit `.env` with your settings - alternatively, configure through the web interface after launch
 
@@ -176,6 +179,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `AUTO_BUY_UPLOAD_CHECK_INTERVAL_HOURS` | No | Number of hours between ratio/buffer/bonus checks (only applies if auto-buy upload is enabled). Defaults to `6`. |
 | `BLOCK_DOWNLOAD_ON_LOW_BUFFER` | No | Set to `true` to prevent downloads when torrent size exceeds available buffer (prompts user to purchase upload credit). Defaults to `true`. |
 | `AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD` | No | Set to `true` to auto-attempt spending a personal Freeleech wedge before each download add. If purchase fails, the torrent is still added. Defaults to `false`. |
+| `HAPTICS_ENABLED` | No | Set to `true` to enable frontend haptic feedback where the browser/device supports it. Defaults to `true`. |
 | `AUTO_ORGANIZE_ON_ADD` | No | Set to `true` to enable auto-organization when torrents are added. Defaults to `false`. |
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |
 | `AUTO_ORGANIZE_INTERVAL_HOURS` | No | Number of hours between scheduled organization scans (only applies if `AUTO_ORGANIZE_ON_SCHEDULE` is `true`). Defaults to `1`. |
@@ -184,7 +188,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `ORGANIZED_PATH` | If auto-organization is enabled | The default *container* path for your organized library (e.g., `/downloads/organized/`). Additional destination paths can be configured from the Settings UI and assigned to media types. |
 | `LOCAL_TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The local path MouseSearch can access for completed torrent files (e.g., `/downloads/torrents/`). |
 | `REMOTE_TORRENT_DOWNLOAD_PATH` | No | Optional remote/client-side view of that same download directory. Recommended when your torrent client runs in a different filesystem namespace, such as Docker vs bare metal. |
-| `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` | No | Set to `true` to enable filesystem caching of thumbnail images (stores in `DATA_PATH/cache/thumbnails`). Defaults to `false`. **Enable this if you experience slow thumbnail loading or suspect you're hitting MAM rate limits.** Cached thumbnails expire after 30 days. |
+| `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` | No | Set to `true` to enable filesystem caching of thumbnail images (stores in `DATA_PATH/cache/thumbnails`). Defaults to `true`. **Enable this if you experience slow thumbnail loading or suspect you're hitting MAM rate limits.** Cached thumbnails expire after 30 days. |
 | `THUMBNAIL_CACHE_MAX_SIZE_MB` | No | Maximum cache size in megabytes (only applies when `ENABLE_FILESYSTEM_THUMBNAIL_CACHE` is enabled). Oldest files are deleted first when limit is exceeded. Defaults to `500`. |
 | `MAX_SEARCH_RESULTS` | No | Maximum number of search results returned per query. Defaults to `50`. |
 | `MAX_AUTOCOMPLETE_RESULTS` | No | Maximum number of autocomplete suggestions returned per query. Defaults to `20`. |
@@ -215,6 +219,7 @@ Your `compose.yaml` file tells Docker how to run the app and, most importantly, 
 Here is an example `compose.yaml`:
 
 ```yaml
+# Copy this file to compose.yaml before running `docker compose up -d`.
 services:
   mousesearch:
     image: sevenlayercookie/mousesearch:latest
@@ -223,12 +228,13 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./data:/data  # location that config and state files will be stored
-      - /downloads:/downloads # where all downloads are stored (torrent client downloads and organized files) -- only needed if using auto-organize
+      - ./data:/data  # location that config, cache, and state files will be stored
+      - /downloads:/downloads  # required if LOCAL_TORRENT_DOWNLOAD_PATH or ORGANIZED_PATH live under /downloads
 
-      # see README.md for recommended structure and paths
+      # If your torrent client reports a different in-container path, set
+      # REMOTE_TORRENT_DOWNLOAD_PATH in .env to that client-visible path.
 
-    env_file: .env # optional: load environment variables from a file
+    env_file: .env  # optional: load environment variables from a file
 
     environment:
       - TZ=America/Chicago
