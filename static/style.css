@@ -484,9 +484,13 @@ input:disabled, select:disabled {
 
 /* --- SEARCH RESULT CARD (Dark/Light Mode Compatible) --- */
 
+/* .result-row {
+    background-color: var(--bs-tertiary-bg);
+} */
+
 .result-card {
     /* Use Bootstrap variables so it adapts to the theme automatically */
-    background-color: var(--bs-card-bg); 
+    background-color: var(--bs-tertiary-bg);
     border: 1px solid var(--bs-border-color-translucent); 
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }

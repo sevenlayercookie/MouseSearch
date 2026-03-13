@@ -10,61 +10,6 @@
 {% set type_specific_torrent_categories = TYPE_SPECIFIC_TORRENT_CATEGORIES | default([], true) %}
 {% set default_client_category = TORRENT_CLIENT_CATEGORY | default('', true) %}
 
-<style>
-    /* Card Styling */
-    .result-card {
-        background-color: var(--bs-card-bg);
-        border: 1px solid var(--bs-border-color-translucent);
-        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-    }
-
-    .result-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
-        border-color: var(--bs-primary-border-subtle) !important;
-        cursor: pointer;
-    }
-
-    /* Container Colors */
-    .img-container-adaptive {
-        background-color: var(--bs-body-tertiary);
-    }
-
-    .actions-column-adaptive {
-        background-color: var(--bs-body-tertiary);
-        border-left: 1px solid var(--bs-border-color-translucent);
-    }
-
-    /* Links & Icons */
-    .hover-primary {
-        color: var(--bs-secondary-color) !important;
-        transition: color 0.2s;
-    }
-
-    .hover-primary:hover {
-        color: var(--bs-primary) !important;
-        text-decoration: underline !important;
-    }
-
-    .bi {
-        vertical-align: -0.125em;
-    }
-
-    /* Dark Mode Dropdown Fix */
-    [data-bs-theme="dark"] .form-select-sm {
-        background-color: var(--bs-body-bg);
-        border-color: var(--bs-border-color);
-        color: var(--bs-body-color);
-    }
-
-    /* Ensure badges wrap nicely */
-    .badge-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem;
-    }
-</style>
-
 {% set enabled_fields = RESULTS_DISPLAY_FIELDS or [] %}
 
 {# --- 1. Define Badges Macro to avoid code duplication --- #}
