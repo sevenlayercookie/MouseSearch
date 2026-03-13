@@ -4433,12 +4433,23 @@ document.addEventListener("DOMContentLoaded", async function () {
         const newImgEl = imgEl.cloneNode(true);
         imgEl.parentNode.replaceChild(newImgEl, imgEl);
 
+        const coverLightboxModalEl = document.getElementById('coverLightboxModal');
+        if (coverLightboxModalEl && !coverLightboxModalEl.dataset.outsideClickBound) {
+            coverLightboxModalEl.dataset.outsideClickBound = 'true';
+            coverLightboxModalEl.addEventListener('click', function (event) {
+                if (event.target.closest('#modal-image-wrapper')) return;
+
+                const modalInstance = bootstrap.Modal.getInstance(coverLightboxModalEl);
+                if (modalInstance) modalInstance.hide();
+            });
+        }
+
         newImgEl.onclick = function () {
             const lightboxImg = document.getElementById('lightbox-img');
             // Use the hiResSrc we calculated for the modal
             lightboxImg.src = hiResSrc;
 
-            const lightboxModal = new bootstrap.Modal(document.getElementById('coverLightboxModal'));
+            const lightboxModal = bootstrap.Modal.getOrCreateInstance(coverLightboxModalEl);
             lightboxModal.show();
         };
 
