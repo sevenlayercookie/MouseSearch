@@ -2167,6 +2167,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     const SEARCH_BUTTON_LOADING_HTML = `<span class="d-inline-flex align-items-center"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Searching...</span>`;
     const wrapper = document.getElementById('results-container-wrapper');
     const resultsTitle = document.getElementById('results-title');
+    const RESULTS_TITLE_DEFAULT_TEXT = resultsTitle ? resultsTitle.textContent || 'Results' : 'Results';
+    const RESULTS_TITLE_LOADING_HTML = `<span class="d-inline-flex align-items-center"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${RESULTS_TITLE_DEFAULT_TEXT}</span>`;
     const resultsSortCurrent = document.getElementById('results-sort-current');
     const resultsSortOptions = document.querySelectorAll('.results-sort-option');
     const resultDisplayOptions = document.querySelectorAll('.result-display-option');
@@ -3804,14 +3806,31 @@ document.addEventListener("DOMContentLoaded", async function () {
         confirmInput.addEventListener('input', updateConfirmPathPreview);
     }
 
-    function performSearch(queryString, isHistoryNavigation = false) {
+    function performSearch(queryString, isHistoryNavigation = false, options = {}) {
+        const {
+            preScrollToResults = false,
+            showResultsHeaderLoading = false,
+            skipPostSearchScroll = false
+        } = options;
+
         activeSearchRequests += 1;
         refreshAppLogoState();
         searchButton.disabled = true;
         searchButton.innerHTML = SEARCH_BUTTON_LOADING_HTML;
-        if (resultsTitle) resultsTitle.textContent = 'Results';
+        if (resultsTitle) {
+            if (showResultsHeaderLoading) {
+                resultsTitle.innerHTML = RESULTS_TITLE_LOADING_HTML;
+            } else {
+                resultsTitle.textContent = RESULTS_TITLE_DEFAULT_TEXT;
+            }
+        }
         hashToElementMap.clear();
         const searchUrl = queryString ? `/mam/search?${queryString}` : '/mam/search';
+
+        if (preScrollToResults && wrapper) {
+            wrapper.style.display = 'block';
+            scrollToResultsWrapper();
+        }
 
         return fetch(searchUrl)
             .then(response => response.text())
@@ -3838,7 +3857,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                         markTorrentPersonalFreeleech(tid);
                     }
                 }
-                if (!isHistoryNavigation) {
+                if (!isHistoryNavigation && !skipPostSearchScroll) {
                     scrollToResultsWrapper();
                 }
                 refreshCategories();
@@ -4744,11 +4763,21 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const mainInput = document.getElementById('query');
                 if (mainInput) {
                     mainInput.value = val;
-                    // Trigger the main search button click to reuse all existing logic (filters, etc)
-                    searchButton.click();
+                    triggerHaptic('search');
+                    mainInput.blur();
+                    navSearchInput.blur();
 
-                    // Optional: Scroll slightly up so results aren't hidden behind the sticky header
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    const formData = new FormData(searchForm);
+                    const queryParams = new URLSearchParams(formData);
+                    const queryString = queryParams.toString();
+                    const newUrl = `${window.location.pathname}?${queryString}`;
+
+                    history.pushState({ type: 'search', query: queryString }, '', newUrl);
+                    performSearch(queryString, false, {
+                        preScrollToResults: true,
+                        showResultsHeaderLoading: true,
+                        skipPostSearchScroll: true
+                    });
                 }
             }
         });
