@@ -98,6 +98,18 @@ body {
     font-size: 1.1em;
 }
 
+#bookDetailsModal .card-header {
+    background-color: var(--bs-secondary-bg);
+}
+
+#bookDetailsModal .card-body {
+    background-color: var(--bs-card-cap-bg);
+}
+
+.noBottomBorder {
+    border-bottom: none !important;
+}
+
 /* Disabled form fields styling */
 input:disabled, select:disabled {
     opacity: 0.5;

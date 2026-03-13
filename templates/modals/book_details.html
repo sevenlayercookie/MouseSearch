@@ -23,10 +23,12 @@
                 </div>
               </div>
 
-              <div class="col-12 col-md-8 col-lg-8 d-flex flex-column justify-content-between text-center text-md-start">
+              <div
+                class="col-12 col-md-8 col-lg-8 d-flex flex-column justify-content-between text-center text-md-start">
                 <div id="detail-header-text">
                   <h1 class="display-5 fw-bold mb-2" id="detail-title">
-                    <a id="detail-title-link" href="#" target="_blank" rel="noopener noreferrer" class="text-reset text-decoration-none">Title</a>
+                    <a id="detail-title-link" href="#" target="_blank" rel="noopener noreferrer"
+                      class="text-reset text-decoration-none">Title</a>
                   </h1>
                   <div
                     class="fs-5 mb-3 text-white-75 d-flex align-items-center justify-content-center justify-content-md-start gap-1"
@@ -34,7 +36,8 @@
 
                   <div class="mb-1"><strong>By:</strong> <span id="detail-authors">---</span></div>
                   <div class="mb-3"><strong>Narrated by:</strong> <span id="detail-narrators">---</span></div>
-                  <div id="full" class="badge-container justify-content-center justify-content-md-start gap-1" style="text-shadow:none;">
+                  <div id="full" class="badge-container justify-content-center justify-content-md-start gap-1"
+                    style="text-shadow:none;">
                     <span id="badge-downloaded" class="badge bg-success d-none"
                       style="font-size: 0.6rem;">Downloaded</span>
                     <span id="badge-vip" class="badge bg-warning text-dark d-none" style="font-size: 0.6rem;">VIP</span>
@@ -55,7 +58,7 @@
               <div class="col-12 col-md-4 col-lg-4 mb-4 mb-md-0 text-center text-md-start d-none d-md-block"></div>
               <div class="col-12 col-md-8 col-lg-8 d-flex flex-column justify-content-center text-center text-md-start">
                 <div class="d-flex gap-3 mt-3 flex-wrap justify-content-center justify-content-md-start"
-                style="text-shadow: none">
+                  style="text-shadow: none">
                   <button id="detail-download-btn"
                     class="btn btn-warning btn-lg px-5 fw-bold rounded-pill text-dark border-0">
                     <i class="bi bi-play-fill me-1"></i> Download
@@ -68,14 +71,14 @@
 
                   <div class="form-floating text-dark">
                     <select name="category" class="form-select shadow-sm category-dropdown"
-                        style="font-size: 0.85rem; min-width: 140px;" id="detail-cat-select" data-main-cat="">
-                        <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
-                        {% for category_name, category_info in categories.items() %}
-                        <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{%
-                            endif %}>
-                            {{ category_name }}
-                        </option>
-                        {% endfor %}
+                      style="font-size: 0.85rem; min-width: 140px;" id="detail-cat-select" data-main-cat="">
+                      <option value="" {% if not TORRENT_CLIENT_CATEGORY %}selected{% endif %}>Default</option>
+                      {% for category_name, category_info in categories.items() %}
+                      <option value="{{ category_name }}" {% if TORRENT_CLIENT_CATEGORY==category_name %}selected{%
+                        endif %}>
+                        {{ category_name }}
+                      </option>
+                      {% endfor %}
                     </select>
                     <label for="detail-cat-select" style="font-size: 0.85rem;">Category</label>
                   </div>
@@ -88,8 +91,14 @@
         <div class="container py-5 pt-md-4 pb-md-5">
           <div class="row">
             <div class="col-12 col-lg-8 pe-lg-5">
-              <h4 class="border-bottom pb-2 mb-3 text-body-emphasis">Description</h4>
-              <div id="detail-description" class="lead fs-6 text-body-secondary" style="line-height: 1.7;"></div>
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="text-body-emphasis my-2">Description</h5>
+                </div>
+                <div class="card-body">
+                  <div id="detail-description" class="lead fs-6 text-body-secondary" style="line-height: 1.7;"></div>
+                </div>
+              </div>
 
               <div class="mt-4" id="detail-tags-container">
                 <h5 class="mb-2 text-body-tertiary small text-uppercase">Tags</h5>
@@ -98,70 +107,72 @@
             </div>
 
             <div class="col-12 col-lg-4 mt-5 mt-lg-0">
-              <div class="p-4 mb-4 rounded-3 bg-body-tertiary border border-opacity-10 border-secondary">
-                <h5 class="mb-3 text-body-emphasis">Book Details</h5>
-                <ul class="list-unstyled mb-0 d-grid gap-2 small">
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Category:</span>
-                    <span class="fw-medium text-body-emphasis text-end" id="detail-category">---</span>
-                  </li>
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Series:</span>
-                    <span class="fw-medium text-body-emphasis text-end" id="detail-series">---</span>
-                  </li>
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Language:</span>
-                    <span class="fw-medium text-body-emphasis text-end" id="detail-language">---</span>
-                  </li>
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">File Type:</span>
-                    <span class="fw-medium text-body-emphasis text-end" id="detail-filetype">---</span>
-                  </li>
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Size:</span>
-                    <span class="fw-medium text-body-emphasis text-end" id="detail-size">---</span>
-                  </li>
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Added on:</span>
-                    <span class="fw-medium text-body-emphasis text-end" id="detail-added">---</span>
-                  </li>
-                  <hr class="text-secondary opacity-25">
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Seeders:</span>
-                    <span class="fw-bold text-success text-end" id="detail-seeders">0</span>
-                  </li>
-                  <li class="d-flex justify-content-between">
-                    <span class="text-body-secondary">Leechers:</span>
-                    <span class="fw-bold text-danger text-end" id="detail-leechers">0</span>
-                  </li>
-                </ul>
+              <div class="card mb-4">
+                <div class="card-header">
+                  <h5 class="my-2 text-body-emphasis">Book Details</h5>
+                </div>
+                <div class="card-body">
+                  <ul class="list-unstyled mb-0 d-grid gap-2 small">
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Category:</span>
+                      <span class="fw-medium text-body-emphasis text-end" id="detail-category">---</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Series:</span>
+                      <span class="fw-medium text-body-emphasis text-end" id="detail-series">---</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Language:</span>
+                      <span class="fw-medium text-body-emphasis text-end" id="detail-language">---</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">File Type:</span>
+                      <span class="fw-medium text-body-emphasis text-end" id="detail-filetype">---</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Size:</span>
+                      <span class="fw-medium text-body-emphasis text-end" id="detail-size">---</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Added on:</span>
+                      <span class="fw-medium text-body-emphasis text-end" id="detail-added">---</span>
+                    </li>
+                    <hr class="text-secondary opacity-25">
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Seeders:</span>
+                      <span class="fw-bold text-success text-end" id="detail-seeders">0</span>
+                    </li>
+                    <li class="d-flex justify-content-between">
+                      <span class="text-body-secondary">Leechers:</span>
+                      <span class="fw-bold text-danger text-end" id="detail-leechers">0</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
-               
-                <div class="rounded-3 bg-body-tertiary border border-opacity-10 border-secondary mb-4 overflow-hidden">
-  
-  <div class="p-4 d-flex justify-content-between align-items-center cursor-pointer" 
-       data-bs-toggle="collapse" 
-       data-bs-target="#mediaInfoCollapse" 
-       aria-expanded="false" 
-       aria-controls="mediaInfoCollapse"
-       style="cursor: pointer;">
-      
-      <div class="d-flex align-items-center gap-2">
-        <h5 class="mb-0 text-body-emphasis">Media Info</h5>
-        <!-- <span class="badge border border-secondary text-secondary fw-normal opacity-75" style="font-size: 0.65rem;">JSON</span> -->
-      </div>
-      
-      <i class="bi bi-chevron-down text-secondary transition-transform"></i>
-  </div>
 
-  <div class="collapse" id="mediaInfoCollapse">
-    <div class="px-4 pb-4">
-      <div id="mediainfo-tree-container" class="border rounded-2 p-3 bg-body bg-opacity-50 overflow-auto" style="max-height: 400px;">
-          </div>
-    </div>
-  </div>
+              <div class="rounded-3 bg-body-tertiary border border-opacity-10 border-secondary mb-4 overflow-hidden">
 
-</div>
+                <div class="card" data-bs-toggle="collapse" data-bs-target="#mediaInfoCollapse" aria-expanded="false"
+                  aria-controls="mediaInfoCollapse" style="cursor: pointer;">
+
+                  <div class="card-header noBottomBorder p-3 d-flex justify-content-between collapsed">
+                    <h5 class="mb-0 text-body-emphasis">Media Info</h5>
+              
+                    <i class="bi bi-chevron-down text-secondary transition-transform"></i>
+                  </div>
+
+                  
+                </div>
+
+                <div class="card-body collapse" id="mediaInfoCollapse">
+                  <div class="p-4">
+                    <div id="mediainfo-tree-container" class="border rounded-2 p-3 bg-body bg-opacity-50 overflow-auto"
+                      style="max-height: 400px;">
+                    </div>
+                  </div>
+                </div>
+
+              </div>
 
 
             </div>
