@@ -308,3 +308,4 @@ dist
 .yarn/install-state.gz
 .pnp.*
 CHANGELOG.md
+forum_post.html
