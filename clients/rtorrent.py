@@ -13,6 +13,7 @@ class RTorrentClient(TorrentClient):
         self.url = config.get("TORRENT_CLIENT_URL", "http://localhost/RPC2")
         self.username = config.get("TORRENT_CLIENT_USERNAME", "")
         self.password = config.get("TORRENT_CLIENT_PASSWORD", "")
+        self.digest_auth = config.get("RTORRENT_DIGEST_AUTH", False)
         
         # Standard ruTorrent label field is usually d.custom1
         self.label_attr = "d.custom1" 
@@ -46,7 +47,10 @@ class RTorrentClient(TorrentClient):
 </methodCall>"""
 
         headers = {"Content-Type": "text/xml"}
-        auth = (self.username, self.password) if self.username else None
+        if self.digest_auth:
+            auth = httpx.DigestAuth(self.username, self.password) if self.username else None
+        else:
+            auth = (self.username, self.password) if self.username else None
 
         try:
             # verify=False handles self-signed certs often found on seedboxes

@@ -882,6 +882,7 @@ FALLBACK_CONFIG = {
     "TORRENT_CLIENT_USERNAME": "admin",
     "TORRENT_CLIENT_PASSWORD": "",
     "TORRENT_CLIENT_CATEGORY": "",
+    "RTORRENT_DIGEST_AUTH": False,
     "MAM_ID": "",
     "DATA_PATH": "./data",
     "ORGANIZED_PATH": "/downloads/organized",
@@ -1116,7 +1117,8 @@ def load_config():
         "AUTO_BUY_UPLOAD_ON_BONUS",
         "BLOCK_DOWNLOAD_ON_LOW_BUFFER",
         "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD",
-        "ENABLE_FILESYSTEM_THUMBNAIL_CACHE"
+        "ENABLE_FILESYSTEM_THUMBNAIL_CACHE",
+        "RTORRENT_DIGEST_AUTH"
     ]:
         config[key] = coerce_bool(config.get(key), FALLBACK_CONFIG[key])
         val = config[key]
