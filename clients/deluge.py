@@ -1,7 +1,34 @@
+import logging
+from urllib.parse import urlsplit, urlunsplit
+
 import httpx
-from httpx import RequestError
+from httpx import HTTPStatusError, RequestError
 import json
 from .base import TorrentClient
+
+
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_base_url(url: str | None) -> str:
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return "<missing>"
+
+    try:
+        parsed = urlsplit(raw_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    if parsed.username or parsed.password:
+        netloc = f"<redacted>@{hostname}{port}" if hostname else "<redacted>"
+    else:
+        netloc = parsed.netloc or hostname
+
+    sanitized = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return sanitized or raw_url
 
 class DelugeClient(TorrentClient):
     """
@@ -20,6 +47,7 @@ class DelugeClient(TorrentClient):
         self.password = config.get("TORRENT_CLIENT_PASSWORD")
         self.session_cookies = {}
         self._request_id = 0
+        self._last_error_message = ""
 
     @property
     def display_name(self) -> str:
@@ -29,10 +57,18 @@ class DelugeClient(TorrentClient):
         self._request_id += 1
         return self._request_id
 
+    def _set_last_error(self, message: str | None):
+        self._last_error_message = str(message or "").strip()
+
+    def _clear_last_error(self):
+        self._last_error_message = ""
+
     async def _request(self, method: str, params: list = None):
         """Internal helper for Deluge JSON-RPC."""
         if params is None:
             params = []
+
+        sanitized_url = _sanitize_base_url(self.base_url)
 
         payload = {
             "method": method,
@@ -66,6 +102,13 @@ class DelugeClient(TorrentClient):
                     response_json = response.json()
                 except json.JSONDecodeError:
                     # Fallback if the server sends a bad response
+                    logger.error(
+                        "Deluge RPC invalid JSON response: url=%s method=%s status=%s error=%s",
+                        sanitized_url,
+                        method,
+                        response.status_code,
+                        response.text[:200],
+                    )
                     raise Exception(f"Invalid JSON response from Deluge: {response.text}")
 
                 if response_json.get("error") is not None:
@@ -73,12 +116,51 @@ class DelugeClient(TorrentClient):
                     # If session expired, clear cookies so next login attempt works
                     if "session" in str(error_msg).lower() or "not authenticated" in str(error_msg).lower():
                         self.session_cookies = {}
+                    logger.warning(
+                        "Deluge RPC API error: url=%s method=%s status=%s error=%s",
+                        sanitized_url,
+                        method,
+                        response.status_code,
+                        str(error_msg),
+                    )
+                    self._set_last_error(f"Deluge API Error: {error_msg}")
                     raise Exception(f"Deluge API Error: {error_msg}")
 
+                self._clear_last_error()
                 return response_json.get("result")
 
+        except HTTPStatusError as e:
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            self._set_last_error(f"HTTP error communicating with Deluge: {e}")
+            logger.error(
+                "Deluge RPC HTTP error: url=%s method=%s status=%s error=%s",
+                sanitized_url,
+                method,
+                status_code,
+                str(e),
+            )
+            raise Exception(f"HTTP error communicating with Deluge: {e}")
         except RequestError as e:
+            self._set_last_error(f"Network error communicating with Deluge: {e}")
+            logger.error(
+                "Deluge RPC request error: url=%s method=%s status=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                str(e),
+            )
             raise Exception(f"Network error communicating with Deluge: {e}")
+        except Exception as e:
+            if not self._last_error_message:
+                self._set_last_error(str(e))
+            logger.error(
+                "Deluge RPC unexpected error: url=%s method=%s status=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                str(e),
+            )
+            raise
 
     async def _ensure_daemon_connection(self):
         """
@@ -102,18 +184,37 @@ class DelugeClient(TorrentClient):
 
     async def login(self) -> bool:
         if not self.password:
+            self._set_last_error("Deluge password is not configured")
+            logger.warning(
+                "Deluge login skipped due to missing password: url=%s password_present=%s",
+                _sanitize_base_url(self.base_url),
+                False,
+            )
             return False
 
         try:
             # 1. Auth with WebUI
             is_authed = await self._request("auth.login", [self.password])
             if not is_authed:
+                self._set_last_error("Authentication failed")
+                logger.warning(
+                    "Deluge login rejected: url=%s",
+                    _sanitize_base_url(self.base_url),
+                )
                 return False
             
             # 2. Ensure WebUI is connected to the backend Daemon
             await self._ensure_daemon_connection()
+            self._clear_last_error()
             return True
-        except Exception:
+        except Exception as exc:
+            if not self._last_error_message:
+                self._set_last_error(str(exc))
+            logger.warning(
+                "Deluge login failed: url=%s error=%s",
+                _sanitize_base_url(self.base_url),
+                str(exc),
+            )
             return False
 
     async def get_status(self) -> dict:
@@ -123,7 +224,7 @@ class DelugeClient(TorrentClient):
                 if not await self.login():
                     return {
                         "status": "error", 
-                        "message": "Authentication failed",
+                        "message": self._last_error_message or "Authentication failed",
                         "display_name": self.display_name # <--- ADDED
                     }
 
@@ -139,6 +240,7 @@ class DelugeClient(TorrentClient):
                     }
 
             version = await self._request("daemon.get_version")
+            self._clear_last_error()
             
             return {
                 "status": "success",

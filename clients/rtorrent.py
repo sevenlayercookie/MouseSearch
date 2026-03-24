@@ -1,8 +1,35 @@
-import httpx
+import logging
 import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit, urlunsplit
+
+import httpx
 from clients.base import TorrentClient
 from pathlib import Path
 from urllib.parse import unquote
+
+
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_base_url(url: str | None) -> str:
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return "<missing>"
+
+    try:
+        parsed = urlsplit(raw_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    if parsed.username or parsed.password:
+        netloc = f"<redacted>@{hostname}{port}" if hostname else "<redacted>"
+    else:
+        netloc = parsed.netloc or hostname
+
+    sanitized = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return sanitized or raw_url
 
 class RTorrentClient(TorrentClient):
     display_name = "rTorrent"
@@ -26,6 +53,8 @@ class RTorrentClient(TorrentClient):
         """
         if params is None:
             params = []
+
+        sanitized_url = _sanitize_base_url(self.url)
 
         # Build XML payload manually to avoid blocking xmlrpc libraries
         xml_params = ""
@@ -58,7 +87,36 @@ class RTorrentClient(TorrentClient):
                 resp = await client.post(self.url, content=payload, headers=headers, auth=auth)
                 resp.raise_for_status()
                 return self._parse_xml_response(resp.text)
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            logger.error(
+                "rTorrent XML-RPC HTTP error: url=%s method=%s status=%s digest_auth=%s error=%s",
+                sanitized_url,
+                method,
+                status_code,
+                bool(self.digest_auth),
+                str(e),
+            )
+            raise Exception(f"rTorrent connection failed: {e}")
+        except httpx.RequestError as e:
+            logger.error(
+                "rTorrent XML-RPC request error: url=%s method=%s status=%s digest_auth=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                bool(self.digest_auth),
+                str(e),
+            )
+            raise Exception(f"rTorrent connection failed: {e}")
         except Exception as e:
+            logger.error(
+                "rTorrent XML-RPC unexpected error: url=%s method=%s status=%s digest_auth=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                bool(self.digest_auth),
+                str(e),
+            )
             raise Exception(f"rTorrent connection failed: {e}")
 
     def _parse_xml_response(self, xml_str):
@@ -141,8 +199,19 @@ class RTorrentClient(TorrentClient):
 
     async def login(self):
         # Ping command
-        await self._request("system.client_version")
-        return True
+        try:
+            await self._request("system.client_version")
+            return True
+        except Exception as exc:
+            logger.warning(
+                "rTorrent login check failed: url=%s username_present=%s password_present=%s digest_auth=%s error=%s",
+                _sanitize_base_url(self.url),
+                bool(self.username),
+                bool(self.password),
+                bool(self.digest_auth),
+                str(exc),
+            )
+            return False
 
     async def get_status(self):
         try:

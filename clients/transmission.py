@@ -1,12 +1,39 @@
 # clients/transmission.py
+import logging
+from urllib.parse import urlsplit, urlunsplit
+
 import httpx
-from httpx import RequestError
+from httpx import HTTPStatusError, RequestError
 import json
 import re
 import posixpath
 import base64
 from pathlib import Path
 from .base import TorrentClient
+
+
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_base_url(url: str | None) -> str:
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return "<missing>"
+
+    try:
+        parsed = urlsplit(raw_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    if parsed.username or parsed.password:
+        netloc = f"<redacted>@{hostname}{port}" if hostname else "<redacted>"
+    else:
+        netloc = parsed.netloc or hostname
+
+    sanitized = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return sanitized or raw_url
 
 class TransmissionClient(TorrentClient):
     """
@@ -240,6 +267,7 @@ class TransmissionClient(TorrentClient):
 
         # Use Basic Auth if credentials are provided
         auth = (self.username, self.password) if self.username or self.password else None
+        sanitized_url = _sanitize_base_url(self.base_url)
 
         mode = self._rpc_mode if self._rpc_mode in {"jsonrpc", "legacy"} else "legacy"
         request_body = self._build_request(method, arguments, mode=mode)
@@ -264,6 +292,13 @@ class TransmissionClient(TorrentClient):
                             headers=headers
                         )
                     else:
+                        logger.warning(
+                            "Transmission RPC session negotiation failed: url=%s method=%s status=%s session_id_present=%s",
+                            sanitized_url,
+                            method,
+                            response.status_code,
+                            False,
+                        )
                         response.raise_for_status() # Re-raise if no new ID in 409
 
                 response.raise_for_status()
@@ -290,10 +325,36 @@ class TransmissionClient(TorrentClient):
                 self._rpc_mode = mode
                 return normalized
 
+        except HTTPStatusError as e:
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            logger.error(
+                "Transmission RPC HTTP error: url=%s method=%s status=%s rpc_mode=%s error=%s",
+                sanitized_url,
+                method,
+                status_code,
+                mode,
+                str(e),
+            )
+            raise Exception(f"HTTP error communicating with Transmission: {e}")
         except RequestError as e:
+            logger.error(
+                "Transmission RPC request error: url=%s method=%s status=%s rpc_mode=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                mode,
+                str(e),
+            )
             raise Exception(f"Network error communicating with Transmission: {e}")
         except Exception as e:
-            # Catch generic exceptions
+            logger.error(
+                "Transmission RPC unexpected error: url=%s method=%s status=%s rpc_mode=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                mode,
+                str(e),
+            )
             raise e
 
     async def login(self) -> bool:
@@ -301,7 +362,14 @@ class TransmissionClient(TorrentClient):
         try:
             await self._rpc_request("session-get", {"fields": ["version"]})
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Transmission login check failed: url=%s username_present=%s password_present=%s error=%s",
+                _sanitize_base_url(self.base_url),
+                bool(self.username),
+                bool(self.password),
+                str(exc),
+            )
             return False
 
     async def get_status(self) -> dict:

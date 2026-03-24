@@ -37,6 +37,7 @@ class QBittorrentClient(TorrentClient):
         self.base_url = config.get("TORRENT_CLIENT_URL")
         self.username = config.get("TORRENT_CLIENT_USERNAME")
         self.password = config.get("TORRENT_CLIENT_PASSWORD")
+        self._last_error_message = ""
         self.force_start_on_add = str(os.getenv("QB_FORCE_START", "false")).strip().lower() in {
             "1", "true", "t", "yes", "y", "on"
         }
@@ -45,9 +46,16 @@ class QBittorrentClient(TorrentClient):
     def display_name(self) -> str:
         return "qBittorrent"
 
+    def _set_last_error(self, message: str | None):
+        self._last_error_message = str(message or "").strip()
+
+    def _clear_last_error(self):
+        self._last_error_message = ""
+
     async def login(self) -> bool:
         """Authenticates with qBittorrent and stores session cookies."""
         if not all([self.base_url, self.username, self.password]):
+            self._set_last_error("qBittorrent client URL, username, or password is missing")
             logger.warning(
                 "qBittorrent login skipped due to missing configuration: url=%s username_present=%s password_present=%s",
                 _sanitize_base_url(self.base_url),
@@ -65,8 +73,10 @@ class QBittorrentClient(TorrentClient):
                 )
                 if "Ok" in response.text:
                     self.session_cookies = dict(response.cookies)
+                    self._clear_last_error()
                     return True
 
+                self._set_last_error("Authentication failed")
                 logger.warning(
                     "qBittorrent login rejected: url=%s status=%s response=%r",
                     sanitized_url,
@@ -75,6 +85,7 @@ class QBittorrentClient(TorrentClient):
                 )
         except HTTPStatusError as exc:
             status_code = exc.response.status_code if exc.response is not None else "unknown"
+            self._set_last_error(f"HTTP error communicating with qBittorrent: {exc}")
             logger.error(
                 "qBittorrent login HTTP error: url=%s status=%s error=%s",
                 sanitized_url,
@@ -82,6 +93,7 @@ class QBittorrentClient(TorrentClient):
                 str(exc),
             )
         except RequestError as exc:
+            self._set_last_error(f"Request error communicating with qBittorrent: {exc}")
             logger.error(
                 "qBittorrent login request error: url=%s status=%s error=%s",
                 sanitized_url,
@@ -89,6 +101,7 @@ class QBittorrentClient(TorrentClient):
                 str(exc),
             )
         except Exception as exc:
+            self._set_last_error(f"Unexpected qBittorrent login error: {exc}")
             logger.error(
                 "qBittorrent login unexpected error: url=%s status=%s error=%s",
                 sanitized_url,
@@ -129,11 +142,12 @@ class QBittorrentClient(TorrentClient):
                     else:
                         return {
                             "status": "error", 
-                            "message": "Authentication failed",
+                            "message": self._last_error_message or "Authentication failed",
                             "display_name": self.display_name
                         }
                 
                 response.raise_for_status()
+                self._clear_last_error()
                 return {
                     "status": "success",
                     "message": f"{self.display_name} is connected.",
@@ -143,6 +157,7 @@ class QBittorrentClient(TorrentClient):
         # FIX: Catch both RequestError (Network down) AND HTTPStatusError (502/500/404)
         except (RequestError, HTTPStatusError, Exception) as e:
             status_code = e.response.status_code if isinstance(e, HTTPStatusError) and e.response is not None else "n/a"
+            self._set_last_error(f"Failed to connect: {e}")
             logger.error(
                 "qBittorrent status check failed: url=%s status=%s error=%s",
                 sanitized_url,
