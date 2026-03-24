@@ -1,8 +1,35 @@
+import logging
 import os
+from urllib.parse import urlsplit, urlunsplit
+
 import httpx
 from httpx import RequestError, HTTPStatusError
 from .base import TorrentClient
 from hashing import calculate_torrent_hash_from_bytes
+
+
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_base_url(url: str | None) -> str:
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return "<missing>"
+
+    try:
+        parsed = urlsplit(raw_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    if parsed.username or parsed.password:
+        netloc = f"<redacted>@{hostname}{port}" if hostname else "<redacted>"
+    else:
+        netloc = parsed.netloc or hostname
+
+    sanitized = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return sanitized or raw_url
 
 class QBittorrentClient(TorrentClient):
     def __init__(self, config):
@@ -21,7 +48,15 @@ class QBittorrentClient(TorrentClient):
     async def login(self) -> bool:
         """Authenticates with qBittorrent and stores session cookies."""
         if not all([self.base_url, self.username, self.password]):
+            logger.warning(
+                "qBittorrent login skipped due to missing configuration: url=%s username_present=%s password_present=%s",
+                _sanitize_base_url(self.base_url),
+                bool(self.username),
+                bool(self.password),
+            )
             return False
+
+        sanitized_url = _sanitize_base_url(self.base_url)
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -31,8 +66,35 @@ class QBittorrentClient(TorrentClient):
                 if "Ok" in response.text:
                     self.session_cookies = dict(response.cookies)
                     return True
-        except (RequestError, HTTPStatusError):
-            pass
+
+                logger.warning(
+                    "qBittorrent login rejected: url=%s status=%s response=%r",
+                    sanitized_url,
+                    response.status_code,
+                    response.text[:200],
+                )
+        except HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            logger.error(
+                "qBittorrent login HTTP error: url=%s status=%s error=%s",
+                sanitized_url,
+                status_code,
+                str(exc),
+            )
+        except RequestError as exc:
+            logger.error(
+                "qBittorrent login request error: url=%s status=%s error=%s",
+                sanitized_url,
+                "n/a",
+                str(exc),
+            )
+        except Exception as exc:
+            logger.error(
+                "qBittorrent login unexpected error: url=%s status=%s error=%s",
+                sanitized_url,
+                "n/a",
+                str(exc),
+            )
         return False
 
     async def get_files(self, hash_val: str) -> list:
@@ -50,12 +112,18 @@ class QBittorrentClient(TorrentClient):
 
     async def get_status(self) -> dict:
         """Returns connection status and version info."""
+        sanitized_url = _sanitize_base_url(self.base_url)
         try:
             async with httpx.AsyncClient(cookies=self.session_cookies) as client:
                 response = await client.get(f"{self.base_url}/api/v2/app/version")
                 
                 # If 403/401, try re-login
                 if response.status_code in [401, 403]:
+                    logger.warning(
+                        "qBittorrent status check unauthorized: url=%s status=%s",
+                        sanitized_url,
+                        response.status_code,
+                    )
                     if await self.login():
                         return await self.get_status()  # Retry once
                     else:
@@ -74,6 +142,13 @@ class QBittorrentClient(TorrentClient):
                 }
         # FIX: Catch both RequestError (Network down) AND HTTPStatusError (502/500/404)
         except (RequestError, HTTPStatusError, Exception) as e:
+            status_code = e.response.status_code if isinstance(e, HTTPStatusError) and e.response is not None else "n/a"
+            logger.error(
+                "qBittorrent status check failed: url=%s status=%s error=%s",
+                sanitized_url,
+                status_code,
+                str(e),
+            )
             return {
                 "status": "error", 
                 "message": f"Failed to connect: {e}",

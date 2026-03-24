@@ -2597,9 +2597,22 @@ async def client_status():
     # Only login if needed (handled by client usually, but we force login in other places)
     try:
         return jsonify(await torrent_client.get_status())
-    except:
-        await torrent_client.login()
-        return jsonify(await torrent_client.get_status())
+    except Exception as exc:
+        app.logger.warning(f"[CLIENT-STATUS] Initial status check failed; retrying login: {exc}")
+        try:
+            await torrent_client.login()
+            status = await torrent_client.get_status()
+            app.logger.info(
+                f"[CLIENT-STATUS] Retry completed with status={status.get('status')} message={status.get('message', '')}"
+            )
+            return jsonify(status)
+        except Exception as retry_exc:
+            app.logger.error(f"[CLIENT-STATUS] Retry failed after login attempt: {retry_exc}")
+            return jsonify({
+                "status": "error",
+                "message": f"Client status retry failed: {retry_exc}",
+                "display_name": getattr(torrent_client, "display_name", "Torrent Client"),
+            }), 502
 
 @app.route('/client/categories', methods=['GET'])
 async def client_categories():

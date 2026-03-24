@@ -472,13 +472,26 @@ function initializeEventStream() {
                     if (lastClientStatus === data.status) break;
                     lastClientStatus = data.status;
                     const statusSpan = document.getElementById("client-status");
+                    const statusMessage = document.getElementById("client-status-message");
                     const statusIconSpan = document.getElementById("client-status-icon");
                     const clientTypeDisplay = document.getElementById('client-type-display');
                     const isConnected = data.status === "connected";
+                    const detailMessage = String(data.message || '').trim();
 
                     if (statusSpan) {
                         statusSpan.textContent = isConnected ? "CONNECTED" : "NOT CONNECTED";
                         statusSpan.className = isConnected ? "text-success" : "text-danger";
+                    }
+                    if (statusMessage) {
+                        if (detailMessage) {
+                            statusMessage.textContent = detailMessage;
+                            statusMessage.className = isConnected
+                                ? "small text-success-emphasis mt-1"
+                                : "small text-danger mt-1";
+                        } else if (isConnected) {
+                            statusMessage.textContent = "";
+                            statusMessage.className = "small text-body-secondary mt-1";
+                        }
                     }
                     if (statusIconSpan) statusIconSpan.innerHTML = isConnected ? greenCheckIcon : redXIcon;
 
@@ -821,6 +834,7 @@ function syncTypeCategoryOptions() {
 
 function checkClientStatus() {
     const statusSpan = document.getElementById("client-status");
+    const statusMessage = document.getElementById("client-status-message");
     const statusIconSpan = document.getElementById("client-status-icon");
     const clientTypeDisplay = document.getElementById('client-type-display');
 
@@ -828,10 +842,22 @@ function checkClientStatus() {
         .then(response => response.json())
         .then(data => {
             const isSuccess = data.status === "success";
+            const detailMessage = String(data.message || '').trim();
 
             if (statusSpan) {
                 statusSpan.textContent = isSuccess ? "CONNECTED" : "NOT CONNECTED";
                 statusSpan.className = isSuccess ? "text-success" : "text-danger";
+            }
+            if (statusMessage) {
+                if (detailMessage) {
+                    statusMessage.textContent = detailMessage;
+                    statusMessage.className = isSuccess
+                        ? "small text-success-emphasis mt-1"
+                        : "small text-danger mt-1";
+                } else {
+                    statusMessage.textContent = "";
+                    statusMessage.className = "small text-body-secondary mt-1";
+                }
             }
             if (statusIconSpan) statusIconSpan.innerHTML = isSuccess ? greenCheckIcon : redXIcon;
 
@@ -844,6 +870,10 @@ function checkClientStatus() {
         })
         .catch(error => {
             if (statusSpan) { statusSpan.textContent = "NOT CONNECTED"; statusSpan.className = "text-danger"; }
+            if (statusMessage) {
+                statusMessage.textContent = error?.message || 'Unable to reach client status endpoint.';
+                statusMessage.className = "small text-danger mt-1";
+            }
             if (statusIconSpan) statusIconSpan.innerHTML = redXIcon;
         });
 }
