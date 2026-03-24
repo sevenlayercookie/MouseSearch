@@ -1821,8 +1821,8 @@ def update_cookies(response):
 
 async def login_mam():
     """Checks if the MAM session is valid by attempting to load user data."""
-    data = await fetch_mam_json_load()
-    return data is not None
+    result = await fetch_mam_json_load_result()
+    return result["data"] is not None
 
 async def push_mam_stats():
     """Fetch MAM user stats and broadcast them via SSE."""
@@ -2196,17 +2196,32 @@ async def mam_autosuggest():
     
 @app.route('/mam/status', methods=['GET'])
 async def mam_status(): 
-    return jsonify({'status': 'connected' if await login_mam() else 'not connected'})
+    result = await fetch_mam_json_load_result()
+    if result["data"] is not None:
+        return jsonify({'status': 'connected', 'message': 'MyAnonaMouse is connected.'})
+
+    status_code = result["status_code"] if result["status_code"] is not None else 401
+    return jsonify({
+        'status': 'not connected',
+        'message': result["message"] or 'Not logged into MAM or failed to fetch data',
+    }), status_code
 
 @app.route('/mam/user_data', methods=['GET'])
 async def mam_user_data():
-    user_data = await fetch_mam_json_load()
+    result = await fetch_mam_json_load_result()
+    user_data = result["data"]
     
     if not user_data:
-        return jsonify({'error': 'Not logged into MAM or failed to fetch data'}), 401
+        status_code = result["status_code"] if result["status_code"] is not None else 401
+        return jsonify({
+            'error': result["message"] or 'Not logged into MAM or failed to fetch data',
+            'message': result["message"] or 'Not logged into MAM or failed to fetch data',
+        }), status_code
         
     if seedbonus := user_data.get("seedbonus"):
         user_data["seedbonus_formatted"] = f"{seedbonus:,}"
+
+    user_data["message"] = "MyAnonaMouse is connected."
         
     return jsonify(user_data)
 
@@ -2460,32 +2475,108 @@ def parse_mam_metadata(json_str, is_series=False):
         # Fallback if it's not JSON, just return unescaped string
         return html.unescape(str(json_str))
 
-async def fetch_mam_json_load():
-    """
-    Unified helper to fetch data from jsonLoad.php.
-    Handles connection, cookies, and basic error logging.
-    Returns the JSON dict on success, or None on failure.
-    """
-    url = app.config.get("MAM_API_URL")
-    # Basic pre-check
-    if not url or not mam_session_cookies.get("mam_id"): 
-        return None
+def sanitize_mam_api_url(url: str | None) -> str:
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return "<missing>"
 
     try:
-        api_url = f"{url}/jsonLoad.php"
+        parsed = urlparse(raw_url)
+    except ValueError:
+        return "<invalid-url>"
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    if parsed.username or parsed.password:
+        netloc = f"<redacted>@{hostname}{port}" if hostname else "<redacted>"
+    else:
+        netloc = parsed.netloc or hostname
+
+    return parsed._replace(netloc=netloc, query="", fragment="").geturl() or raw_url
+
+
+async def fetch_mam_json_load_result():
+    """
+    Unified helper to fetch data from jsonLoad.php with structured diagnostics.
+    Returns a dict with keys: data, message, status_code.
+    """
+    url = app.config.get("MAM_API_URL")
+    sanitized_url = sanitize_mam_api_url(url)
+    mam_id_present = bool(mam_session_cookies.get("mam_id"))
+
+    if not url:
+        message = "MAM API URL is not configured."
+        app.logger.warning("[MAM-API] %s url=%s mam_id_present=%s", message, sanitized_url, mam_id_present)
+        return {"data": None, "message": message, "status_code": 500}
+
+    if not mam_id_present:
+        message = "MAM session ID is not configured."
+        app.logger.warning("[MAM-API] %s url=%s mam_id_present=%s", message, sanitized_url, mam_id_present)
+        return {"data": None, "message": message, "status_code": 401}
+
+    api_url = f"{url}/jsonLoad.php"
+    try:
         async with httpx.AsyncClient() as client:
             response = await client.get(api_url, cookies=mam_session_cookies, timeout=10)
-            
-            # Centralized cookie update
+
             update_cookies(response)
-            
+
             response.raise_for_status()
-            return response.json()
-            
-    except Exception as e:
-        # Log the specific error here so calling functions don't have to
-        app.logger.warning(f"[MAM-API] jsonLoad.php request failed: {e}")
-        return None
+            data = response.json()
+            return {"data": data, "message": "MyAnonaMouse is connected.", "status_code": response.status_code}
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 502
+        response_preview = ""
+        if exc.response is not None:
+            response_preview = (exc.response.text or "")[:200]
+        message = f"MAM API request failed with HTTP {status_code}."
+        app.logger.warning(
+            "[MAM-API] jsonLoad.php HTTP error: url=%s status=%s mam_id_present=%s response=%r error=%s",
+            sanitized_url,
+            status_code,
+            mam_id_present,
+            response_preview,
+            str(exc),
+        )
+        return {"data": None, "message": message, "status_code": status_code}
+    except httpx.RequestError as exc:
+        message = f"MAM API request error: {exc}"
+        app.logger.warning(
+            "[MAM-API] jsonLoad.php request error: url=%s status=%s mam_id_present=%s error=%s",
+            sanitized_url,
+            "n/a",
+            mam_id_present,
+            str(exc),
+        )
+        return {"data": None, "message": message, "status_code": 502}
+    except ValueError as exc:
+        message = f"MAM API returned invalid JSON: {exc}"
+        app.logger.warning(
+            "[MAM-API] jsonLoad.php invalid JSON: url=%s status=%s mam_id_present=%s error=%s",
+            sanitized_url,
+            200,
+            mam_id_present,
+            str(exc),
+        )
+        return {"data": None, "message": message, "status_code": 502}
+    except Exception as exc:
+        message = f"Unexpected MAM API error: {exc}"
+        app.logger.warning(
+            "[MAM-API] jsonLoad.php unexpected error: url=%s status=%s mam_id_present=%s error=%s",
+            sanitized_url,
+            "n/a",
+            mam_id_present,
+            str(exc),
+        )
+        return {"data": None, "message": message, "status_code": 502}
+
+
+async def fetch_mam_json_load():
+    """
+    Backwards-compatible wrapper returning only the JSON dict on success.
+    """
+    result = await fetch_mam_json_load_result()
+    return result["data"]
     
 async def get_user_stats():
     """Helper to fetch current user stats (ratio, uploaded, downloaded, seedbonus)."""

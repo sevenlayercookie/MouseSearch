@@ -920,11 +920,22 @@ function refreshCategories() {
 
 function loadMamUserData() {
     fetch('/mam/user_data', { cache: "no-store" })
-        .then(response => { if (!response.ok) throw new Error(); return response.json(); })
+        .then(async response => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data?.message || data?.error || `MAM request failed with HTTP ${response.status}`);
+            }
+            return data;
+        })
         .then(data => {
             const statusSpan = document.getElementById('mam-status');
+            const statusMessage = document.getElementById('mam-status-message');
             const statusIconSpan = document.getElementById('mam-status-icon');
             if (statusSpan) { statusSpan.textContent = 'CONNECTED'; statusSpan.className = 'text-success'; }
+            if (statusMessage) {
+                statusMessage.textContent = String(data.message || 'MyAnonaMouse is connected.');
+                statusMessage.className = 'small text-success-emphasis mt-1';
+            }
             if (statusIconSpan) statusIconSpan.innerHTML = greenCheckIcon;
 
             document.getElementById('mam-username').textContent = data.username || 'N/A';
@@ -955,14 +966,38 @@ function loadMamUserData() {
                 const diffWeeks = diffMs / (1000 * 60 * 60 * 24 * 7);
                 vipWeeksSpan.textContent = diffWeeks > 0 ? `${diffWeeks.toFixed(1)} weeks` : 'Expired';
                 vipWeeksContainer.style.display = 'block';
+            } else if (vipWeeksContainer && vipWeeksSpan) {
+                vipWeeksSpan.textContent = '--';
+                vipWeeksContainer.style.display = 'none';
             }
         })
         .catch(error => {
             const statusSpan = document.getElementById('mam-status');
+            const statusMessage = document.getElementById('mam-status-message');
             const statusIconSpan = document.getElementById('mam-status-icon');
+            const vipWeeksContainer = document.getElementById('vip-weeks-container');
+            const vipWeeksSpan = document.getElementById('vip-weeks-remaining');
 
             if (statusSpan) { statusSpan.textContent = 'NOT CONNECTED'; statusSpan.className = 'text-danger'; }
+            if (statusMessage) {
+                statusMessage.textContent = error?.message || 'Not logged into MAM or failed to fetch data.';
+                statusMessage.className = 'small text-danger mt-1';
+            }
             if (statusIconSpan) statusIconSpan.innerHTML = redXIcon;
+
+            document.getElementById('mam-username').textContent = 'N/A';
+            document.getElementById('mam-class').textContent = 'N/A';
+            document.getElementById('mam-uploaded').textContent = 'N/A';
+            document.getElementById('mam-downloaded').textContent = 'N/A';
+            document.getElementById('mam-ratio').textContent = 'N/A';
+            document.getElementById('mam-bonus').textContent = 'N/A';
+            window.currentVipUntil = null;
+            window.currentBonusPoints = 0;
+            window.isVipActive = false;
+            if (vipWeeksContainer && vipWeeksSpan) {
+                vipWeeksSpan.textContent = '--';
+                vipWeeksContainer.style.display = 'none';
+            }
         });
 }
 
