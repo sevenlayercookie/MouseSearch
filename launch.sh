@@ -17,6 +17,8 @@ fi
 # Default values
 VENV_PATH="${VENV_PATH:-.venv}"
 PORT="${PORT:-5000}"
+BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
+ROOT_PATH="${ROOT_PATH:-}"
 ACCESS_LOGFILE="${ACCESS_LOGFILE:-/dev/null}"
 
 # Parse command line arguments
@@ -34,12 +36,22 @@ while [[ $# -gt 0 ]]; do
             ACCESS_LOGFILE="$2"
             shift 2
             ;;
+        -b|--bind)
+            BIND_ADDRESS="$2"
+            shift 2
+            ;;
+        -r|--root-path)
+            ROOT_PATH="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  -p, --port PORT       Set the port (default: 5000)"
             echo "  -v, --venv PATH       Set the virtual environment path (default: .venv)"
             echo "  -a, --access-logfile  Hypercorn access log target (default: /dev/null, use '-' for stdout)"
+            echo "  -b, --bind ADDRESS    Bind address (default: 0.0.0.0, use 127.0.0.1 behind a reverse proxy)"
+            echo "  -r, --root-path PATH  Serve the app under a URL prefix, e.g. /mousesearch (default: none)"
             echo "  -h, --help            Show this help message"
             exit 0
             ;;
@@ -60,7 +72,12 @@ fi
 source "$VENV_PATH/bin/activate"
 
 # Launch hypercorn with specified port
-hypercorn --bind "0.0.0.0:$PORT" --workers 1 --worker-class asyncio --access-logfile "$ACCESS_LOGFILE" --error-logfile - --log-level info app:app 2>&1 | while IFS= read -r line; do
+EXTRA_ARGS=()
+if [ -n "$ROOT_PATH" ]; then
+    EXTRA_ARGS+=(--root-path "$ROOT_PATH")
+fi
+
+hypercorn --bind "$BIND_ADDRESS:$PORT" --workers 1 --worker-class asyncio --access-logfile "$ACCESS_LOGFILE" --error-logfile - --log-level info "${EXTRA_ARGS[@]}" app:app 2>&1 | while IFS= read -r line; do
     echo "$line"
     if [[ "$line" == *"Address already in use"* ]] || [[ "$line" == *"Errno 98"* ]]; then
         echo ""

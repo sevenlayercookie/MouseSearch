@@ -129,6 +129,38 @@ The application will be available at `http://<your-server-ip>:5000`.
 
 The application will be available at `http://<your-server-ip>:5000` (or your custom port).
 
+### Serving Under a URL Prefix (Reverse Proxy Subpath)
+
+By default the application is served from the root of its host (`http://<your-server-ip>:5000`). If you want to serve it under a subpath behind a reverse proxy (e.g., `https://<your-domain>/mousesearch/`, common on shared seedboxes), launch it with `--root-path`:
+
+```bash
+./launch.sh --port 8080 --root-path /mousesearch
+```
+
+You can also set `ROOT_PATH=/mousesearch` in `.env` instead of passing the flag. When running behind a reverse proxy on the same machine, add `--bind 127.0.0.1` so the app is only reachable through the proxy.
+
+Then point your reverse proxy at the app **without stripping the prefix** — the app removes it itself via the ASGI `root_path` mechanism. Example Nginx location:
+
+```nginx
+location /mousesearch/ {
+    proxy_pass          http://127.0.0.1:8080;   # no trailing slash: keep the prefix
+    proxy_http_version  1.1;
+    proxy_set_header    Host                $http_host;
+    proxy_set_header    X-Forwarded-Proto   $scheme;
+    proxy_set_header    X-Forwarded-For     $proxy_add_x_forwarded_for;
+
+    # Required for live status updates (Server-Sent Events)
+    proxy_buffering     off;
+    proxy_read_timeout  1h;
+}
+```
+
+Notes:
+
+* The prefix must not have a trailing slash (`/mousesearch`, not `/mousesearch/`).
+* Without `--root-path`, nothing changes — the app behaves exactly as before.
+* `proxy_buffering off` and the long `proxy_read_timeout` matter: MouseSearch streams live torrent status over Server-Sent Events (`/events`), which stalls behind a buffering proxy and is cut off by Nginx's default 60-second read timeout.
+
 ---
 
 ## Configuration

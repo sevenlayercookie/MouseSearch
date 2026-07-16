@@ -21,7 +21,7 @@
               <div
                 class="col-12 col-md-4 col-lg-4 mb-4 mb-md-0 text-center text-md-start d-flex justify-content-center align-items-center">
                 <div class="book-cover-wrapper">
-                  <img src="/static/icons/no_cover.png" id="detail-cover" class="book-cover-img" alt="Cover">
+                  <img src="{{ url_for('static', filename='icons/no_cover.png') }}" id="detail-cover" class="book-cover-img" alt="Cover">
                 </div>
               </div>
 
@@ -43,7 +43,7 @@
                       <a id="detail-hero-hc-link-main" class="detail-hero-hc-card__link d-inline-flex flex-column gap-1 text-decoration-none"
                         href="#" target="_blank" rel="noopener noreferrer">
                         <div class="d-flex align-items-center gap-1 opacity-75" style="font-size: 0.7rem;">
-                          <img src="/static/icons/hardcover.png" alt="" style="width: 0.8rem; height: 0.8rem; object-fit: contain;" loading="lazy">
+                          <img src="{{ url_for('static', filename='icons/hardcover.png') }}" alt="" style="width: 0.8rem; height: 0.8rem; object-fit: contain;" loading="lazy">
                           <span class="text-uppercase fw-semibold" style="letter-spacing: 0.05em;">Hardcover</span>
                         </div>
                         <div id="detail-hero-hc-rating" class="d-none"></div>
@@ -173,7 +173,7 @@
 
                 <div class="card mb-4" id="detail-hardcover-card" style="display: none;">
                   <div class="card-header d-flex align-items-center gap-2">
-                    <img src="/static/icons/hardcover.png" alt="" style="width: 1rem; height: 1rem; object-fit: contain;" loading="lazy">
+                    <img src="{{ url_for('static', filename='icons/hardcover.png') }}" alt="" style="width: 1rem; height: 1rem; object-fit: contain;" loading="lazy">
                     <h5 class="my-2 text-body-emphasis">Hardcover</h5>
                   </div>
                   <div class="card-body">

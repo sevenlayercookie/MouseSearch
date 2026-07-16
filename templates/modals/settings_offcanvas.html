@@ -33,7 +33,7 @@
           <li class="nav-item" role="presentation">
             <button class="nav-link" id="hardcover-tab" data-bs-toggle="tab" data-bs-target="#hardcover-pane"
               type="button" role="tab" aria-controls="hardcover-pane" aria-selected="false">
-              <img src="/static/icons/hardcover.png" alt="" class="settings-menu-icon me-1" loading="lazy">
+              <img src="{{ url_for('static', filename='icons/hardcover.png') }}" alt="" class="settings-menu-icon me-1" loading="lazy">
               Hardcover
             </button>
           </li>
@@ -544,7 +544,7 @@
               class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
               onclick="toggleCardSwitch('HARDCOVER_ENRICHMENT_ENABLED')">
               <span class="small fw-bold d-flex align-items-center">
-                <img src="/static/icons/hardcover.png" alt="" class="settings-inline-logo me-2" loading="lazy">
+                <img src="{{ url_for('static', filename='icons/hardcover.png') }}" alt="" class="settings-inline-logo me-2" loading="lazy">
                 Enable Hardcover Metadata Enrichment
               </span>
               <div class="form-check form-switch m-0">
