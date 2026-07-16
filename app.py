@@ -126,6 +126,22 @@ RESULT_DISPLAY_FIELDS = [
     "narrator",
     "series",
 ]
+RESULTS_SORT_MODES = {
+    "quality_desc",
+    "date_uploaded_desc",
+    "date_uploaded_asc",
+    "author_asc",
+    "author_desc",
+    "title_asc",
+    "title_desc",
+    "seeders_desc",
+    "seeders_asc",
+    "snatches_desc",
+    "snatches_asc",
+    "size_desc",
+    "size_asc",
+}
+DEFAULT_RESULTS_SORT_MODE = "quality_desc"
 LANGUAGE_BY_ID = {str(value): name for name, value in language_dict.items()}
 DEFAULT_SEARCH_FILTER_DEFAULTS = {
     "searchType": "all",
@@ -169,6 +185,13 @@ def normalize_result_display_fields(value, fallback):
         items = [item.strip() for item in value.split(",") if item.strip()]
         return [item for item in items if item in allowed] if items else fallback
     return fallback
+
+
+def normalize_results_sort_mode(value):
+    normalized = str(value or "").strip()
+    if normalized in RESULTS_SORT_MODES:
+        return normalized
+    return DEFAULT_RESULTS_SORT_MODE
 
 
 def coerce_bool(val, default: bool) -> bool:
@@ -1010,6 +1033,7 @@ FALLBACK_CONFIG = {
     "HARDCOVER_CONCURRENCY": 6,
     "HARDCOVER_SEARCH_PER_PAGE": 5,
     "RESULTS_DISPLAY_FIELDS": ["narrator", "series", "file_size", "file_type", "seeders"],
+    "RESULTS_SORT_MODE": DEFAULT_RESULTS_SORT_MODE,
     "SEARCH_FILTER_DEFAULTS": copy.deepcopy(DEFAULT_SEARCH_FILTER_DEFAULTS),
 }
 ENV_ONLY_CONFIG_KEYS = {"QBITTORRENT_VERIFY_WEBUI_CERTIFICATE"}
@@ -1683,6 +1707,7 @@ def load_config():
         config.get("RESULTS_DISPLAY_FIELDS"),
         FALLBACK_CONFIG["RESULTS_DISPLAY_FIELDS"]
     )
+    config["RESULTS_SORT_MODE"] = normalize_results_sort_mode(config.get("RESULTS_SORT_MODE"))
     config["SEARCH_FILTER_DEFAULTS"] = normalize_search_filter_defaults(
         config.get("SEARCH_FILTER_DEFAULTS")
     )
@@ -5786,6 +5811,20 @@ async def update_result_display_fields():
     save_config(config_to_update)
     app.config["RESULTS_DISPLAY_FIELDS"] = normalized
     return jsonify({"status": "success", "fields": normalized})
+
+
+@app.route("/update_results_sort_mode", methods=["POST"])
+async def update_results_sort_mode():
+    payload = await request.get_json(silent=True) or {}
+    requested_sort_mode = str(payload.get("sort_mode") or "").strip()
+    if requested_sort_mode not in RESULTS_SORT_MODES:
+        return jsonify({"status": "error", "message": "Invalid results sort mode."}), 400
+
+    config_to_update = app.config.copy()
+    config_to_update["RESULTS_SORT_MODE"] = requested_sort_mode
+    save_config(config_to_update)
+    app.config["RESULTS_SORT_MODE"] = requested_sort_mode
+    return jsonify({"status": "success", "sort_mode": requested_sort_mode})
 
 
 @app.route("/update_default_search_filters", methods=["POST"])

@@ -279,6 +279,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `HARDCOVER_CONCURRENCY` | No | Maximum in-flight Hardcover enrichments. Defaults to `6`. |
 | `HARDCOVER_SEARCH_PER_PAGE` | No | Hardcover candidates checked per search path. Defaults to `5`. |
 | `RESULTS_DISPLAY_FIELDS` | No | List of fields to display in search results. Options: `date_uploaded`, `file_type`, `file_size`, `snatches`, `seeders`, `category`, `language`, `narrator`, `series`. |
+| `RESULTS_SORT_MODE` | No | Initial search-results sort mode. The latest selection is persisted in `config.json`. Defaults to `quality_desc`. |
 | `APP_LOG_LEVEL` | No | Application log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Defaults to `INFO`. |
 | `LOG_HTTP_REQUESTS` | No | Enables app-level HTTP request logging with sanitized query params. Defaults to `false`. |
 | `LOG_HTTP_REQUESTS_INCLUDE_STATIC` | No | Includes `/static/*` and favicon requests in app-level request logs. Defaults to `false`. |

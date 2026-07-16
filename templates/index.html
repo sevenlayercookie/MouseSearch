@@ -514,6 +514,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.5/dist/js/tom-select.complete.min.js"></script>
   <script>
     window.resultDisplayFields = {{ RESULTS_DISPLAY_FIELDS | tojson }};
+    window.resultsSortMode = {{ RESULTS_SORT_MODE | tojson }};
   </script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 

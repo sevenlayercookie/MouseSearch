@@ -5520,16 +5520,34 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     if (resultsSortOptions.length) {
-        const initiallyActive = [...resultsSortOptions].find(option => option.classList.contains('active'));
-        currentResultsSort = initiallyActive?.dataset.sortMode || DEFAULT_RESULTS_SORT;
+        const allowedSortModes = new Set(
+            [...resultsSortOptions].map(option => option.dataset.sortMode).filter(Boolean)
+        );
+        const configuredSortMode = String(window.resultsSortMode || '');
+        currentResultsSort = allowedSortModes.has(configuredSortMode)
+            ? configuredSortMode
+            : DEFAULT_RESULTS_SORT;
         updateSortMenuUI();
 
         resultsSortOptions.forEach(option => {
             option.addEventListener('click', () => {
                 currentResultsSort = option.dataset.sortMode || DEFAULT_RESULTS_SORT;
                 updateSortMenuUI();
-            applyCurrentResultsSort(resultsContainer);
-            applyHideDownloadedResultsFilter();
+                applyCurrentResultsSort(resultsContainer);
+                applyHideDownloadedResultsFilter();
+                fetch(`${APP_BASE}/update_results_sort_mode`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sort_mode: currentResultsSort })
+                })
+                    .then(response => response.json().then(data => ({ response, data })))
+                    .then(({ response, data }) => {
+                        if (!response.ok || data.status !== 'success') {
+                            throw new Error(data.message || 'Failed to save sort preference.');
+                        }
+                        window.resultsSortMode = data.sort_mode;
+                    })
+                    .catch(() => showToast('Failed to save result sorting.', 'danger'));
             });
         });
     }
