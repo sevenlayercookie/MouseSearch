@@ -3743,10 +3743,55 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Buy VIP Logic
     const buyVipButton = document.getElementById('buy-vip-button');
     const buyWedgeButton = document.getElementById('buy-wedge-button');
+    const confirmWedgePurchaseButton = document.getElementById('confirm-wedge-purchase-button');
     const vipModalEl = document.getElementById('vipPurchaseModal');
     const vipModal = vipModalEl ? new bootstrap.Modal(vipModalEl) : null;
+    const wedgeModalEl = document.getElementById('wedgePurchaseModal');
+    const wedgeModal = wedgeModalEl ? new bootstrap.Modal(wedgeModalEl) : null;
+    let wedgeConfirmationMode = 'purchase';
+    let reopenDownloadModalAfterWedge = false;
     const VIP_COST_PER_WEEK = 1250;
     const MAX_VIP_WEEKS = 12.85;
+
+    function showWedgeConfirmation(mode = 'purchase') {
+        if (!wedgeModal) return;
+
+        wedgeConfirmationMode = mode;
+        const isDownloadUse = mode === 'download';
+        const title = document.getElementById('wedge-modal-title-text');
+        const question = document.getElementById('wedge-modal-question');
+        const warning = document.getElementById('wedge-modal-warning');
+        const balanceRow = document.getElementById('wedge-modal-balance-row');
+        const confirmLabel = document.getElementById('wedge-modal-confirm-label');
+
+        if (title) title.textContent = isDownloadUse ? 'Confirm Wedge Use' : 'Confirm Wedge Purchase';
+        if (question) {
+            question.textContent = isDownloadUse
+                ? 'Use one personal Freeleech wedge when this download starts?'
+                : 'Buy one personal Freeleech wedge using your MAM bonus points?';
+        }
+        if (warning) {
+            warning.textContent = isDownloadUse
+                ? 'The wedge will be spent when the download starts.'
+                : 'This purchase spends bonus points immediately.';
+        }
+        if (balanceRow) balanceRow.classList.toggle('d-none', isDownloadUse);
+        if (confirmLabel) confirmLabel.textContent = isDownloadUse ? 'Use Wedge' : 'Buy Wedge';
+
+        if (!isDownloadUse) {
+            const currentBonus = Number(window.currentBonusPoints || 0);
+            const currentBonusEl = document.getElementById('wedge-modal-current-bp');
+            if (currentBonusEl) currentBonusEl.textContent = currentBonus.toLocaleString();
+        }
+
+        wedgeModal.show();
+    }
+
+    wedgeModalEl?.addEventListener('hidden.bs.modal', () => {
+        if (!reopenDownloadModalAfterWedge) return;
+        reopenDownloadModalAfterWedge = false;
+        confirmModal?.show();
+    });
 
     if (buyVipButton && vipModal) {
         buyVipButton.addEventListener('click', function () {
@@ -3847,8 +3892,29 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
     }
 
-    if (buyWedgeButton) {
+    if (buyWedgeButton && wedgeModal) {
         buyWedgeButton.addEventListener('click', function () {
+            reopenDownloadModalAfterWedge = false;
+            showWedgeConfirmation('purchase');
+        });
+    }
+
+    if (confirmWedgePurchaseButton) {
+        confirmWedgePurchaseButton.addEventListener('click', function () {
+            if (wedgeConfirmationMode === 'download') {
+                if (!pendingDownloadData?.id) {
+                    reopenDownloadModalAfterWedge = false;
+                    wedgeModal?.hide();
+                    return;
+                }
+
+                pendingDownloadData.use_personal_freeleech = true;
+                showToast('Freeleech Wedge will be used when this download starts.', 'success');
+                updateConfirmModalFreeleechUI();
+                wedgeModal?.hide();
+                return;
+            }
+
             const originalHtml = this.innerHTML;
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Buying...';
@@ -3864,6 +3930,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                         const bonusSuffix = data.seedbonus !== undefined ? ` Remaining: ${data.seedbonus} BP` : '';
                         showToast(`Purchased ${purchased}.${bonusSuffix}`, 'success');
                         loadMamUserData();
+                        wedgeModal?.hide();
                     } else {
                         showToast(data.error || 'Failed to buy wedge', 'danger');
                     }
@@ -6212,9 +6279,16 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     personalFlBtn?.addEventListener('click', function () {
         if (!pendingDownloadData?.id) return;
-        pendingDownloadData.use_personal_freeleech = true;
-        showToast('Freeleech Wedge will be used when this download starts.', 'success');
-        updateConfirmModalFreeleechUI();
+
+        reopenDownloadModalAfterWedge = true;
+        if (confirmModalEl?.classList.contains('show')) {
+            confirmModalEl.addEventListener('hidden.bs.modal', () => {
+                showWedgeConfirmation('download');
+            }, { once: true });
+            confirmModal?.hide();
+        } else {
+            showWedgeConfirmation('download');
+        }
     });
 
     if (confirmInput) {

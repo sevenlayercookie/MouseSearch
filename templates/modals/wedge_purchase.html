@@ -1,0 +1,33 @@
+<div class="modal fade" id="wedgePurchaseModal" tabindex="-1" aria-labelledby="wedgePurchaseModalLabel"
+  aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="wedgePurchaseModalLabel">
+          <i class="bi bi-ticket-perforated-fill text-warning me-1"></i>
+          <span id="wedge-modal-title-text">Confirm Wedge Purchase</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3" id="wedge-modal-question">Buy one personal Freeleech wedge using your MAM bonus points?</p>
+        <div class="alert alert-warning d-flex align-items-start mb-0" role="alert">
+          <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+          <div>
+            <strong id="wedge-modal-warning">This purchase spends bonus points immediately.</strong>
+            <div class="small mt-1" id="wedge-modal-balance-row">
+              Current balance: <span id="wedge-modal-current-bp">---</span> BP
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning" id="confirm-wedge-purchase-button">
+          <i class="bi bi-ticket-perforated-fill me-1"></i>
+          <span id="wedge-modal-confirm-label">Buy Wedge</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
