@@ -4,9 +4,13 @@
 //  1. GLOBAL HELPERS & STATE
 // ============================================================
 
+// Base path support: set by the inline shim in index.html when the app is
+// served under a URL prefix (hypercorn --root-path). Empty string at root.
+const APP_BASE = (window.APP_BASE || '').replace(/\/+$/, '');
+
 // Icon definitions
-const greenCheckIcon = `<img src="/static/icons/check_circle.svg" alt="connected" style="height: 16px; width: 16px;">`;
-const redXIcon = `<img src="/static/icons/x_circle.svg" alt="not connected" style="height: 16px; width: 16px;">`;
+const greenCheckIcon = `<img src="${APP_BASE}/static/icons/check_circle.svg" alt="connected" style="height: 16px; width: 16px;">`;
+const redXIcon = `<img src="${APP_BASE}/static/icons/x_circle.svg" alt="not connected" style="height: 16px; width: 16px;">`;
 
 // Global State
 const torrentHashMap = {};
@@ -41,8 +45,8 @@ window.__hardcoverPendingStatusBookIds = hardcoverPendingStatusBookIds;
 const pendingHardcoverEnrichmentPayloads = window.__pendingHardcoverEnrichmentPayloads instanceof Map ? window.__pendingHardcoverEnrichmentPayloads : new Map();
 window.__pendingHardcoverEnrichmentPayloads = pendingHardcoverEnrichmentPayloads;
 let hardcoverStatusPickerOpenedAt = 0;
-const MOUSESEARCH_LOGO_URL = '/static/icons/mouse.svg';
-const HARDCOVER_LOGO_URL = '/static/icons/hardcover.png';
+const MOUSESEARCH_LOGO_URL = `${APP_BASE}/static/icons/mouse.svg`;
+const HARDCOVER_LOGO_URL = `${APP_BASE}/static/icons/hardcover.png`;
 const HARDCOVER_STATUS_DEFINITIONS = Object.freeze([
     {
         statusId: 1,
@@ -201,7 +205,7 @@ function loadLegacyCategoryDefinitions() {
     if (legacyCategoryData) return Promise.resolve(legacyCategoryData);
     if (legacyCategoryPromise) return legacyCategoryPromise;
 
-    const legacyUrl = window.LEGACY_CATEGORY_URL || '/static/categoryDefinitionsLegacy.json';
+    const legacyUrl = window.LEGACY_CATEGORY_URL || `${APP_BASE}/static/categoryDefinitionsLegacy.json`;
     legacyCategoryPromise = fetch(legacyUrl, { cache: 'no-store' })
         .then(response => {
             if (!response.ok) throw new Error('Failed to load legacy categories');
@@ -297,7 +301,7 @@ function getPosterExtension(mimeType) {
 function handleBookCoverError(imgElement) {
     // 1. Prevent infinite loop if placeholder is also missing
     imgElement.onerror = null;
-    imgElement.src = '/static/icons/no_cover.png';
+    imgElement.src = `${APP_BASE}/static/icons/no_cover.png`;
 
     // 2. Set a fallback background for the hero
     // (Blurring the "no_cover.png" usually looks bad, so we use a gradient instead)
@@ -488,12 +492,12 @@ function handleResultThumbnailError(imgElement) {
     if (hardcoverCoverUrl && imgElement.dataset.triedHardcoverCover !== 'true') {
         imgElement.dataset.triedHardcoverCover = 'true';
         if (resultItem) resultItem.dataset.hasMamCover = 'false';
-        imgElement.src = `/proxy_thumbnail?url=${encodeURIComponent(hardcoverCoverUrl)}`;
+        imgElement.src = `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(hardcoverCoverUrl)}`;
         return;
     }
 
     imgElement.onerror = null;
-    imgElement.src = '/static/icons/no_cover.png';
+    imgElement.src = `${APP_BASE}/static/icons/no_cover.png`;
 }
 
 window.handleResultThumbnailError = handleResultThumbnailError;
@@ -1266,7 +1270,7 @@ function renderHardcoverSeriesStrip(series, currentBookId, currentPosition) {
         const hardcoverUrl = hardcoverBookLink(slug);
         const mouseSearchUrl = buildMouseSearchUrlForTitle(title);
         const coverUrl = String(book.image_url || '').trim();
-        const proxyCoverUrl = coverUrl ? `/proxy_thumbnail?url=${encodeURIComponent(coverUrl)}` : '/static/icons/no_cover.png';
+        const proxyCoverUrl = coverUrl ? `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(coverUrl)}` : `${APP_BASE}/static/icons/no_cover.png`;
         const positionLabel = formatHardcoverSeriesPosition(entry?.position);
         const releaseYear = String(book.release_year || '').trim();
         const isCurrent = currentBookKey && bookId === currentBookKey;
@@ -1331,7 +1335,7 @@ async function loadHardcoverSeriesStrip(metadata) {
     if (section) section.classList.remove('d-none');
 
     try {
-        const response = await fetch(`/hardcover/series/${encodeURIComponent(String(seriesId))}`);
+        const response = await fetch(`${APP_BASE}/hardcover/series/${encodeURIComponent(String(seriesId))}`);
         if (!response.ok) {
             throw new Error(`Hardcover series HTTP ${response.status}`);
         }
@@ -1592,7 +1596,7 @@ function applyHardcoverEnrichmentUpdate(payload) {
         const thumb = resultItem.querySelector('.results-thumb');
         if (thumb) {
             thumb.dataset.triedHardcoverCover = 'true';
-            thumb.src = `/proxy_thumbnail?url=${encodeURIComponent(coverUrl)}`;
+            thumb.src = `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(coverUrl)}`;
         }
     }
 
@@ -1654,7 +1658,7 @@ function stopHardcoverEnrichmentPolling() {
 
 async function pollHardcoverEnrichment(searchId) {
     try {
-        const response = await fetch(`/hardcover/enrichment/${encodeURIComponent(searchId)}`, {
+        const response = await fetch(`${APP_BASE}/hardcover/enrichment/${encodeURIComponent(searchId)}`, {
             cache: 'no-store'
         });
         if (!response.ok) throw new Error(`Hardcover poll HTTP ${response.status}`);
@@ -1741,7 +1745,7 @@ async function queueHardcoverEnrichmentRows(searchId, rows) {
     const queueRequest = previousRequest
         .catch(() => undefined)
         .then(async () => {
-            const response = await fetch(`/hardcover/enrichment/${encodeURIComponent(searchId)}/queue`, {
+            const response = await fetch(`${APP_BASE}/hardcover/enrichment/${encodeURIComponent(searchId)}/queue`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ torrent_ids: torrentIds }),
@@ -1957,7 +1961,7 @@ function formatPrimarySeriesLabel(primarySeries) {
  * Initializes Server-Sent Events (SSE)
  */
 function initializeEventStream() {
-    const eventSource = new EventSource('/events');
+    const eventSource = new EventSource(`${APP_BASE}/events`);
 
     eventSource.onmessage = function (event) {
         try {
@@ -2128,7 +2132,7 @@ function renderJsonTree(data, containerId) {
 async function getTorrentHashByMID(torrentId) {
     if (torrentHashMap[torrentId]) return torrentHashMap[torrentId];
     try {
-        const response = await fetch('/client/resolve_mid', {
+        const response = await fetch(`${APP_BASE}/client/resolve_mid`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mid: torrentId })
@@ -2346,7 +2350,7 @@ function checkClientStatus() {
     const statusIconSpan = document.getElementById("client-status-icon");
     const clientTypeDisplay = document.getElementById('client-type-display');
 
-    fetch('/client/status', { cache: "no-store" })
+    fetch(`${APP_BASE}/client/status`, { cache: "no-store" })
         .then(response => response.json())
         .then(data => {
             const isSuccess = data.status === "success";
@@ -2387,7 +2391,7 @@ function checkClientStatus() {
 }
 
 function refreshCategories() {
-    fetch('/client/categories', { cache: "no-store" })
+    fetch(`${APP_BASE}/client/categories`, { cache: "no-store" })
         .then(response => response.json())
         .then(data => {
             const resultDropdowns = document.querySelectorAll('.category-dropdown');
@@ -2470,7 +2474,7 @@ function hideMamNotConfiguredPrompt() {
 }
 
 function loadMamUserData() {
-    fetch('/mam/user_data', { cache: "no-store" })
+    fetch(`${APP_BASE}/mam/user_data`, { cache: "no-store" })
         .then(async response => {
             const data = await response.json().catch(() => ({}));
             updateMamProxyStatusPanel(data?.proxy_status);
@@ -2625,7 +2629,7 @@ function initializeSnatchedTorrents() {
 
 async function fetchAndUpdateTorrentStatus(hash, resultItem) {
     try {
-        const response = await fetch(`/client/info/${hash}`, { cache: "no-store" });
+        const response = await fetch(`${APP_BASE}/client/info/${hash}`, { cache: "no-store" });
         if (response.ok) {
             const data = await response.json();
             updateTorrentUI(hash, data, resultItem);
@@ -2849,8 +2853,8 @@ function updateMamProxyStatusPanel(proxyStatus) {
 
 async function fetchPublicIP() {
     Promise.allSettled([
-        fetch('/system/public_ip?route=direct').then(r => r.json()),
-        fetch('/system/public_ip?route=mam').then(r => r.json()),
+        fetch(`${APP_BASE}/system/public_ip?route=direct`).then(r => r.json()),
+        fetch(`${APP_BASE}/system/public_ip?route=mam`).then(r => r.json()),
     ])
         .then(([directResult, proxyResult]) => {
             const directData = directResult.status === 'fulfilled' ? directResult.value : null;
@@ -3046,7 +3050,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         setHardcoverStatusPickerBusy(picker, true);
 
         try {
-            const response = await fetch(`/hardcover/user-book/${bookId}`, { cache: 'no-store' });
+            const response = await fetch(`${APP_BASE}/hardcover/user-book/${bookId}`, { cache: 'no-store' });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || data.status !== 'success') {
                 throw new Error(data.message || `Hardcover status lookup failed (HTTP ${response.status})`);
@@ -3078,7 +3082,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         closeHardcoverStatusPickers();
         setHardcoverStatusPending(bookId, true);
         try {
-            const response = await fetch('/hardcover/user-book/status', {
+            const response = await fetch(`${APP_BASE}/hardcover/user-book/status`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3309,7 +3313,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         try {
-            const response = await fetch('/api/settings/test-torrent-client', {
+            const response = await fetch(`${APP_BASE}/api/settings/test-torrent-client`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -3361,7 +3365,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         try {
-            const response = await fetch('/api/settings/test-hardcover', {
+            const response = await fetch(`${APP_BASE}/api/settings/test-hardcover`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -3670,7 +3674,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Save Settings
     document.getElementById('save-settings-button')?.addEventListener('click', function () {
         triggerHaptic('save');
-        fetch('/update_settings', { method: 'POST', body: new FormData(document.getElementById('settings-form')) })
+        fetch(`${APP_BASE}/update_settings`, { method: 'POST', body: new FormData(document.getElementById('settings-form')) })
             .then(response => response.json())
             .then(data => {
                 showToast(data.message, data.status === 'success' ? 'success' : 'danger');
@@ -3706,7 +3710,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         setInlineActionStatus('organize-now-status', 'idle', 'Running one-time organization pass...');
 
         try {
-            const response = await fetch('/organize', { method: 'POST' });
+            const response = await fetch(`${APP_BASE}/organize`, { method: 'POST' });
             const data = await response.json().catch(() => ({}));
             const results = data?.results || {};
             const succeeded = Number(results.succeeded || 0);
@@ -3813,7 +3817,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 this.innerHTML = `<div class="d-flex align-items-center"><span class="spinner-border spinner-border-sm me-2"></span> Processing...</div>`;
                 document.querySelectorAll('.vip-buy-btn').forEach(b => b.classList.add('disabled'));
 
-                fetch('/mam/buy_vip', {
+                fetch(`${APP_BASE}/mam/buy_vip`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ duration: duration })
@@ -3849,7 +3853,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Buying...';
 
-            fetch('/mam/buy_wedge', {
+            fetch(`${APP_BASE}/mam/buy_wedge`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             })
@@ -3879,7 +3883,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     function submitUploadPurchase(amount, onBefore, onAfter) {
         if (typeof onBefore === 'function') onBefore();
-        fetch('/mam/buy_upload', {
+        fetch(`${APP_BASE}/mam/buy_upload`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ amount })
@@ -5391,7 +5395,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         try {
             const payload = { filters: collectCurrentSearchFilterDefaults() };
-            const response = await fetch('/update_default_search_filters', {
+            const response = await fetch(`${APP_BASE}/update_default_search_filters`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -5454,7 +5458,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     function saveResultDisplayFields(fields) {
-        return fetch('/update_result_display_fields', {
+        return fetch(`${APP_BASE}/update_result_display_fields`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fields })
@@ -6013,7 +6017,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             let info = null;
             try {
-                const response = await fetch(`/client/info/${hash}`, { cache: 'no-store' });
+                const response = await fetch(`${APP_BASE}/client/info/${hash}`, { cache: 'no-store' });
                 if (response.ok) info = await response.json();
             } catch (_) {
                 // If info fails, still treat as in-client; we just won't know complete vs downloading.
@@ -6219,7 +6223,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
         hashToElementMap.clear();
         stopHardcoverEnrichmentPolling();
-        const searchUrl = queryString ? `/mam/search?${queryString}` : '/mam/search';
+        const searchUrl = queryString ? `${APP_BASE}/mam/search?${queryString}` : `${APP_BASE}/mam/search`;
 
         if (preScrollToResults && wrapper) {
             wrapper.style.display = 'block';
@@ -6768,8 +6772,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         const lowResUrl = `https://cdn.myanonamouse.net/t/p/small/${data.id}.webp`;
 
         // 2. Prepare Proxy URLs
-        const highResProxy = `/proxy_thumbnail?url=${encodeURIComponent(highResUrl)}`;
-        const lowResProxy = `/proxy_thumbnail?url=${encodeURIComponent(lowResUrl)}`;
+        const highResProxy = `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(highResUrl)}`;
+        const lowResProxy = `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(lowResUrl)}`;
 
         // Push History State
         const newUrl = window.location.pathname + window.location.search + `#book=${data.id}`;
@@ -6798,8 +6802,8 @@ document.addEventListener("DOMContentLoaded", async function () {
             const ext = getPosterExtension(data.poster_type);
             const rawHi = `https://cdn.myanonamouse.net/t/p/0/large/${data.id}.${ext}`;
             const rawLow = `https://cdn.myanonamouse.net/t/p/small/${data.id}.webp`;
-            hiResSrc = `/proxy_thumbnail?url=${encodeURIComponent(rawHi)}`;
-            lowResSrc = `/proxy_thumbnail?url=${encodeURIComponent(rawLow)}`;
+            hiResSrc = `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(rawHi)}`;
+            lowResSrc = `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(rawLow)}`;
         }
 
         // --- Standard Metadata Rendering ---
@@ -6913,7 +6917,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         // 3. Attach Error Handler — try Hardcover cover before falling back to placeholder
         const hcCoverProxy = data.hardcover_enrichment?.hardcover?.cover_image
-            ? `/proxy_thumbnail?url=${encodeURIComponent(data.hardcover_enrichment.hardcover.cover_image)}`
+            ? `${APP_BASE}/proxy_thumbnail?url=${encodeURIComponent(data.hardcover_enrichment.hardcover.cover_image)}`
             : null;
         activeImgEl.onerror = function () {
             if (hcCoverProxy && !this.dataset.triedHardcoverCover) {
@@ -7079,7 +7083,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     function performDownload(downloadData, button) {
         if (button) button.disabled = true;
 
-        fetch('/client/add', {
+        fetch(`${APP_BASE}/client/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(downloadData),
@@ -7189,7 +7193,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         const amount = parseFloat(this.dataset.amount);
         this.disabled = true;
         this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Buying...';
-        fetch('/mam/buy_upload', {
+        fetch(`${APP_BASE}/mam/buy_upload`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ amount: amount })
@@ -7608,7 +7612,7 @@ function initAutosuggest(inputId) {
         cacheProbeController = new AbortController();
 
         try {
-            const res = await fetch(`/mam/autosuggest?${queryString}&cache_only=true`, {
+            const res = await fetch(`${APP_BASE}/mam/autosuggest?${queryString}&cache_only=true`, {
                 signal: cacheProbeController.signal
             });
             if (!res.ok) return;
@@ -7689,7 +7693,7 @@ function initAutosuggest(inputId) {
             }
             hasIssuedInitialSearch = true;
 
-            const res = await fetch(`/mam/autosuggest?${queryString}`, {
+            const res = await fetch(`${APP_BASE}/mam/autosuggest?${queryString}`, {
                 signal: abortController.signal
             });
             if (!res.ok) {

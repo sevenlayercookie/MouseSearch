@@ -4,6 +4,7 @@
 <head>
   <script src="{{ url_for('static', filename='bootstrap/js/color-modes.js') }}"></script>
   <script>
+    window.APP_BASE = {{ request.root_path | tojson }};
     window.LANGUAGE_MAP = {{ LANGUAGE_MAP | tojson }};
     window.DEFAULT_LANGUAGE_ID = {{ DEFAULT_LANGUAGE_ID | tojson }};
     window.DEFAULT_SEARCH_FILTERS = {{ SEARCH_FILTER_DEFAULTS | tojson }};
@@ -152,7 +153,7 @@
 
   <main class="container px-0">
     <div class="d-flex justify-content-center align-items-center p-3 my-sm-3 text-white bg-purple rounded-sm shadow-sm">
-      <a href="/" class="lh-1 text-center text-decoration-none">
+      <a href="{{ url_for('index') }}" class="lh-1 text-center text-decoration-none">
         <span class="app-logo d-inline-block align-middle" role="img" aria-label="Logo" style="width:60px;height:60px;"></span>
         <h1 class="h1 mb-0 text-white lh-1">MouseSearch</h1>
       </a>
@@ -499,12 +500,12 @@
   {% include 'modals/insufficient_buffer.html' %}
   {% include 'modals/book_details.html' %}
 
-  <script src="static/bootstrap/js/bootstrap.bundle.min.js">import "bootstrap";</script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}">import "bootstrap";</script>
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.5/dist/js/tom-select.complete.min.js"></script>
   <script>
     window.resultDisplayFields = {{ RESULTS_DISPLAY_FIELDS | tojson }};
   </script>
-  <script src="static/js/main.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
 
   <div id="toast-container" aria-live="polite" aria-atomic="true" class="position-fixed bottom-0 end-0 p-3"
