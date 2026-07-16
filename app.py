@@ -4031,6 +4031,7 @@ async def client_add_torrent():
         is_public_freeleech = int(incoming_data.get('free', 0) or 0) == 1
     except (ValueError, TypeError):
         is_public_freeleech = False
+    is_vip_freeleech = coerce_bool(incoming_data.get('vip_freeleech'), False)
     is_personal_freeleech = False
     try:
         is_personal_freeleech = int(incoming_data.get('personal_freeleech', 0) or 0) == 1
@@ -4039,6 +4040,8 @@ async def client_add_torrent():
     should_use_personal_freeleech = False
     if is_public_freeleech:
         app.logger.info("[DOWNLOAD] Personal Freeleech flag skipped: torrent is already public freeleech.")
+    elif is_vip_freeleech:
+        app.logger.info("[DOWNLOAD] Personal Freeleech flag skipped: torrent is already VIP freeleech.")
     elif is_personal_freeleech:
         app.logger.info("[DOWNLOAD] Personal Freeleech flag skipped: torrent already has personal freeleech.")
     elif use_personal_freeleech_requested:
@@ -5186,6 +5189,12 @@ async def mam_search():
 
             # Overwrite series_display with our cleaner, HTML-decoded version
             item['series_display'] = parse_mam_metadata(item.get('series_info', ''), is_series=True)
+
+            # Carry the server-evaluated VIP entitlement into the download payload so
+            # the download route does not spend a wedge on VIP Freeleech torrents.
+            item['vip_freeleech'] = int(
+                coerce_bool(item.get('fl_vip'), False) and is_vip_active
+            )
 
             language_id = str(item.get("language", "")).strip()
             language_name = LANGUAGE_BY_ID.get(language_id)

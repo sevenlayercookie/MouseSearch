@@ -6754,6 +6754,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             // Freeleech flags (used by confirm modal UI)
             free: button.dataset.free ?? 0,
+            vip_freeleech: button.dataset.vipFreeleech ?? 0,
             personal_freeleech: button.dataset.personalFreeleech ?? 0,
             fl_vip: button.dataset.flVip ?? 0,
             use_personal_freeleech: false,
@@ -7083,6 +7084,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         dlBtn.dataset.mainCat = data.main_cat;
         dlBtn.dataset.seriesInfo = data.series_info;
         dlBtn.dataset.free = data.free;
+        dlBtn.dataset.vipFreeleech = data.vip_freeleech;
         dlBtn.dataset.personalFreeleech = data.personal_freeleech;
         dlBtn.dataset.flVip = data.fl_vip;
 
