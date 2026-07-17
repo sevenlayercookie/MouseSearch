@@ -373,6 +373,7 @@ input:disabled, select:disabled {
 #insufficientBufferModal,
 #uploadPurchaseModal,
 #vipPurchaseModal,
+#wedgePurchaseModal,
 #coverLightboxModal {  
     z-index: 1060; 
 }
