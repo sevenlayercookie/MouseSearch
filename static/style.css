@@ -120,6 +120,14 @@ input:disabled, select:disabled {
     cursor: text;
 }
 
+.search-clear-button {
+    z-index: 5;
+    min-width: 2rem;
+    font-size: 1.4rem;
+    line-height: 1;
+    text-decoration: none;
+}
+
 .bd-placeholder-img {
       font-size: 1.125rem;
       text-anchor: middle;

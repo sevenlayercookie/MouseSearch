@@ -3959,6 +3959,24 @@ document.addEventListener("DOMContentLoaded", async function () {
     const searchForm = document.getElementById("search-form");
     const resultsContainer = document.getElementById("results-container");
     const searchButton = document.getElementById("searchButton");
+    const queryInput = document.getElementById('query');
+    const queryClearButton = document.getElementById('query-clear-button');
+
+    function setupSearchClearControl(input, button) {
+        if (!input || !button) return () => {};
+
+        const sync = () => button.classList.toggle('d-none', !input.value);
+        input.addEventListener('input', sync);
+        button.addEventListener('click', () => {
+            input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+        });
+        sync();
+        return sync;
+    }
+
+    const syncQueryClearButton = setupSearchClearControl(queryInput, queryClearButton);
     const appLogos = document.querySelectorAll('.app-logo');
     const STATIC_MOUSE_LOGO_SVG = `<svg
    viewBox="0 0 300 340"
@@ -6279,6 +6297,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     function restoreFormFromURL(params) {
         const queryInput = document.getElementById('query');
         if (queryInput) queryInput.value = params.get('query') || '';
+        syncQueryClearButton();
 
         const searchFields = [
             'search_in_title',
@@ -7220,7 +7239,9 @@ document.addEventListener("DOMContentLoaded", async function () {
     const navSearchContainer = document.getElementById('nav-search-container');
     const navSearchInput = document.getElementById('nav-search-input');
     const navSearchForm = document.getElementById('nav-search-form');
+    const navSearchClearButton = document.getElementById('nav-search-clear-button');
     const navbarBrand = document.getElementById('navbar-brand');
+    setupSearchClearControl(navSearchInput, navSearchClearButton);
 
     // 1. Scroll Listener (Show/Hide)
     window.addEventListener('scroll', () => {
@@ -7259,6 +7280,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const mainInput = document.getElementById('query');
                 if (mainInput) {
                     mainInput.value = val;
+                    mainInput.dispatchEvent(new Event('input', { bubbles: true }));
                     triggerHaptic('search');
                     mainInput.blur();
                     navSearchInput.blur();

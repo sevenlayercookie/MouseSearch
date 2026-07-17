@@ -134,6 +134,10 @@
             </span>
             <input type="text" id="nav-search-input" class="form-control bg-dark border-secondary text-light"
               placeholder="Search books, authors..." aria-label="Search">
+            <button type="button" class="btn btn-outline-secondary d-none search-clear-button"
+              id="nav-search-clear-button" aria-label="Clear search" title="Clear search">
+              <span aria-hidden="true">&times;</span>
+            </button>
           </div>
         </form>
       </div>
@@ -162,10 +166,15 @@
     <div class="my-3 p-3 bg-body rounded shadow-sm">
       <main class="">
         <form id="search-form" method="GET" autocomplete="off">
-          <div class="form-floating mb-3">
-            <input type="text" class="form-control" id="query" name="query"
+          <div class="form-floating mb-3 position-relative search-query-field">
+            <input type="text" class="form-control pe-5" id="query" name="query"
               placeholder="Search terms" aria-label="Search">
             <label for="query"><i class="bi bi-search me-2"></i>Search title, author, description...</label>
+            <button type="button"
+              class="btn btn-link text-body-secondary position-absolute top-50 end-0 translate-middle-y me-2 d-none search-clear-button"
+              id="query-clear-button" aria-label="Clear search" title="Clear search">
+              <span aria-hidden="true">&times;</span>
+            </button>
           </div>
 
           <div class="d-flex flex-wrap gap-3 mb-3">
