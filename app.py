@@ -3815,7 +3815,27 @@ def append_personal_freeleech_flag(torrent_url: str) -> str:
 
     next_query = f"{parsed.query}&fl" if parsed.query else "fl"
     return parsed._replace(query=next_query).geturl()
-    
+
+
+def build_mam_download_link(base_download_url: str, dl_value: Any, torrent_id: Any) -> str:
+    """Build a MAM download URL containing exactly one current ``tid`` parameter."""
+    normalized_dl = str(dl_value or "").strip()
+    normalized_tid = str(torrent_id or "").strip()
+    if not normalized_dl or not normalized_tid:
+        return ""
+
+    parsed = urlparse(f"{base_download_url}{normalized_dl}")
+    query_parts = []
+    for part in parsed.query.split("&"):
+        if not part:
+            continue
+        query_key = unquote(part.partition("=")[0]).strip().lower()
+        if query_key != "tid":
+            query_parts.append(part)
+
+    query_parts.append(f"tid={normalized_tid}")
+    return parsed._replace(query="&".join(query_parts)).geturl()
+
 # --- GENERIC TORRENT CLIENT ROUTES ---
 @app.route('/client/status', methods=['GET'])
 async def client_status():
@@ -5193,10 +5213,11 @@ async def mam_search():
             # unless the torrent id is passed as a query param.
             dl_hash = item.get('dl')
             torrent_id = item.get('id')
-            if dl_hash and torrent_id:
-                item['download_link'] = f"{base_dl_url}{dl_hash}?tid={torrent_id}"
-            else:
-                item['download_link'] = ''
+            item['download_link'] = build_mam_download_link(
+                base_dl_url,
+                dl_hash,
+                torrent_id,
+            )
 
             # 2. Handle Thumbnails
             if not item.get('thumbnail'):
