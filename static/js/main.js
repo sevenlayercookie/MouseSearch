@@ -1839,7 +1839,10 @@ function localizeDates(scope = document) {
 
 function sanitizeFilename(name) {
     if (!name) return "Unknown";
-    return name.replace(/[<>:"/\\|?*]/g, '').trim();
+    // Path separators become a dash rather than vanishing, so names that legitimately
+    // contain one stay readable: "Magazines/Newspapers" -> "Magazines-Newspapers".
+    // Mirrors sanitize_filename() in app.py.
+    return name.replace(/[/\\]/g, '-').replace(/[<>:"|?*]/g, '').trim();
 }
 
 const DEFAULT_REL_PATH_TEMPLATE = "{Author}/{Title}";
@@ -5865,12 +5868,14 @@ document.addEventListener("DOMContentLoaded", async function () {
     function normalizeCategoryOverride(entry) {
         const mainCat = String(entry?.main_cat || '').trim();
         if (!allowedDestinationDefaults.has(mainCat)) return null;
+        const linkMode = String(entry?.link_mode || '').trim().toLowerCase();
         return {
             main_cat: mainCat,
             root_path: String(entry?.root_path || '').trim(),
             rel_path_template: String(entry?.rel_path_template || '').trim(),
             subcategory_replaces_category: entry?.subcategory_replaces_category === true
-                || entry?.subcategory_replaces_category === 'true'
+                || entry?.subcategory_replaces_category === 'true',
+            link_mode: (linkMode === 'copy' || linkMode === 'hardlink') ? linkMode : ''
         };
     }
 
@@ -5959,8 +5964,28 @@ document.addEventListener("DOMContentLoaded", async function () {
         updateCategoryOverrideCount();
     }
 
+    /** Split a template into its "/"-separated segments, e.g. ["{Author}", "{SeriesNumber} - {Title}"]. */
+    function templateSegments(template) {
+        return normalizeRelPathTemplate(template).split('/').map(s => s.trim()).filter(Boolean);
+    }
+
+    function segmentsToTemplate(segments) {
+        return segments.filter(Boolean).join('/');
+    }
+
+    /** Short header summary of what a block actually changes. */
+    function categoryOverrideSummary(state) {
+        const parts = [];
+        if (state.root_path) parts.push(state.root_path);
+        if (state.rel_path_template) parts.push(state.rel_path_template);
+        if (state.subcategory_replaces_category) parts.push('subcategory as category');
+        if (state.link_mode) parts.push(state.link_mode === 'copy' ? 'copy' : 'hardlink');
+        return parts.length ? parts.join(' · ') : 'Inherits global settings';
+    }
+
     function buildCategoryOverrideBlock(entry) {
         const label = mediaTypeOptions.find(m => m.id === entry.main_cat)?.label || entry.main_cat;
+        const bodyId = `category-override-body-${entry.main_cat}`;
 
         const block = document.createElement('div');
         block.className = 'category-override-block card mb-2 border-secondary-subtle';
@@ -5973,24 +5998,46 @@ document.addEventListener("DOMContentLoaded", async function () {
         valueInput.className = 'category-override-value';
         valueInput.name = 'category_override_blocks[]';
 
+        // --- collapsible header carrying a one-line summary ---
         const header = document.createElement('div');
-        header.className = 'card-header bg-transparent d-flex justify-content-between align-items-center py-2';
-        header.innerHTML = `<span class="small fw-bold"><i class="bi bi-folder2-open me-2"></i>${label}</span>`;
+        header.className = 'card-header bg-transparent d-flex justify-content-between align-items-center '
+            + 'py-2 cursor-pointer noselect collapsed settings-collapse-toggle';
+        header.setAttribute('data-bs-toggle', 'collapse');
+        header.setAttribute('data-bs-target', `#${bodyId}`);
+        header.setAttribute('aria-controls', bodyId);
+        header.setAttribute('aria-expanded', 'false');
+
+        const headerText = document.createElement('span');
+        headerText.className = 'd-flex flex-column';
+        headerText.innerHTML = `<span class="small fw-bold"><i class="bi bi-folder2-open me-2"></i>${label}</span>`
+            + '<span class="category-override-summary text-body-secondary text-truncate"'
+            + ' style="font-size:0.72rem;max-width:22rem;"></span>';
+
+        const headerActions = document.createElement('span');
+        headerActions.className = 'd-flex align-items-center gap-2 flex-shrink-0';
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'btn btn-sm btn-outline-danger py-0 remove-category-override-btn';
         removeBtn.title = `Remove ${label} override`;
         removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
-        header.appendChild(removeBtn);
+        // The header itself toggles the collapse; the trash button must not.
+        removeBtn.setAttribute('data-bs-toggle', '');
+        headerActions.innerHTML = '<i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>';
+        headerActions.prepend(removeBtn);
+        header.append(headerText, headerActions);
 
+        const collapse = document.createElement('div');
+        collapse.className = 'collapse';
+        collapse.id = bodyId;
         const body = document.createElement('div');
-        body.className = 'card-body pt-2 pb-3';
+        body.className = 'card-body border-top pt-2 pb-3';
+        collapse.appendChild(body);
 
         // --- Option 1: custom root directory ---
         const rootToggle = buildOverrideSwitch(`ov-root-${entry.main_cat}`, 'Custom root directory',
             'Place this media type under a different library root.');
         const rootFields = document.createElement('div');
-        rootFields.className = 'ms-4 mt-2 mb-3';
+        rootFields.className = 'ms-4 mt-2 mb-3 category-override-root-fields';
         const rootInput = document.createElement('input');
         rootInput.type = 'text';
         rootInput.className = 'form-control form-control-sm category-override-root';
@@ -6002,135 +6049,250 @@ document.addEventListener("DOMContentLoaded", async function () {
         const templateToggle = buildOverrideSwitch(`ov-tpl-${entry.main_cat}`, 'Custom path template',
             'Use a different relative path template for this media type.');
         const templateFields = document.createElement('div');
-        templateFields.className = 'ms-4 mt-2 mb-3';
+        templateFields.className = 'ms-4 mt-2 mb-3 category-override-template-fields';
 
-        const templateGroup = document.createElement('div');
-        templateGroup.className = 'input-group input-group-sm mb-2';
+        // Token editor: draggable pills + an [+] menu, replacing the old chip row.
+        // Pills are inserted before the [+] button, so it always trails the row.
+        const pillRow = document.createElement('div');
+        pillRow.className = 'template-token-editor d-flex flex-wrap align-items-center gap-1 mb-2';
+
+        const addWrap = document.createElement('div');
+        addWrap.className = 'dropdown';
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn-sm btn-outline-primary rounded-circle template-token-add-btn';
+        addBtn.title = 'Add a tag';
+        addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
+        addBtn.setAttribute('data-bs-toggle', 'dropdown');
+        addBtn.setAttribute('aria-expanded', 'false');
+        const addMenu = document.createElement('ul');
+        addMenu.className = 'dropdown-menu template-token-add-menu';
+        addWrap.append(addBtn, addMenu);
+        pillRow.appendChild(addWrap);
+
+        const textToggle = document.createElement('button');
+        textToggle.type = 'button';
+        textToggle.className = 'btn btn-link btn-sm p-0 text-decoration-none category-override-text-toggle';
+        textToggle.style.fontSize = '0.72rem';
+        textToggle.textContent = 'Edit as text';
+
         const templateInput = document.createElement('input');
         templateInput.type = 'text';
-        templateInput.className = 'form-control font-monospace category-override-template';
+        templateInput.className = 'form-control form-control-sm font-monospace mb-2 d-none category-override-template';
         templateInput.placeholder = getRelPathTemplateValue();
         templateInput.value = entry.rel_path_template;
-        const templateReset = document.createElement('button');
-        templateReset.type = 'button';
-        templateReset.className = 'btn btn-outline-secondary category-override-template-reset';
-        templateReset.title = 'Reset to the global template';
-        templateReset.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
-        templateGroup.append(templateInput, templateReset);
 
-        const chipRow = document.createElement('div');
-        chipRow.className = 'd-flex gap-2 flex-wrap mb-2';
-        chipRow.innerHTML = '<span class="small text-muted align-self-center me-1">Tags:</span>';
-        REL_PATH_TOKENS.forEach(spec => {
-            const chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'btn btn-sm btn-outline-primary rounded-pill category-override-token-btn';
-            chip.dataset.token = spec.token;
-            chip.textContent = spec.label;
-            chipRow.appendChild(chip);
-        });
-
-        const preview = document.createElement('div');
-        preview.className = 'alert alert-light border small m-0 py-2';
-        preview.innerHTML = '<span class="text-muted text-uppercase" style="font-size:0.65rem;letter-spacing:1px;">Preview</span>'
-            + '<div class="text-primary fw-bold text-break font-monospace mt-1 category-override-preview"></div>';
-        templateFields.append(templateGroup, chipRow, preview);
+        templateFields.append(pillRow, textToggle, templateInput);
 
         // --- Option 3: subcategory replaces category ---
         const subcatToggle = buildOverrideSwitch(`ov-sub-${entry.main_cat}`, 'Subcategory replaces category',
             `When the torrent has a subcategory, {Category} renders it instead of "${label}".`);
 
-        body.append(rootToggle.wrap, rootFields, templateToggle.wrap, templateFields, subcatToggle.wrap);
-        block.append(valueInput, header, body);
+        // --- Option 4: link mode ---
+        const linkToggle = buildOverrideSwitch(`ov-link-${entry.main_cat}`, 'Custom link mode',
+            'Override hardlink vs copy, e.g. when this root is on another filesystem.');
+        const linkFields = document.createElement('div');
+        linkFields.className = 'ms-4 mt-2 mb-3 category-override-link-fields';
+        const linkSelect = document.createElement('select');
+        linkSelect.className = 'form-select form-select-sm category-override-link';
+        [['hardlink', 'Hardlink (same filesystem, no extra space)'], ['copy', 'Copy (works across filesystems)']]
+            .forEach(([value, text]) => {
+                const opt = document.createElement('option');
+                opt.value = value;
+                opt.textContent = text;
+                linkSelect.appendChild(opt);
+            });
+        linkSelect.value = entry.link_mode || 'hardlink';
+        linkFields.appendChild(linkSelect);
+
+        // --- Preview, always visible at the bottom ---
+        const preview = document.createElement('div');
+        preview.className = 'alert alert-light border small m-0 py-2 mt-3';
+        preview.innerHTML = '<span class="text-muted text-uppercase" style="font-size:0.65rem;letter-spacing:1px;">Preview</span>'
+            + '<div class="text-break font-monospace mt-1 category-override-preview"></div>';
+
+        body.append(rootToggle.wrap, rootFields, templateToggle.wrap, templateFields,
+            subcatToggle.wrap, linkToggle.wrap, linkFields, preview);
+        block.append(valueInput, header, collapse);
 
         rootToggle.input.checked = Boolean(entry.root_path);
         templateToggle.input.checked = Boolean(entry.rel_path_template);
         subcatToggle.input.checked = entry.subcategory_replaces_category;
+        linkToggle.input.checked = Boolean(entry.link_mode);
 
-        const syncBlock = () => {
+        const markDirty = () => { if (!isRestoringSettings) settingsDirty = true; };
+
+        /** Effective template for this block: its own when set, else the global one. */
+        const effectiveTemplate = () => normalizeRelPathTemplate(
+            (templateToggle.input.checked ? templateInput.value.trim() : '') || getRelPathTemplateValue()
+        );
+
+        function renderTokenPills() {
+            pillRow.querySelectorAll('.template-token-pill').forEach(el => el.remove());
+            const segments = templateSegments(templateInput.value || getRelPathTemplateValue());
+
+            segments.forEach((segment, index) => {
+                const pill = document.createElement('span');
+                pill.className = 'template-token-pill badge rounded-pill d-inline-flex align-items-center gap-1';
+                pill.draggable = true;
+                pill.dataset.index = String(index);
+
+                const isCategory = segment.includes('{Category}');
+                const swappable = isCategory && subcatToggle.input.checked;
+                pill.classList.add(swappable ? 'token-pill-swappable' : 'token-pill-default');
+                if (swappable) {
+                    pill.title = `Replaced by the subcategory when the torrent has one, otherwise "${label}".`;
+                } else if (isCategory) {
+                    pill.title = `Always renders "${label}".`;
+                }
+
+                const text = document.createElement('span');
+                text.textContent = segment;
+                const close = document.createElement('button');
+                close.type = 'button';
+                close.className = 'btn-close btn-close-white template-token-remove';
+                close.setAttribute('aria-label', `Remove ${segment}`);
+                pill.append(text, close);
+
+                close.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const next = templateSegments(templateInput.value || getRelPathTemplateValue());
+                    next.splice(index, 1);
+                    templateInput.value = segmentsToTemplate(next);
+                    syncBlock();
+                    markDirty();
+                });
+
+                pill.addEventListener('dragstart', (event) => {
+                    pill.classList.add('dragging');
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', String(index));
+                });
+                pill.addEventListener('dragend', () => {
+                    pill.classList.remove('dragging');
+                    pillRow.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+                });
+                pill.addEventListener('dragover', (event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    pill.classList.add('drag-over');
+                });
+                pill.addEventListener('dragleave', () => pill.classList.remove('drag-over'));
+                pill.addEventListener('drop', (event) => {
+                    event.preventDefault();
+                    pill.classList.remove('drag-over');
+                    const from = Number(event.dataTransfer.getData('text/plain'));
+                    const to = index;
+                    if (Number.isNaN(from) || from === to) return;
+                    const next = templateSegments(templateInput.value || getRelPathTemplateValue());
+                    const [moved] = next.splice(from, 1);
+                    next.splice(to, 0, moved);
+                    templateInput.value = segmentsToTemplate(next);
+                    syncBlock();
+                    markDirty();
+                });
+
+                pillRow.insertBefore(pill, addWrap);
+            });
+
+            // Only offer tags the template does not already use.
+            addMenu.innerHTML = '';
+            const used = templateInput.value || getRelPathTemplateValue();
+            const available = REL_PATH_TOKENS.filter(spec => !used.includes(spec.token));
+            if (!available.length) {
+                const li = document.createElement('li');
+                li.innerHTML = '<span class="dropdown-item-text small text-body-secondary">All tags used</span>';
+                addMenu.appendChild(li);
+            }
+            available.forEach(spec => {
+                const li = document.createElement('li');
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'dropdown-item small template-token-add-item';
+                btn.dataset.token = spec.token;
+                btn.textContent = spec.label;
+                btn.addEventListener('click', () => {
+                    const next = templateSegments(templateInput.value || getRelPathTemplateValue());
+                    next.push(spec.token);
+                    templateInput.value = segmentsToTemplate(next);
+                    syncBlock();
+                    markDirty();
+                });
+                li.appendChild(btn);
+                addMenu.appendChild(li);
+            });
+        }
+
+        function syncBlock() {
             rootFields.classList.toggle('d-none', !rootToggle.input.checked);
             templateFields.classList.toggle('d-none', !templateToggle.input.checked);
+            linkFields.classList.toggle('d-none', !linkToggle.input.checked);
+
+            // Option 3 only does anything if {Category} is actually in the template.
+            const hasCategoryToken = effectiveTemplate().includes('{Category}');
+            subcatToggle.input.disabled = !hasCategoryToken;
+            if (!hasCategoryToken) subcatToggle.input.checked = false;
+            subcatToggle.wrap.classList.toggle('opacity-50', !hasCategoryToken);
+            subcatToggle.hint.textContent = hasCategoryToken
+                ? `When the torrent has a subcategory, {Category} renders it instead of "${label}".`
+                : 'Add the {Category} tag to the template to enable this.';
 
             const state = {
                 main_cat: entry.main_cat,
                 root_path: rootToggle.input.checked ? rootInput.value.trim() : '',
                 rel_path_template: templateToggle.input.checked ? templateInput.value.trim() : '',
-                subcategory_replaces_category: subcatToggle.input.checked
+                subcategory_replaces_category: subcatToggle.input.checked,
+                link_mode: linkToggle.input.checked ? linkSelect.value : ''
             };
             valueInput.value = JSON.stringify(state);
+            block.querySelector('.category-override-summary').textContent = categoryOverrideSummary(state);
 
-            // The {Category} chip signals that its value may be swapped out.
-            const subcatOn = subcatToggle.input.checked;
-            const categoryChip = chipRow.querySelector('[data-token="{Category}"]');
-            if (categoryChip) {
-                categoryChip.classList.toggle('btn-outline-primary', !subcatOn);
-                categoryChip.classList.toggle('btn-outline-info', subcatOn);
-                categoryChip.title = subcatOn
-                    ? `Replaced by the subcategory when the torrent has one, otherwise "${label}".`
-                    : `Always renders "${label}".`;
-            }
+            renderTokenPills();
 
-            const effectiveTemplate = normalizeRelPathTemplate(
-                state.rel_path_template || getRelPathTemplateValue()
-            );
-            const effectiveRoot = state.root_path || getDefaultDestinationPath();
+            const effectiveRoot = (state.root_path || getDefaultDestinationPath()).replace(/\/+$/, '');
             const rendered = buildRelativePathFromTemplate(
-                effectiveTemplate, categoryPreviewValues(entry.main_cat, subcatOn)
+                effectiveTemplate(), categoryPreviewValues(entry.main_cat, subcatToggle.input.checked)
             );
-            block.querySelector('.category-override-preview').textContent =
-                `${effectiveRoot.replace(/\/+$/, '')}/${rendered}`;
-        };
+            // Root muted, the part the template controls highlighted.
+            const previewEl = block.querySelector('.category-override-preview');
+            previewEl.innerHTML = '';
+            const rootSpan = document.createElement('span');
+            rootSpan.className = 'text-body-secondary';
+            rootSpan.textContent = `${effectiveRoot}/`;
+            const relSpan = document.createElement('span');
+            relSpan.className = 'text-primary fw-bold';
+            relSpan.textContent = rendered;
+            previewEl.append(rootSpan, relSpan);
+        }
 
-        let caretRange = null;
-        const captureCaret = () => {
-            if (document.activeElement !== templateInput) return;
-            const { selectionStart: start, selectionEnd: end } = templateInput;
-            if (typeof start === 'number' && typeof end === 'number') caretRange = { start, end };
-        };
-        ['keyup', 'click', 'select', 'focus'].forEach(evt => templateInput.addEventListener(evt, captureCaret));
-
-        chipRow.querySelectorAll('.category-override-token-btn').forEach(chip => {
-            chip.addEventListener('mousedown', captureCaret);
-            chip.addEventListener('click', () => {
-                const token = chip.dataset.token;
-                const current = normalizeRelPathTemplate(templateInput.value || '');
-                if (current.includes(token)) {
-                    templateInput.value = removeTokenFromTemplate(current, token);
-                    caretRange = null;
-                } else {
-                    caretRange = insertTokenIntoTemplateInput(templateInput, token, caretRange);
-                }
-                syncBlock();
-                if (!isRestoringSettings) settingsDirty = true;
-            });
+        textToggle.addEventListener('click', () => {
+            const hidden = templateInput.classList.toggle('d-none');
+            textToggle.textContent = hidden ? 'Edit as text' : 'Hide text editor';
+            if (!hidden) templateInput.focus();
         });
 
-        [rootToggle.input, templateToggle.input, subcatToggle.input].forEach(input => {
+        [rootToggle.input, templateToggle.input, subcatToggle.input, linkToggle.input].forEach(input => {
             input.addEventListener('change', () => {
                 syncBlock();
                 syncConfirmDestinationOptions();
-                if (!isRestoringSettings) settingsDirty = true;
+                markDirty();
             });
         });
         [rootInput, templateInput].forEach(input => {
-            input.addEventListener('input', () => {
-                syncBlock();
-                if (!isRestoringSettings) settingsDirty = true;
-            });
+            input.addEventListener('input', () => { syncBlock(); markDirty(); });
         });
-        templateReset.addEventListener('click', () => {
-            templateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
-            caretRange = null;
-            syncBlock();
-            if (!isRestoringSettings) settingsDirty = true;
-        });
-        removeBtn.addEventListener('click', () => {
+        linkSelect.addEventListener('change', () => { syncBlock(); markDirty(); });
+        removeBtn.addEventListener('click', (event) => {
+            event.stopPropagation();          // do not toggle the collapse
             block.remove();
             updateCategoryOverrideCount();
             syncConfirmDestinationOptions();
-            if (!isRestoringSettings) settingsDirty = true;
+            markDirty();
         });
 
+        // Seed the pill editor from the global template when the block has none yet,
+        // so [+] and drag have something to act on.
+        if (!templateInput.value) templateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
         syncBlock();
         return block;
     }
@@ -6146,9 +6308,13 @@ document.addEventListener("DOMContentLoaded", async function () {
         const label = document.createElement('label');
         label.className = 'form-check-label small';
         label.setAttribute('for', id);
-        label.innerHTML = `${labelText} <span class="text-body-secondary d-block" style="font-size:0.75rem;">${helpText}</span>`;
+        const hint = document.createElement('span');
+        hint.className = 'text-body-secondary d-block';
+        hint.style.fontSize = '0.75rem';
+        hint.textContent = helpText;
+        label.append(document.createTextNode(labelText), hint);
         wrap.append(input, label);
-        return { wrap, input };
+        return { wrap, input, hint };
     }
 
     if (categoryOverridesList) {

@@ -461,48 +461,6 @@
               </div>
             </div>
 
-            {# Optional per-media-type overrides of the global root / template above. #}
-            <div class="card mb-3 border-secondary-subtle">
-              <div
-                class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect collapsed settings-collapse-toggle"
-                data-bs-toggle="collapse" data-bs-target="#category-overrides-container" aria-expanded="false"
-                aria-controls="category-overrides-container">
-                <span class="d-flex small fw-bold align-items-center">
-                  <i class="bi bi-sliders me-2"></i> Category Overrides
-                </span>
-                <span class="d-flex align-items-center gap-2">
-                  <span
-                    class="badge bg-secondary-subtle text-secondary border rounded-pill {% if CATEGORY_OVERRIDES|length < 1 %}d-none{% endif %}"
-                    id="category-overrides-count">{{ CATEGORY_OVERRIDES|length }}</span>
-                  <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
-                </span>
-              </div>
-
-              <div id="category-overrides-container" class="collapse">
-                <div class="card-body border-top pt-2 pb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-2 mt-1">
-                    <div class="form-text small m-0">
-                      Everything above is the global default. Add a block to override it for one media type.
-                      Each option inside is optional &mdash; leave it off to inherit.
-                    </div>
-                    <div class="dropdown ms-3">
-                      <button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap dropdown-toggle"
-                        id="add-category-override-btn" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-plus-lg"></i> Add Category
-                      </button>
-                      <ul class="dropdown-menu dropdown-menu-end" id="add-category-override-menu"></ul>
-                    </div>
-                  </div>
-
-                  <div id="category-overrides-list"></div>
-
-                  <div class="form-text small fst-italic m-0 d-none" id="category-overrides-empty">
-                    No overrides. Every media type uses the global settings above.
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <hr class="settings-divider my-4">
 
             <div id="path-configuration-container">
@@ -537,58 +495,44 @@
                 </div>
               </div>
 
+              {# Replaces the old Type-Specific Paths list. Legacy entries are migrated
+                 into overrides on config load, see migrate_type_specific_paths_to_overrides. #}
               <div class="card mb-3 border-secondary-subtle">
                 <div
                   class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect collapsed settings-collapse-toggle"
-                  data-bs-toggle="collapse" data-bs-target="#type-paths-container" aria-expanded="false"
-                  aria-controls="type-paths-container">
+                  data-bs-toggle="collapse" data-bs-target="#category-overrides-container" aria-expanded="false"
+                  aria-controls="category-overrides-container">
                   <span class="d-flex small fw-bold align-items-center">
-                    <i class="bi bi-folder-symlink me-2"></i> Type-Specific Paths
+                    <i class="bi bi-sliders me-2"></i> Category Overrides
                   </span>
                   <span class="d-flex align-items-center gap-2">
-                    <span class="badge bg-secondary-subtle text-secondary border rounded-pill {% if configured_destinations|length < 1 %}d-none{% endif %}"
-                      id="type-paths-count">{{ configured_destinations|length }}</span>
+                    <span
+                      class="badge bg-secondary-subtle text-secondary border rounded-pill {% if CATEGORY_OVERRIDES|length < 1 %}d-none{% endif %}"
+                      id="category-overrides-count">{{ CATEGORY_OVERRIDES|length }}</span>
                     <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
                   </span>
                 </div>
 
-                <div id="type-paths-container" class="collapse">
+                <div id="category-overrides-container" class="collapse">
                   <div class="card-body border-top pt-2 pb-2">
                     <div class="d-flex justify-content-between align-items-center mb-2 mt-1">
                       <div class="form-text small m-0">
-                        Assign a main category type to a destination path for auto-organize placement.
+                        Everything above is the global default. Add a category to override it for one media type.
+                        Each option is optional &mdash; leave it off to inherit.
                       </div>
-                      <button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap ms-3"
-                        id="add-destination-path-btn">
-                        <i class="bi bi-plus-lg"></i> Add Path
-                      </button>
+                      <div class="dropdown ms-3">
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap dropdown-toggle"
+                          id="add-category-override-btn" data-bs-toggle="dropdown" aria-expanded="false">
+                          <i class="bi bi-plus-lg"></i> Add Category
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" id="add-category-override-menu"></ul>
+                      </div>
                     </div>
 
-                    <div id="destination-paths-list">
-                      {% for dest in configured_destinations %}
-                      <div class="destination-path-row mb-2">
-                        <div class="form-floating destination-path-row-main-type">
-                          <select class="form-select destination-default-select" name="extra_dest_defaults[]">
-                            <option value="">None (Global)</option>
-                            {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
-                            <option value="{{ media.id }}" {% if dest.default_main_cat==media.id %}selected{% endif %}>
-                              {{ media.label }}
-                            </option>
-                            {% endfor %}
-                          </select>
-                          <label>Main Type</label>
-                        </div>
-                        <div class="form-floating">
-                          <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
-                            value="{{ dest.path }}" placeholder="/data/media" required>
-                          <label>Destination Path</label>
-                        </div>
-                        <button type="button" class="btn btn-outline-danger remove-path-btn" title="Remove Path"
-                          aria-label="Remove Path">
-                          <i class="bi bi-trash"></i>
-                        </button>
-                      </div>
-                      {% endfor %}
+                    <div id="category-overrides-list"></div>
+
+                    <div class="form-text small fst-italic m-0 d-none" id="category-overrides-empty">
+                      No overrides. Every media type uses the global settings above.
                     </div>
                   </div>
                 </div>

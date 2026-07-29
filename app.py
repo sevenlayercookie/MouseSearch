@@ -543,6 +543,10 @@ def normalize_category_overrides(value):
                                      subcategory ("Magazines/Newspapers") instead
                                      of its media type ("Ebooks"), falling back to
                                      the media type when there is no subcategory.
+      link_mode                      "" -> inherit AUTO_ORGANIZE_USE_COPY,
+                                     otherwise "hardlink" or "copy". Useful when one
+                                     library lives on a different filesystem, where
+                                     hard links cannot work.
     """
     entries = []
     seen = set()
@@ -554,6 +558,9 @@ def normalize_category_overrides(value):
         if main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS or main_cat in seen:
             continue
         seen.add(main_cat)
+        link_mode = str(item.get("link_mode") or "").strip().lower()
+        if link_mode not in ("hardlink", "copy"):
+            link_mode = ""
         entries.append({
             "main_cat": main_cat,
             "root_path": str(item.get("root_path") or "").strip(),
@@ -561,12 +568,58 @@ def normalize_category_overrides(value):
             "subcategory_replaces_category": coerce_bool(
                 item.get("subcategory_replaces_category"), False
             ),
+            "link_mode": link_mode,
         })
 
     # Keep a stable order matching the media-type list rather than insertion order.
     order = [item["id"] for item in AUTO_ORGANIZE_MEDIA_TYPES]
     entries.sort(key=lambda entry: order.index(entry["main_cat"]))
     return entries
+
+
+def migrate_type_specific_paths_to_overrides(config):
+    """
+    Fold legacy Type-Specific Paths into category overrides.
+
+    Category overrides replace that section, so a DESTINATION_PATHS entry that was
+    assigned to a media type becomes that media type's root_path override. Only
+    fills gaps: an existing override for the same media type always wins, and the
+    destination list itself is left untouched so nothing else breaks.
+    """
+    overrides = normalize_category_overrides(config.get("CATEGORY_OVERRIDES"))
+    have_root = {e["main_cat"] for e in overrides if e["root_path"]}
+    by_main_cat = {e["main_cat"]: e for e in overrides}
+    migrated = 0
+
+    for entry in config.get("DESTINATION_PATHS") or []:
+        if not isinstance(entry, dict):
+            continue
+        main_cat = str(entry.get("default_main_cat") or "").strip()
+        path = str(entry.get("path") or "").strip()
+        if main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS or not path or main_cat in have_root:
+            continue
+
+        existing = by_main_cat.get(main_cat)
+        if existing:
+            existing["root_path"] = path
+        else:
+            new_entry = {
+                "main_cat": main_cat,
+                "root_path": path,
+                "rel_path_template": "",
+                "subcategory_replaces_category": False,
+                "link_mode": "",
+            }
+            overrides.append(new_entry)
+            by_main_cat[main_cat] = new_entry
+        have_root.add(main_cat)
+        migrated += 1
+
+    if migrated:
+        logging.getLogger(__name__).info(
+            f"Migrated {migrated} type-specific path(s) into category overrides."
+        )
+    return normalize_category_overrides(overrides)
 
 
 def get_category_override(main_cat, overrides=None):
@@ -1776,7 +1829,7 @@ def load_config():
         config.get("TYPE_SPECIFIC_TORRENT_CATEGORIES"),
         raw_destination_paths,
     )
-    config["CATEGORY_OVERRIDES"] = normalize_category_overrides(config.get("CATEGORY_OVERRIDES"))
+    config["CATEGORY_OVERRIDES"] = migrate_type_specific_paths_to_overrides(config)
     config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(config)
     config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(config)
     config["TORRENT_DOWNLOAD_PATH"] = config["LOCAL_TORRENT_DOWNLOAD_PATH"]
@@ -2156,7 +2209,7 @@ async def load_new_app_config():
         new_config.get("TYPE_SPECIFIC_TORRENT_CATEGORIES"),
         raw_destination_paths,
     )
-    new_config["CATEGORY_OVERRIDES"] = normalize_category_overrides(new_config.get("CATEGORY_OVERRIDES"))
+    new_config["CATEGORY_OVERRIDES"] = migrate_type_specific_paths_to_overrides(new_config)
     new_config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(new_config)
     new_config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(new_config)
     new_config["TORRENT_DOWNLOAD_PATH"] = new_config["LOCAL_TORRENT_DOWNLOAD_PATH"]
@@ -4492,7 +4545,11 @@ def save_database(data):
     with open(DATABASE_FILE, "w") as f: json.dump(data, f, indent=4)
 
 def sanitize_filename(name: str) -> str:
-    sanitized = re.sub(r'[<>:"/\\|?*]', '', name)
+    # Path separators become a dash rather than vanishing, so names that legitimately
+    # contain one stay readable: "Magazines/Newspapers" -> "Magazines-Newspapers"
+    # instead of "MagazinesNewspapers". Mirrors sanitizeFilename() in main.js.
+    sanitized = re.sub(r'[/\\]', '-', name)
+    sanitized = re.sub(r'[<>:"|?*]', '', sanitized)
     return sanitized.strip('. ') if sanitized else "Untitled"
 
 def get_category_name(category_num):
@@ -6265,6 +6322,16 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         app.logger.error(f"[ORGANIZE] Failed to create destination path {dest_path}: {e}")
         return False, f"Dest create failed: {e}"
     
+    # A category override may force copy or hardlink, e.g. when its root lives on a
+    # different filesystem where os.link cannot work.
+    link_mode = str((override or {}).get('link_mode') or "").strip()
+    if link_mode == "copy":
+        use_copy = True
+    elif link_mode == "hardlink":
+        use_copy = False
+    else:
+        use_copy = bool(app.config.get("AUTO_ORGANIZE_USE_COPY", False))
+
     files_linked, files_exist = 0, 0
     failed_files = []
     source_base_path = content_path.parent if content_path.is_file() else content_path
@@ -6284,7 +6351,7 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
             continue
 
         try:
-            if app.config.get("AUTO_ORGANIZE_USE_COPY", False):
+            if use_copy:
                 # Run copy in a separate thread to prevent blocking
                 await asyncio.to_thread(shutil.copy2, source_file, dest_file)
                 files_linked += 1
@@ -6294,7 +6361,7 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
                 files_linked += 1
                 app.logger.debug(f"[ORGANIZE] Linked: {source_file} -> {dest_file}")
         except Exception as e:
-            operation = "Copy" if app.config.get("AUTO_ORGANIZE_USE_COPY", False) else "Link"
+            operation = "Copy" if use_copy else "Link"
             app.logger.error(f"[ORGANIZE] {operation} error {source_file}: {e}")
             failed_files.append((rel_path_str, str(e)))
 
