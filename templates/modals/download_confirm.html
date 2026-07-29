@@ -49,21 +49,54 @@
           </div>
 
           <div class="mb-3">
-            <label for="confirm-path-input" class="form-label mb-1">Relative Path</label>
-            <input type="text" class="form-control" id="confirm-path-input">
-            <div class="form-text m-0" id="path-format-hint">Format: Author / Title</div>
-            <br>
-            <div class="d-flex align-items-center gap-1">
-              <button type="button" class="btn btn-sm btn-outline-secondary py-0 d-flex align-items-center gap-1"
-                id="add-series-btn" style="font-size: 0.75rem;">
-                <i class="bi bi-plus-lg"></i> Series
-              </button>
-              <span id="series-name-preview" class="text-muted fst-italic me-2"
-                style="font-size: 0.75rem; display: none;"></span>
-
-
+            <label for="confirm-template-input" class="form-label mb-1">Path Template</label>
+            <div class="input-group mb-2">
+              <input type="text" class="form-control font-monospace" id="confirm-template-input"
+                placeholder="e.g. {Author}/{Series}/{Title}">
+              <button class="btn btn-outline-secondary" type="button" id="confirm-reset-template-btn"
+                title="Reset to your default template"><i class="bi bi-arrow-counterclockwise"></i></button>
             </div>
 
+            <div class="d-flex gap-2 flex-wrap">
+              <span class="small text-muted align-self-center me-1">Tags:</span>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{Author}">
+                <i class="bi bi-person-fill"></i> Author
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{Series}">
+                <i class="bi bi-collection-fill"></i> Series
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{SeriesNumber}">
+                <i class="bi bi-hash"></i> Series Number
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{Title}">
+                <i class="bi bi-book-fill"></i> Title
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{Category}">
+                <i class="bi bi-collection"></i> Category
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{Genre}">
+                <i class="bi bi-tag-fill"></i> Genre
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill confirm-token-btn"
+                data-token="{Format}">
+                <i class="bi bi-file-earmark-fill"></i> Format
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="confirm-path-input" class="form-label mb-1">Relative Path</label>
+            <input type="text" class="form-control" id="confirm-path-input">
+            <div class="form-text m-0" id="path-format-hint">
+              Filled in from the template above. Edit it directly for a one-off path &mdash; changing the template
+              rebuilds it.
+            </div>
           </div>
 
           <div class="alert alert-light border small" role="alert" style="word-break: break-all;">

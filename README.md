@@ -427,7 +427,7 @@ The application will be available at `http://<your-server-ip>:5000`.
 5.  In the results, select a torrent category (if desired) and click "Download". A confirmation dialog will appear. If auto-organize is enabled, you can review/edit the relative organization path and choose a destination path before sending to your client.
 6.  The torrent will be added, and a status badge will appear, polling your torrent client for live progress.
 
-### Path Customization & Series Support:
+### Path Customization:
 MouseSearch supports configurable default organization templates via Settings -> Directory Structure.
 
 - **Template Editor**: Set `REL_PATH_TEMPLATE` from the UI using the tokens below, with quick-insert buttons and live preview.
@@ -444,12 +444,13 @@ MouseSearch supports configurable default organization templates via Settings ->
 
   Tokens that have no value collapse out of the path rather than leaving an empty folder level, so `{Author}/{Series}/{Title}` yields `Frank Herbert/Dune` for a standalone book. To reproduce a `Audiobooks/Science Fiction/Frank Herbert/Dune` layout, use `{Category}/{Genre}/{Author}/{Title}`.
 - **Environment Default**: Set `DEFAULT_RELATIVE_PATH_TEMPLATE` in `.env` to control the default template used by the app.
-- **Review Path**: When `AUTO_ORGANIZE_ON_ADD` is enabled, the download confirmation modal pre-fills from your template and remains editable.
+- **Per-Download Tag Builder**: When `AUTO_ORGANIZE_ON_ADD` is enabled, the download confirmation modal shows the same tag builder as Settings, seeded with your configured template and this torrent's values:
+  - **Path Template** — the template for this one download. Tag buttons add a token, or remove it if it is already present; a tag with no value for this torrent (no series, no genre) is greyed out. The reset button restores your configured default.
+  - **Relative Path** — the resolved path, freely editable for a one-off override. Changing the template rebuilds it.
+  - Neither field affects your saved default; edits apply only to the download being confirmed.
 - **Destination Selection**: In Settings → Auto-Organize, set a **Default Organized Destination Path** and optionally add extra destination paths that can be assigned as defaults per media type (Audiobooks, E-Books, Musicology, Radio).
 - **Category-Based Destination Defaults**: In the download confirmation modal, the destination dropdown is auto-selected from your configured media-type destination when available; otherwise it falls back to the default organized destination path.
 - **Download-Only Confirm**: When `AUTO_ORGANIZE_ON_ADD` is disabled, the same modal is used as a lightweight confirmation without path editing.
-
-- **Series Toggle**: If the book has series metadata, the "Series" button toggles `{Series}` in/out of the generated path while preserving your template structure.
 
 ## [BETA] Auto-Organization Feature
 

@@ -1843,7 +1843,11 @@ function sanitizeFilename(name) {
 }
 
 const DEFAULT_REL_PATH_TEMPLATE = "{Author}/{Title}";
-let savedRelPathTemplate = DEFAULT_REL_PATH_TEMPLATE;
+
+// Seeded from the server-rendered REL_PATH_TEMPLATE ("Default Relative Path" in
+// Settings) so the configured value is available before the settings form is
+// snapshotted, then kept in sync as the user edits and saves that setting.
+let savedRelPathTemplate = String(window.REL_PATH_TEMPLATE || "").trim() || DEFAULT_REL_PATH_TEMPLATE;
 
 function setSavedRelPathTemplate(value) {
     const normalized = normalizeRelPathTemplate(value || DEFAULT_REL_PATH_TEMPLATE);
@@ -1852,24 +1856,6 @@ function setSavedRelPathTemplate(value) {
 
 function normalizeRelPathTemplate(template) {
     return String(template || "").replace(/\\/g, '/');
-}
-
-function stripSeriesTokenFromTemplate(template) {
-    let cleaned = normalizeRelPathTemplate(template)
-        .split('{Series}').join('')
-        .split('{SeriesNumber}').join('');
-    cleaned = cleaned.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
-    return cleaned || DEFAULT_REL_PATH_TEMPLATE;
-}
-
-function insertSeriesTokenIntoTemplate(template) {
-    const normalized = normalizeRelPathTemplate(template);
-    if (!normalized) return "{Author}/{Series}/{Title}";
-    if (normalized.includes('{Series}')) return normalized;
-    if (normalized.includes('{Author}') && normalized.includes('{Title}')) {
-        return normalized.replace('{Author}', '{Author}/{Series}');
-    }
-    return normalized.endsWith('/') ? `${normalized}{Series}` : `${normalized}/{Series}`;
 }
 
 const MAIN_CAT_DISPLAY_NAMES = {
@@ -1927,18 +1913,58 @@ function getRelPathTemplateValue() {
     return savedRelPathTemplate || DEFAULT_REL_PATH_TEMPLATE;
 }
 
-function setSeriesToggleButtonState(button, isActive) {
-    if (!button) return;
-    button.dataset.active = isActive ? "true" : "false";
-    if (isActive) {
-        button.innerHTML = '<i class="bi bi-dash-lg"></i> Series';
-        button.classList.replace('btn-outline-secondary', 'btn-secondary');
-        button.classList.add('text-white');
-    } else {
-        button.innerHTML = '<i class="bi bi-plus-lg"></i> Series';
-        button.classList.replace('btn-secondary', 'btn-outline-secondary');
-        button.classList.remove('text-white');
-    }
+/**
+ * The tags understood by the path template, in the order they appear in both
+ * tag builders. `key` maps a token to its buildRelativePathFromTemplate() value.
+ */
+const REL_PATH_TOKENS = [
+    { token: '{Author}', key: 'author', label: 'Author' },
+    { token: '{Series}', key: 'series', label: 'Series' },
+    { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series Number' },
+    { token: '{Title}', key: 'title', label: 'Title' },
+    { token: '{Category}', key: 'category', label: 'Category' },
+    { token: '{Genre}', key: 'genre', label: 'Genre' },
+    { token: '{Format}', key: 'format', label: 'Format' }
+];
+
+/** Remove every occurrence of a token, collapsing the folder level it leaves behind. */
+function removeTokenFromTemplate(template, token) {
+    return normalizeRelPathTemplate(template)
+        .split(token).join('')
+        .replace(/\/+/g, '/')
+        .replace(/^\/+|\/+$/g, '');
+}
+
+/**
+ * Insert a token into a template input at the last known caret position, falling
+ * back to appending it as a new path segment. Returns the updated caret range so
+ * the caller can keep tracking it. Shared by the Settings and confirm-modal builders.
+ */
+function insertTokenIntoTemplateInput(input, token, caretRange) {
+    const currentVal = input.value || '';
+    const hasCaretRange = caretRange
+        && typeof caretRange.start === 'number'
+        && typeof caretRange.end === 'number';
+
+    // With no tracked caret, append to the end.
+    const start = hasCaretRange ? Math.max(0, Math.min(caretRange.start, currentVal.length)) : currentVal.length;
+    const end = hasCaretRange ? Math.max(start, Math.min(caretRange.end, currentVal.length)) : currentVal.length;
+    const before = currentVal.slice(0, start);
+    const after = currentVal.slice(end);
+
+    // Keep each token on its own path segment, adding a separator only where one
+    // is missing. Without this, clicking two tags in a row ran them together:
+    // the first insert focuses the input, so the second landed at the caret with
+    // no separator and produced "{Genre}{Title}".
+    const prefix = token !== '/' && before && !before.endsWith('/') ? '/' : '';
+    const suffix = token !== '/' && after && !after.startsWith('/') ? '/' : '';
+
+    input.value = `${before}${prefix}${token}${suffix}${after}`;
+    const nextCaretPos = before.length + prefix.length + token.length;
+
+    input.focus();
+    input.setSelectionRange(nextCaretPos, nextCaretPos);
+    return { start: nextCaretPos, end: nextCaretPos };
 }
 
 function getSeriesName(seriesJsonStr) {
@@ -3615,35 +3641,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const token = btn.dataset.token;
                 if (!token) return;
 
-                const hasCaretRange = relTemplateCaretRange
-                    && typeof relTemplateCaretRange.start === 'number'
-                    && typeof relTemplateCaretRange.end === 'number';
-
-                if (hasCaretRange) {
-                    const currentVal = relTemplateInput.value || '';
-                    const boundedStart = Math.max(0, Math.min(relTemplateCaretRange.start, currentVal.length));
-                    const boundedEnd = Math.max(boundedStart, Math.min(relTemplateCaretRange.end, currentVal.length));
-                    const before = currentVal.slice(0, boundedStart);
-                    const after = currentVal.slice(boundedEnd);
-                    relTemplateInput.value = `${before}${token}${after}`;
-                    const nextCaretPos = boundedStart + token.length;
-                    relTemplateInput.focus();
-                    relTemplateInput.setSelectionRange(nextCaretPos, nextCaretPos);
-                    relTemplateCaretRange = { start: nextCaretPos, end: nextCaretPos };
-                } else {
-                    let currentVal = relTemplateInput.value || '';
-
-                    if (currentVal.length > 0 && !currentVal.endsWith('/') && token !== '/') {
-                        currentVal += '/';
-                    }
-
-                    relTemplateInput.value = currentVal + token;
-                    const endPos = relTemplateInput.value.length;
-                    relTemplateInput.focus();
-                    relTemplateInput.setSelectionRange(endPos, endPos);
-                    relTemplateCaretRange = { start: endPos, end: endPos };
-                }
-
+                relTemplateCaretRange = insertTokenIntoTemplateInput(
+                    relTemplateInput, token, relTemplateCaretRange
+                );
                 relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
             });
         });
@@ -5647,6 +5647,12 @@ document.addEventListener("DOMContentLoaded", async function () {
     const confirmModalEl = document.getElementById('downloadConfirmModal');
     const confirmModal = confirmModalEl ? new bootstrap.Modal(confirmModalEl) : null;
     const confirmInput = document.getElementById('confirm-path-input');
+    const confirmTemplateInput = document.getElementById('confirm-template-input');
+    const confirmResetTemplateBtn = document.getElementById('confirm-reset-template-btn');
+    const confirmTokenButtons = Array.from(document.querySelectorAll('.confirm-token-btn'));
+    // Resolved tag values for the torrent currently in the confirm modal.
+    let confirmTokenValues = {};
+    let confirmTemplateCaretRange = null;
     const previewSpan = document.getElementById('full-path-preview');
     const confirmDestinationSelect = document.getElementById('confirm-destination-select');
     const confirmDestinationRoot = document.getElementById('confirm-destination-root');
@@ -6028,6 +6034,83 @@ document.addEventListener("DOMContentLoaded", async function () {
             const root = String(confirmDestinationSelect?.value || '').trim();
             confirmDestinationRoot.textContent = root ? `${root}/` : '';
         }
+    }
+
+    /**
+     * Reflect the confirm-modal template in the tag buttons: a tag already in the
+     * template reads as active (click to remove), and a tag with no value for this
+     * torrent is disabled unless it is in the template, so it can still be removed.
+     */
+    function syncConfirmTokenButtons() {
+        if (!confirmTokenButtons.length) return;
+        const template = normalizeRelPathTemplate(confirmTemplateInput?.value || '');
+
+        confirmTokenButtons.forEach(btn => {
+            const spec = REL_PATH_TOKENS.find(t => t.token === btn.dataset.token);
+            if (!spec) return;
+
+            const value = confirmTokenValues[spec.key] || '';
+            const isActive = template.includes(spec.token);
+
+            btn.disabled = !value && !isActive;
+            btn.dataset.active = isActive ? 'true' : 'false';
+            btn.classList.toggle('btn-primary', isActive);
+            btn.classList.toggle('text-white', isActive);
+            btn.classList.toggle('btn-outline-primary', !isActive);
+            btn.title = value
+                ? `${spec.label}: ${value}`
+                : `No ${spec.label.toLowerCase()} for this torrent`;
+        });
+    }
+
+    /** Rebuild the relative path from the confirm-modal template, discarding manual edits. */
+    function applyConfirmTemplate() {
+        if (confirmInput && confirmTemplateInput) {
+            confirmInput.value = buildRelativePathFromTemplate(confirmTemplateInput.value, confirmTokenValues);
+        }
+        updateConfirmPathPreview();
+        syncConfirmTokenButtons();
+    }
+
+    if (confirmTemplateInput) {
+        const captureConfirmTemplateCaret = () => {
+            if (document.activeElement !== confirmTemplateInput) return;
+            const start = confirmTemplateInput.selectionStart;
+            const end = confirmTemplateInput.selectionEnd;
+            if (typeof start === 'number' && typeof end === 'number') {
+                confirmTemplateCaretRange = { start, end };
+            }
+        };
+
+        confirmTemplateInput.addEventListener('input', applyConfirmTemplate);
+        ['keyup', 'click', 'select', 'focus'].forEach(evt => {
+            confirmTemplateInput.addEventListener(evt, captureConfirmTemplateCaret);
+        });
+
+        confirmTokenButtons.forEach(btn => {
+            btn.addEventListener('mousedown', captureConfirmTemplateCaret);
+            btn.addEventListener('click', () => {
+                const token = btn.dataset.token;
+                if (!token || btn.disabled) return;
+
+                const template = normalizeRelPathTemplate(confirmTemplateInput.value || '');
+                if (template.includes(token)) {
+                    confirmTemplateInput.value = removeTokenFromTemplate(template, token);
+                    confirmTemplateCaretRange = null;
+                } else {
+                    confirmTemplateCaretRange = insertTokenIntoTemplateInput(
+                        confirmTemplateInput, token, confirmTemplateCaretRange
+                    );
+                }
+                applyConfirmTemplate();
+            });
+        });
+
+        confirmResetTemplateBtn?.addEventListener('click', () => {
+            confirmTemplateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
+            confirmTemplateCaretRange = null;
+            applyConfirmTemplate();
+        });
     }
 
     if (destinationPathsList) {
@@ -6861,13 +6944,11 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const cleanCategory = category ? sanitizeFilename(category) : "";
                 const formatToken = formatFileTypeToken(downloadData.filetype);
                 const cleanFormat = formatToken ? sanitizeFilename(formatToken) : "";
-                const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
-                const templateHasSeries = relTemplate.includes('{Series}') || relTemplate.includes('{SeriesNumber}');
-
                 syncConfirmDestinationOptions(downloadData.main_cat, true);
 
-                // Set default path from template
-                const relativePath = buildRelativePathFromTemplate(relTemplate, {
+                // Seed the tag builder with this torrent's values, then apply the
+                // configured template. Editing either field from here is up to the user.
+                confirmTokenValues = {
                     author: cleanAuthor,
                     series: cleanSeries,
                     seriesNumber: cleanSeriesNumber,
@@ -6875,48 +6956,20 @@ document.addEventListener("DOMContentLoaded", async function () {
                     genre: cleanGenre,
                     format: cleanFormat,
                     category: cleanCategory
-                });
-                if (confirmInput) confirmInput.value = relativePath;
-                updateConfirmPathPreview();
-                const pathHintEl = document.getElementById('path-format-hint');
-                if (pathHintEl) pathHintEl.textContent = `Template: ${relTemplate}`;
-
-                // Logic for the "+ Series" button inside the modal
-                const addSeriesBtn = document.getElementById('add-series-btn');
-                const seriesPreviewEl = document.getElementById('series-name-preview');
-
-                if (addSeriesBtn) {
-                    // Reset button state
-                    addSeriesBtn.dataset.cleanAuthor = cleanAuthor;
-                    addSeriesBtn.dataset.cleanTitle = cleanTitle;
-                    addSeriesBtn.dataset.cleanSeries = cleanSeries;
-                    addSeriesBtn.dataset.cleanSeriesNumber = cleanSeriesNumber;
-                    addSeriesBtn.dataset.cleanGenre = cleanGenre;
-                    addSeriesBtn.dataset.cleanFormat = cleanFormat;
-                    addSeriesBtn.dataset.cleanCategory = cleanCategory;
-                    addSeriesBtn.dataset.templateWithSeries = templateHasSeries
-                        ? relTemplate
-                        : insertSeriesTokenIntoTemplate(relTemplate);
-                    addSeriesBtn.dataset.templateWithoutSeries = stripSeriesTokenFromTemplate(relTemplate);
-                    setSeriesToggleButtonState(addSeriesBtn, templateHasSeries);
-
-                    if (seriesName) {
-                        addSeriesBtn.disabled = false;
-                        if (seriesPreviewEl) {
-                            seriesPreviewEl.textContent = `"${cleanSeries}"`;
-                            seriesPreviewEl.style.display = 'inline';
-                        }
-                    } else {
-                        addSeriesBtn.disabled = true;
-                        if (seriesPreviewEl) seriesPreviewEl.style.display = 'none';
-                    }
+                };
+                confirmTemplateCaretRange = null;
+                if (confirmTemplateInput) {
+                    confirmTemplateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
                 }
+                applyConfirmTemplate();
             } else {
+                confirmTokenValues = {};
+                confirmTemplateCaretRange = null;
+                if (confirmTemplateInput) confirmTemplateInput.value = '';
                 if (confirmInput) confirmInput.value = '';
                 syncConfirmDestinationOptions('', false);
                 updateConfirmPathPreview();
-                const pathHintEl = document.getElementById('path-format-hint');
-                if (pathHintEl) pathHintEl.textContent = 'Format: Author / Title';
+                syncConfirmTokenButtons();
             }
 
             // Sync Freeleech UI
@@ -7235,30 +7288,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
         confirmModal.hide();
         performDownload(pendingDownloadData, pendingButton);
-    });
-
-    // Toggle Series in Path Button
-    document.getElementById('add-series-btn')?.addEventListener('click', function () {
-        const input = document.getElementById('confirm-path-input');
-        const hintEl = document.getElementById('path-format-hint');
-        const { cleanAuthor, cleanTitle, cleanSeries, cleanSeriesNumber, cleanGenre, cleanFormat, cleanCategory, active, templateWithSeries, templateWithoutSeries } = this.dataset;
-        const isActive = active === "true";
-        const nextTemplate = isActive
-            ? (templateWithoutSeries || DEFAULT_REL_PATH_TEMPLATE)
-            : (templateWithSeries || templateWithoutSeries || DEFAULT_REL_PATH_TEMPLATE);
-
-        input.value = buildRelativePathFromTemplate(nextTemplate, {
-            author: cleanAuthor || '',
-            series: cleanSeries || '',
-            seriesNumber: cleanSeriesNumber || '',
-            title: cleanTitle || '',
-            genre: cleanGenre || '',
-            format: cleanFormat || '',
-            category: cleanCategory || ''
-        });
-        if (hintEl) hintEl.textContent = `Template: ${nextTemplate}`;
-        setSeriesToggleButtonState(this, !isActive);
-        input.dispatchEvent(new Event('input'));
     });
 
     function performDownload(downloadData, button) {
