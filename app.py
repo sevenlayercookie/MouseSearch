@@ -539,10 +539,6 @@ def normalize_category_overrides(value):
 
       root_path                      blank -> inherit the global organized path
       rel_path_template              blank -> inherit the global template
-      subcategory_replaces_category  when true, {Category} renders the torrent's
-                                     subcategory ("Magazines/Newspapers") instead
-                                     of its media type ("Ebooks"), falling back to
-                                     the media type when there is no subcategory.
       link_mode                      "" -> inherit AUTO_ORGANIZE_USE_COPY,
                                      otherwise "hardlink" or "copy". Useful when one
                                      library lives on a different filesystem, where
@@ -565,9 +561,6 @@ def normalize_category_overrides(value):
             "main_cat": main_cat,
             "root_path": str(item.get("root_path") or "").strip(),
             "rel_path_template": str(item.get("rel_path_template") or "").strip(),
-            "subcategory_replaces_category": coerce_bool(
-                item.get("subcategory_replaces_category"), False
-            ),
             "link_mode": link_mode,
         })
 
@@ -607,7 +600,6 @@ def migrate_type_specific_paths_to_overrides(config):
                 "main_cat": main_cat,
                 "root_path": path,
                 "rel_path_template": "",
-                "subcategory_replaces_category": False,
                 "link_mode": "",
             }
             overrides.append(new_entry)
@@ -4545,11 +4537,7 @@ def save_database(data):
     with open(DATABASE_FILE, "w") as f: json.dump(data, f, indent=4)
 
 def sanitize_filename(name: str) -> str:
-    # Path separators become a dash rather than vanishing, so names that legitimately
-    # contain one stay readable: "Magazines/Newspapers" -> "Magazines-Newspapers"
-    # instead of "MagazinesNewspapers". Mirrors sanitizeFilename() in main.js.
-    sanitized = re.sub(r'[/\\]', '-', name)
-    sanitized = re.sub(r'[<>:"|?*]', '', sanitized)
+    sanitized = re.sub(r'[<>:"/\\|?*]', '', name)
     return sanitized.strip('. ') if sanitized else "Untitled"
 
 def get_category_name(category_num):
@@ -4639,21 +4627,12 @@ def build_relative_path_from_template(template, values):
     return output
 
 
-def relative_path_tokens_from_metadata(torrent_meta, override=None):
-    """
-    Build the template token map for a stored torrent metadata record.
-
-    When the category override for this torrent's media type has
-    subcategory_replaces_category enabled, {Category} resolves to the subcategory
-    ("Magazines/Newspapers") instead of the media type ("Ebooks"). Torrents with
-    no subcategory keep the media type, so the folder level never collapses away.
-    """
+def relative_path_tokens_from_metadata(torrent_meta):
+    """Build the template token map for a stored torrent metadata record."""
     category, genre = split_catname(
         torrent_meta.get("catname"),
         torrent_meta.get("main_cat", ""),
     )
-    if override and override.get("subcategory_replaces_category") and genre:
-        category = genre
 
     # series_info is normally {"<id>": [name, number]}, but older records written by
     # the search-snatched path stored a plain display string instead.
@@ -6279,7 +6258,7 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         if not template:
             template = str(app.config.get("REL_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
         rel_path = build_relative_path_from_template(
-            template, relative_path_tokens_from_metadata(torrent_meta, override)
+            template, relative_path_tokens_from_metadata(torrent_meta)
         )
         if not rel_path:
             rel_path = str(Path(sanitize_filename(torrent_meta.get('author') or '')) / sanitize_filename(torrent_meta.get('title') or ''))

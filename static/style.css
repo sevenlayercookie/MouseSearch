@@ -1390,75 +1390,116 @@ input:disabled, select:disabled {
     border-radius: 10px;
 }
 
-/* --- Category override token editor (draggable template tags) --- */
+/* --- Category override token editor (draggable template tokens) --- */
 #settingsOffcanvas .template-token-editor {
-    min-height: 2.25rem;
-    padding: 0.35rem 0.5rem;
-    border: 1px dashed var(--bs-border-color);
-    border-radius: 0.5rem;
-    background: var(--bs-body-bg);
+    padding: 7px;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+}
+
+#settingsOffcanvas .template-token-slash {
+    opacity: 0.4;
+    font-size: 0.8rem;
 }
 
 #settingsOffcanvas .template-token-pill {
+    gap: 5px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-family: ui-monospace, Menlo, monospace;
     cursor: grab;
-    font-weight: 500;
-    font-size: 0.75rem;
-    padding: 0.35rem 0.5rem;
     user-select: none;
+    border: 1px solid transparent;
 }
 
 #settingsOffcanvas .template-token-pill:active {
     cursor: grabbing;
 }
 
-#settingsOffcanvas .template-token-pill.token-pill-default {
-    background-color: var(--bs-primary);
-    color: #fff;
+/* A {Tag} segment. */
+#settingsOffcanvas .template-token-pill.token-pill-token {
+    border-color: rgba(110, 168, 254, 0.55);
+    background: rgba(110, 168, 254, 0.14);
+    color: #8bb9fe;
 }
 
-/* Signals the tag's value may be swapped for the subcategory (option 3). */
-#settingsOffcanvas .template-token-pill.token-pill-swappable {
-    background-color: var(--bs-info);
-    color: #000;
+/* Literal text the user typed. */
+#settingsOffcanvas .template-token-pill.token-pill-literal {
+    border-color: rgba(128, 128, 128, 0.45);
+    background: transparent;
+    color: inherit;
 }
 
 #settingsOffcanvas .template-token-pill.dragging {
-    opacity: 0.4;
+    opacity: 0.45;
 }
 
 #settingsOffcanvas .template-token-pill.drag-over {
-    outline: 2px solid var(--bs-warning);
+    outline: 2px solid rgba(110, 168, 254, 0.75);
     outline-offset: 1px;
 }
 
-#settingsOffcanvas .template-token-pill .template-token-remove {
-    font-size: 0.5rem;
-    padding: 0;
-    margin-left: 0.15rem;
+#settingsOffcanvas .template-token-grip {
+    opacity: 0.5;
+    font-size: 0.72rem;
+}
+
+#settingsOffcanvas .template-token-remove {
+    cursor: pointer;
     opacity: 0.75;
 }
 
-#settingsOffcanvas .template-token-pill.token-pill-swappable .template-token-remove {
-    filter: none;
+#settingsOffcanvas .template-token-remove:hover {
+    opacity: 1;
 }
 
 #settingsOffcanvas .template-token-add-btn {
-    width: 1.75rem;
-    height: 1.75rem;
-    line-height: 1;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    font-size: 0.75rem;
+    line-height: 1.2;
 }
 
 #settingsOffcanvas .template-token-add-menu {
-    max-height: 14rem;
+    min-width: 170px;
+    max-width: 230px;
+    max-height: 270px;
     overflow-y: auto;
+    padding: 5px;
 }
 
+#settingsOffcanvas .template-token-add-item {
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-family: ui-monospace, Menlo, monospace;
+}
+
+#settingsOffcanvas .template-token-custom-input {
+    font-size: 0.78rem;
+}
+
+/* --- Category override cards --- */
 #settingsOffcanvas .category-override-block .card-header {
     gap: 0.5rem;
+}
+
+#settingsOffcanvas .category-override-preview {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.74rem;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#settingsOffcanvas .category-override-preview-root {
+    opacity: 0.55;
+}
+
+#settingsOffcanvas .category-override-preview-rel {
+    color: #75c687;
 }
 
 /* --- Tom Select Dark Mode Overrides --- */

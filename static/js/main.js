@@ -1839,10 +1839,7 @@ function localizeDates(scope = document) {
 
 function sanitizeFilename(name) {
     if (!name) return "Unknown";
-    // Path separators become a dash rather than vanishing, so names that legitimately
-    // contain one stay readable: "Magazines/Newspapers" -> "Magazines-Newspapers".
-    // Mirrors sanitize_filename() in app.py.
-    return name.replace(/[/\\]/g, '-').replace(/[<>:"|?*]/g, '').trim();
+    return name.replace(/[<>:"/\\|?*]/g, '').trim();
 }
 
 const DEFAULT_REL_PATH_TEMPLATE = "{Author}/{Title}";
@@ -5873,8 +5870,6 @@ document.addEventListener("DOMContentLoaded", async function () {
             main_cat: mainCat,
             root_path: String(entry?.root_path || '').trim(),
             rel_path_template: String(entry?.rel_path_template || '').trim(),
-            subcategory_replaces_category: entry?.subcategory_replaces_category === true
-                || entry?.subcategory_replaces_category === 'true',
             link_mode: (linkMode === 'copy' || linkMode === 'hardlink') ? linkMode : ''
         };
     }
@@ -5893,7 +5888,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     /** Sample values used by each block's live preview. */
-    function categoryPreviewValues(mainCat, subcatReplaces) {
+    function categoryPreviewValues(mainCat) {
         const label = mediaTypeOptions.find(m => m.id === mainCat)?.label || 'Ebooks';
         const genre = mainCat === '15' ? 'Music Book' : (mainCat === '16' ? 'Documentary' : 'Fantasy');
         return {
@@ -5903,8 +5898,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             title: "Harry Potter and the Sorcerer's Stone",
             genre,
             format: mainCat === '14' ? 'EPUB' : 'M4B',
-            // Option 3 in action: the subcategory stands in for the media type.
-            category: subcatReplaces ? genre : label
+            category: label
         };
     }
 
@@ -5973,14 +5967,16 @@ document.addEventListener("DOMContentLoaded", async function () {
         return segments.filter(Boolean).join('/');
     }
 
-    /** Short header summary of what a block actually changes. */
+    /**
+     * Header summary naming which options are switched on, per the design:
+     * "· custom root · custom template", or "· inherits everything".
+     */
     function categoryOverrideSummary(state) {
-        const parts = [];
-        if (state.root_path) parts.push(state.root_path);
-        if (state.rel_path_template) parts.push(state.rel_path_template);
-        if (state.subcategory_replaces_category) parts.push('subcategory as category');
-        if (state.link_mode) parts.push(state.link_mode === 'copy' ? 'copy' : 'hardlink');
-        return parts.length ? parts.join(' · ') : 'Inherits global settings';
+        const bits = [];
+        if (state.root_path) bits.push('custom root');
+        if (state.rel_path_template) bits.push('custom template');
+        if (state.link_mode) bits.push('custom link mode');
+        return bits.length ? `· ${bits.join(' · ')}` : '· inherits everything';
     }
 
     function buildCategoryOverrideBlock(entry) {
@@ -6007,24 +6003,25 @@ document.addEventListener("DOMContentLoaded", async function () {
         header.setAttribute('aria-controls', bodyId);
         header.setAttribute('aria-expanded', 'false');
 
+        // Chevron first, then the media type, then the summary of what is overridden.
         const headerText = document.createElement('span');
-        headerText.className = 'd-flex flex-column';
-        headerText.innerHTML = `<span class="small fw-bold"><i class="bi bi-folder2-open me-2"></i>${label}</span>`
-            + '<span class="category-override-summary text-body-secondary text-truncate"'
-            + ' style="font-size:0.72rem;max-width:22rem;"></span>';
+        headerText.className = 'd-flex small fw-bold align-items-center text-truncate';
+        headerText.style.gap = '8px';
+        headerText.innerHTML =
+            '<i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>'
+            + `<span class="flex-shrink-0">${label}</span>`
+            + '<span class="category-override-summary text-body-secondary fw-normal text-truncate"'
+            + ' style="font-size:0.72rem;"></span>';
 
-        const headerActions = document.createElement('span');
-        headerActions.className = 'd-flex align-items-center gap-2 flex-shrink-0';
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
-        removeBtn.className = 'btn btn-sm btn-outline-danger py-0 remove-category-override-btn';
+        removeBtn.className = 'btn btn-sm btn-outline-danger py-0 flex-shrink-0 remove-category-override-btn';
         removeBtn.title = `Remove ${label} override`;
+        removeBtn.setAttribute('aria-label', `Remove ${label} override`);
         removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
         // The header itself toggles the collapse; the trash button must not.
         removeBtn.setAttribute('data-bs-toggle', '');
-        headerActions.innerHTML = '<i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>';
-        headerActions.prepend(removeBtn);
-        header.append(headerText, headerActions);
+        header.append(headerText, removeBtn);
 
         const collapse = document.createElement('div');
         collapse.className = 'collapse';
@@ -6056,12 +6053,13 @@ document.addEventListener("DOMContentLoaded", async function () {
         const pillRow = document.createElement('div');
         pillRow.className = 'template-token-editor d-flex flex-wrap align-items-center gap-1 mb-2';
 
-        const addWrap = document.createElement('div');
-        addWrap.className = 'dropdown';
+        const addWrap = document.createElement('span');
+        addWrap.className = 'position-relative d-inline-flex dropdown';
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
-        addBtn.className = 'btn btn-sm btn-outline-primary rounded-circle template-token-add-btn';
-        addBtn.title = 'Add a tag';
+        addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-1 template-token-add-btn';
+        addBtn.title = 'Add token';
+        addBtn.setAttribute('aria-label', 'Add token');
         addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
         addBtn.setAttribute('data-bs-toggle', 'dropdown');
         addBtn.setAttribute('aria-expanded', 'false');
@@ -6070,25 +6068,28 @@ document.addEventListener("DOMContentLoaded", async function () {
         addWrap.append(addBtn, addMenu);
         pillRow.appendChild(addWrap);
 
-        const textToggle = document.createElement('button');
-        textToggle.type = 'button';
-        textToggle.className = 'btn btn-link btn-sm p-0 text-decoration-none category-override-text-toggle';
-        textToggle.style.fontSize = '0.72rem';
-        textToggle.textContent = 'Edit as text';
-
+        // Source of truth for the template; the pills are a view over it. Also
+        // editable as raw text, for cases the pills are clumsy for.
         const templateInput = document.createElement('input');
         templateInput.type = 'text';
-        templateInput.className = 'form-control form-control-sm font-monospace mb-2 d-none category-override-template';
+        templateInput.className = 'form-control form-control-sm font-monospace mt-2 d-none category-override-template';
         templateInput.placeholder = getRelPathTemplateValue();
         templateInput.value = entry.rel_path_template;
 
+        const textToggle = document.createElement('button');
+        textToggle.type = 'button';
+        textToggle.className = 'btn btn-link btn-sm p-0 mt-1 text-decoration-none category-override-text-toggle';
+        textToggle.style.fontSize = '0.72rem';
+        textToggle.textContent = 'Edit as text';
+        textToggle.addEventListener('click', () => {
+            const hidden = templateInput.classList.toggle('d-none');
+            textToggle.textContent = hidden ? 'Edit as text' : 'Hide text editor';
+            if (!hidden) templateInput.focus();
+        });
+
         templateFields.append(pillRow, textToggle, templateInput);
 
-        // --- Option 3: subcategory replaces category ---
-        const subcatToggle = buildOverrideSwitch(`ov-sub-${entry.main_cat}`, 'Subcategory replaces category',
-            `When the torrent has a subcategory, {Category} renders it instead of "${label}".`);
-
-        // --- Option 4: link mode ---
+        // --- Option 3: link mode ---
         const linkToggle = buildOverrideSwitch(`ov-link-${entry.main_cat}`, 'Custom link mode',
             'Override hardlink vs copy, e.g. when this root is on another filesystem.');
         const linkFields = document.createElement('div');
@@ -6107,17 +6108,16 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         // --- Preview, always visible at the bottom ---
         const preview = document.createElement('div');
-        preview.className = 'alert alert-light border small m-0 py-2 mt-3';
-        preview.innerHTML = '<span class="text-muted text-uppercase" style="font-size:0.65rem;letter-spacing:1px;">Preview</span>'
-            + '<div class="text-break font-monospace mt-1 category-override-preview"></div>';
+        preview.className = 'border-top pt-3 mt-2';
+        preview.innerHTML = '<div class="form-text small m-0 mb-1">Preview</div>'
+            + '<div class="border rounded-2 px-2 py-2 category-override-preview"></div>';
 
         body.append(rootToggle.wrap, rootFields, templateToggle.wrap, templateFields,
-            subcatToggle.wrap, linkToggle.wrap, linkFields, preview);
+            linkToggle.wrap, linkFields, preview);
         block.append(valueInput, header, collapse);
 
         rootToggle.input.checked = Boolean(entry.root_path);
         templateToggle.input.checked = Boolean(entry.rel_path_template);
-        subcatToggle.input.checked = entry.subcategory_replaces_category;
         linkToggle.input.checked = Boolean(entry.link_mode);
 
         const markDirty = () => { if (!isRestoringSettings) settingsDirty = true; };
@@ -6128,31 +6128,37 @@ document.addEventListener("DOMContentLoaded", async function () {
         );
 
         function renderTokenPills() {
-            pillRow.querySelectorAll('.template-token-pill').forEach(el => el.remove());
+            pillRow.querySelectorAll('.template-token-pill, .template-token-slash').forEach(el => el.remove());
             const segments = templateSegments(templateInput.value || getRelPathTemplateValue());
 
             segments.forEach((segment, index) => {
+                if (index > 0) {
+                    const slash = document.createElement('span');
+                    slash.className = 'template-token-slash';
+                    slash.textContent = '/';
+                    pillRow.insertBefore(slash, addWrap);
+                }
+
                 const pill = document.createElement('span');
-                pill.className = 'template-token-pill badge rounded-pill d-inline-flex align-items-center gap-1';
+                pill.className = 'template-token-pill d-inline-flex align-items-center';
                 pill.draggable = true;
                 pill.dataset.index = String(index);
 
-                const isCategory = segment.includes('{Category}');
-                const swappable = isCategory && subcatToggle.input.checked;
-                pill.classList.add(swappable ? 'token-pill-swappable' : 'token-pill-default');
-                if (swappable) {
-                    pill.title = `Replaced by the subcategory when the torrent has one, otherwise "${label}".`;
-                } else if (isCategory) {
-                    pill.title = `Always renders "${label}".`;
-                }
+                // A segment is a token when it is exactly one {Tag}; anything else is
+                // literal text the user typed, and is styled more quietly.
+                const isToken = /^\{[A-Za-z]+\}$/.test(segment);
+                pill.classList.add(isToken ? 'token-pill-token' : 'token-pill-literal');
+                pill.title = isToken ? 'Token — drag to reorder' : 'Literal text';
 
+                const grip = document.createElement('i');
+                grip.className = 'bi bi-grip-vertical template-token-grip';
                 const text = document.createElement('span');
                 text.textContent = segment;
-                const close = document.createElement('button');
-                close.type = 'button';
-                close.className = 'btn-close btn-close-white template-token-remove';
+                const close = document.createElement('i');
+                close.className = 'bi bi-x template-token-remove';
+                close.setAttribute('role', 'button');
                 close.setAttribute('aria-label', `Remove ${segment}`);
-                pill.append(text, close);
+                pill.append(grip, text, close);
 
                 close.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -6195,32 +6201,50 @@ document.addEventListener("DOMContentLoaded", async function () {
                 pillRow.insertBefore(pill, addWrap);
             });
 
-            // Only offer tags the template does not already use.
+            // Only offer tokens the template does not already use.
             addMenu.innerHTML = '';
             const used = templateInput.value || getRelPathTemplateValue();
             const available = REL_PATH_TOKENS.filter(spec => !used.includes(spec.token));
-            if (!available.length) {
-                const li = document.createElement('li');
-                li.innerHTML = '<span class="dropdown-item-text small text-body-secondary">All tags used</span>';
-                addMenu.appendChild(li);
-            }
+
+            const appendSegment = (value) => {
+                const next = templateSegments(templateInput.value || getRelPathTemplateValue());
+                next.push(value);
+                templateInput.value = segmentsToTemplate(next);
+                syncBlock();
+                markDirty();
+            };
+
             available.forEach(spec => {
                 const li = document.createElement('li');
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = 'dropdown-item small template-token-add-item';
+                btn.className = 'dropdown-item template-token-add-item';
                 btn.dataset.token = spec.token;
-                btn.textContent = spec.label;
-                btn.addEventListener('click', () => {
-                    const next = templateSegments(templateInput.value || getRelPathTemplateValue());
-                    next.push(spec.token);
-                    templateInput.value = segmentsToTemplate(next);
-                    syncBlock();
-                    markDirty();
-                });
+                btn.textContent = spec.token;
+                btn.addEventListener('click', () => appendSegment(spec.token));
                 li.appendChild(btn);
                 addMenu.appendChild(li);
             });
+
+            // Free-text segment, so literals like "Books" or "{SeriesNumber} - {Title}"
+            // can be authored without a separate text field.
+            const customLi = document.createElement('li');
+            customLi.className = 'template-token-custom border-top mt-1 pt-2 px-2';
+            const customInput = document.createElement('input');
+            customInput.type = 'text';
+            customInput.className = 'form-control form-control-sm template-token-custom-input';
+            customInput.placeholder = 'custom text…';
+            customInput.addEventListener('keydown', (event) => {
+                event.stopPropagation();
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    const value = customInput.value.trim();
+                    if (value) appendSegment(value);
+                }
+            });
+            customInput.addEventListener('click', event => event.stopPropagation());
+            customLi.appendChild(customInput);
+            addMenu.appendChild(customLi);
         }
 
         function syncBlock() {
@@ -6228,20 +6252,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             templateFields.classList.toggle('d-none', !templateToggle.input.checked);
             linkFields.classList.toggle('d-none', !linkToggle.input.checked);
 
-            // Option 3 only does anything if {Category} is actually in the template.
-            const hasCategoryToken = effectiveTemplate().includes('{Category}');
-            subcatToggle.input.disabled = !hasCategoryToken;
-            if (!hasCategoryToken) subcatToggle.input.checked = false;
-            subcatToggle.wrap.classList.toggle('opacity-50', !hasCategoryToken);
-            subcatToggle.hint.textContent = hasCategoryToken
-                ? `When the torrent has a subcategory, {Category} renders it instead of "${label}".`
-                : 'Add the {Category} tag to the template to enable this.';
-
             const state = {
                 main_cat: entry.main_cat,
                 root_path: rootToggle.input.checked ? rootInput.value.trim() : '',
                 rel_path_template: templateToggle.input.checked ? templateInput.value.trim() : '',
-                subcategory_replaces_category: subcatToggle.input.checked,
                 link_mode: linkToggle.input.checked ? linkSelect.value : ''
             };
             valueInput.value = JSON.stringify(state);
@@ -6251,27 +6265,21 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             const effectiveRoot = (state.root_path || getDefaultDestinationPath()).replace(/\/+$/, '');
             const rendered = buildRelativePathFromTemplate(
-                effectiveTemplate(), categoryPreviewValues(entry.main_cat, subcatToggle.input.checked)
+                effectiveTemplate(), categoryPreviewValues(entry.main_cat)
             );
             // Root muted, the part the template controls highlighted.
             const previewEl = block.querySelector('.category-override-preview');
             previewEl.innerHTML = '';
             const rootSpan = document.createElement('span');
-            rootSpan.className = 'text-body-secondary';
+            rootSpan.className = 'category-override-preview-root';
             rootSpan.textContent = `${effectiveRoot}/`;
             const relSpan = document.createElement('span');
-            relSpan.className = 'text-primary fw-bold';
+            relSpan.className = 'category-override-preview-rel';
             relSpan.textContent = rendered;
             previewEl.append(rootSpan, relSpan);
         }
 
-        textToggle.addEventListener('click', () => {
-            const hidden = templateInput.classList.toggle('d-none');
-            textToggle.textContent = hidden ? 'Edit as text' : 'Hide text editor';
-            if (!hidden) templateInput.focus();
-        });
-
-        [rootToggle.input, templateToggle.input, subcatToggle.input, linkToggle.input].forEach(input => {
+        [rootToggle.input, templateToggle.input, linkToggle.input].forEach(input => {
             input.addEventListener('change', () => {
                 syncBlock();
                 syncConfirmDestinationOptions();
@@ -7435,11 +7443,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const categoryOverride = getCategoryOverride(downloadData.main_cat);
                 const { category, genre } = splitCatname(downloadData.catname, downloadData.main_cat);
                 const cleanGenre = genre ? sanitizeFilename(genre) : "";
-                // Option 3: the subcategory stands in for the media type when present.
-                const effectiveCategory = (categoryOverride?.subcategory_replaces_category && genre)
-                    ? genre
-                    : category;
-                const cleanCategory = effectiveCategory ? sanitizeFilename(effectiveCategory) : "";
+                const cleanCategory = category ? sanitizeFilename(category) : "";
                 const formatToken = formatFileTypeToken(downloadData.filetype);
                 const cleanFormat = formatToken ? sanitizeFilename(formatToken) : "";
                 syncConfirmDestinationOptions(downloadData.main_cat, true);

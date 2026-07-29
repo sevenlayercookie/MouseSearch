@@ -5,6 +5,7 @@ reloadService.sh
 
 # GitHub directory
 .github/
+nocommit-docs/
 
 # Custom
 # buildImage.sh
