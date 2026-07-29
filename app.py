@@ -5189,8 +5189,12 @@ async def mam_search():
         # Now we decode HTML entities and fix formatting on the sorted list
         for item in ranked:
             # 1. Handle Download Links
-            if dl_hash := item.get('dl'):
-                item['download_link'] = base_dl_url + dl_hash
+            # MAM rejects the link with "Invalid download link: missing tid"
+            # unless the torrent id is passed as a query param.
+            dl_hash = item.get('dl')
+            torrent_id = item.get('id')
+            if dl_hash and torrent_id:
+                item['download_link'] = f"{base_dl_url}{dl_hash}?tid={torrent_id}"
             else:
                 item['download_link'] = ''
 
