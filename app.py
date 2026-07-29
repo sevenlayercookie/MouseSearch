@@ -530,6 +530,58 @@ AUTO_ORGANIZE_MEDIA_TYPES = [
 ALLOWED_AUTO_ORGANIZE_MAIN_CATS = {item["id"] for item in AUTO_ORGANIZE_MEDIA_TYPES}
 
 
+def normalize_category_overrides(value):
+    """
+    Per-main-category overrides of the global auto-organize settings.
+
+    A category only appears here if the user explicitly added a block for it, and
+    every option inside a block is independently optional:
+
+      root_path                      blank -> inherit the global organized path
+      rel_path_template              blank -> inherit the global template
+      subcategory_replaces_category  when true, {Category} renders the torrent's
+                                     subcategory ("Magazines/Newspapers") instead
+                                     of its media type ("Ebooks"), falling back to
+                                     the media type when there is no subcategory.
+    """
+    entries = []
+    seen = set()
+
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        main_cat = str(item.get("main_cat") or "").strip()
+        if main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS or main_cat in seen:
+            continue
+        seen.add(main_cat)
+        entries.append({
+            "main_cat": main_cat,
+            "root_path": str(item.get("root_path") or "").strip(),
+            "rel_path_template": str(item.get("rel_path_template") or "").strip(),
+            "subcategory_replaces_category": coerce_bool(
+                item.get("subcategory_replaces_category"), False
+            ),
+        })
+
+    # Keep a stable order matching the media-type list rather than insertion order.
+    order = [item["id"] for item in AUTO_ORGANIZE_MEDIA_TYPES]
+    entries.sort(key=lambda entry: order.index(entry["main_cat"]))
+    return entries
+
+
+def get_category_override(main_cat, overrides=None):
+    """Return the override block for a main category, or None."""
+    target = str(main_cat or "").strip()
+    if not target:
+        return None
+    if overrides is None:
+        overrides = app.config.get("CATEGORY_OVERRIDES") or []
+    for entry in overrides:
+        if entry.get("main_cat") == target:
+            return entry
+    return None
+
+
 def normalize_destination_paths(value, fallback_path):
     fallback_root = str(fallback_path or "").strip()
     if not fallback_root:
@@ -992,6 +1044,7 @@ FALLBACK_CONFIG = {
         {"path": "/downloads/organized", "default_main_cat": "", "default_torrent_category": ""}
     ],
     "TYPE_SPECIFIC_TORRENT_CATEGORIES": [],
+    "CATEGORY_OVERRIDES": [],
     "LOCAL_TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
     "REMOTE_TORRENT_DOWNLOAD_PATH": "",
     "REL_PATH_TEMPLATE": DEFAULT_RELATIVE_PATH_TEMPLATE,
@@ -1723,6 +1776,7 @@ def load_config():
         config.get("TYPE_SPECIFIC_TORRENT_CATEGORIES"),
         raw_destination_paths,
     )
+    config["CATEGORY_OVERRIDES"] = normalize_category_overrides(config.get("CATEGORY_OVERRIDES"))
     config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(config)
     config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(config)
     config["TORRENT_DOWNLOAD_PATH"] = config["LOCAL_TORRENT_DOWNLOAD_PATH"]
@@ -2102,6 +2156,7 @@ async def load_new_app_config():
         new_config.get("TYPE_SPECIFIC_TORRENT_CATEGORIES"),
         raw_destination_paths,
     )
+    new_config["CATEGORY_OVERRIDES"] = normalize_category_overrides(new_config.get("CATEGORY_OVERRIDES"))
     new_config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(new_config)
     new_config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(new_config)
     new_config["TORRENT_DOWNLOAD_PATH"] = new_config["LOCAL_TORRENT_DOWNLOAD_PATH"]
@@ -4527,12 +4582,21 @@ def build_relative_path_from_template(template, values):
     return output
 
 
-def relative_path_tokens_from_metadata(torrent_meta):
-    """Build the template token map for a stored torrent metadata record."""
+def relative_path_tokens_from_metadata(torrent_meta, override=None):
+    """
+    Build the template token map for a stored torrent metadata record.
+
+    When the category override for this torrent's media type has
+    subcategory_replaces_category enabled, {Category} resolves to the subcategory
+    ("Magazines/Newspapers") instead of the media type ("Ebooks"). Torrents with
+    no subcategory keep the media type, so the folder level never collapses away.
+    """
     category, genre = split_catname(
         torrent_meta.get("catname"),
         torrent_meta.get("main_cat", ""),
     )
+    if override and override.get("subcategory_replaces_category") and genre:
+        category = genre
 
     # series_info is normally {"<id>": [name, number]}, but older records written by
     # the search-snatched path stored a plain display string instead.
@@ -5863,6 +5927,20 @@ async def update_settings():
         normalized_destinations,
     )
 
+    # One JSON blob per category block. A block has optional fields and a checkbox,
+    # and unchecked checkboxes are simply absent from a form post -- parallel arrays
+    # would silently misalign, so each block submits as a single value instead.
+    category_override_rows = []
+    for raw_block in form.getlist("category_override_blocks[]"):
+        try:
+            parsed = json.loads(raw_block)
+        except (json.JSONDecodeError, TypeError):
+            app.logger.warning("Ignoring malformed category override block in settings post.")
+            continue
+        if isinstance(parsed, dict):
+            category_override_rows.append(parsed)
+    config_to_update["CATEGORY_OVERRIDES"] = normalize_category_overrides(category_override_rows)
+
     if form.get("TORRENT_CLIENT_PASSWORD"): config_to_update["TORRENT_CLIENT_PASSWORD"] = form.get("TORRENT_CLIENT_PASSWORD")
     next_mam_id = normalize_mam_cookie_value(config_to_update.get("MAM_ID"))
     if next_mam_id != previous_mam_id:
@@ -6119,11 +6197,19 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         return False, f"Unable to resolve source path for torrent {hash_val}."
     torrent_meta = metadata[hash_val]
 
-    destination_root = str(torrent_meta.get('custom_destination_path') or ORGANIZED_PATH or "").strip()
+    # Optional per-media-type overrides of the global root / template / {Category} behaviour.
+    override = get_category_override(torrent_meta.get('main_cat'))
+
+    # Precedence: explicit per-download choice > category override > global default.
+    destination_root = str(torrent_meta.get('custom_destination_path') or "").strip()
+    if not destination_root and override:
+        destination_root = str(override.get('root_path') or "").strip()
+    if not destination_root:
+        destination_root = str(ORGANIZED_PATH or "").strip()
     if not destination_root:
         destination_root = str(FALLBACK_CONFIG["ORGANIZED_PATH"])
     organized_path = Path(destination_root)
-    
+
     # --- CHANGED LOGIC START ---
     if torrent_meta.get('custom_relative_path'):
         # Use user-defined path (strip leading slashes to ensure it stays relative)
@@ -6132,8 +6218,12 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
     else:
         # No per-download path was chosen (the confirm modal only builds one when
         # AUTO_ORGANIZE_ON_ADD is on), so render the configured template here.
-        template = str(app.config.get("REL_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
-        rel_path = build_relative_path_from_template(template, relative_path_tokens_from_metadata(torrent_meta))
+        template = str((override or {}).get('rel_path_template') or "").strip()
+        if not template:
+            template = str(app.config.get("REL_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
+        rel_path = build_relative_path_from_template(
+            template, relative_path_tokens_from_metadata(torrent_meta, override)
+        )
         if not rel_path:
             rel_path = str(Path(sanitize_filename(torrent_meta.get('author') or '')) / sanitize_filename(torrent_meta.get('title') or ''))
         dest_path = organized_path / rel_path

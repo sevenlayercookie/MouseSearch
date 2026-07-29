@@ -3505,6 +3505,17 @@ document.addEventListener("DOMContentLoaded", async function () {
             renderTypeCategoryRows(rows);
         }
 
+        // Category override blocks are built by JS, so restore them from the snapshot
+        // rather than relying on the generic named-field pass below.
+        const snapshotOverrides = settingsSnapshot['category_override_blocks[]'];
+        if (Array.isArray(snapshotOverrides)) {
+            renderCategoryOverrides(
+                snapshotOverrides
+                    .map(raw => { try { return JSON.parse(raw); } catch { return null; } })
+                    .filter(Boolean)
+            );
+        }
+
         settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
             if (el.name?.endsWith('[]')) return;
             if (!el.name || !(el.name in settingsSnapshot)) return;
@@ -5653,6 +5664,11 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Resolved tag values for the torrent currently in the confirm modal.
     let confirmTokenValues = {};
     let confirmTemplateCaretRange = null;
+    // The template the modal was seeded with for the current torrent: its category
+    // override's template when it has one, otherwise the global default. Reset
+    // returns here, not to the global, so it undoes the user's edits rather than
+    // silently discarding the category override too.
+    let confirmDefaultTemplate = '';
     const previewSpan = document.getElementById('full-path-preview');
     const confirmDestinationSelect = document.getElementById('confirm-destination-select');
     const confirmDestinationRoot = document.getElementById('confirm-destination-root');
@@ -5838,10 +5854,318 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
     }
 
+    // ============================================================
+    //  Category Overrides (optional per-media-type auto-organize settings)
+    // ============================================================
+    const categoryOverridesList = document.getElementById('category-overrides-list');
+    const categoryOverridesMenu = document.getElementById('add-category-override-menu');
+    const categoryOverridesCount = document.getElementById('category-overrides-count');
+    const categoryOverridesEmpty = document.getElementById('category-overrides-empty');
+
+    function normalizeCategoryOverride(entry) {
+        const mainCat = String(entry?.main_cat || '').trim();
+        if (!allowedDestinationDefaults.has(mainCat)) return null;
+        return {
+            main_cat: mainCat,
+            root_path: String(entry?.root_path || '').trim(),
+            rel_path_template: String(entry?.rel_path_template || '').trim(),
+            subcategory_replaces_category: entry?.subcategory_replaces_category === true
+                || entry?.subcategory_replaces_category === 'true'
+        };
+    }
+
+    function readCategoryOverrides() {
+        if (!categoryOverridesList) return [];
+        return Array.from(categoryOverridesList.querySelectorAll('.category-override-value'))
+            .map(input => { try { return normalizeCategoryOverride(JSON.parse(input.value)); } catch { return null; } })
+            .filter(Boolean);
+    }
+
+    function getCategoryOverride(mainCat) {
+        const target = String(mainCat || '').trim();
+        if (!target) return null;
+        return readCategoryOverrides().find(entry => entry.main_cat === target) || null;
+    }
+
+    /** Sample values used by each block's live preview. */
+    function categoryPreviewValues(mainCat, subcatReplaces) {
+        const label = mediaTypeOptions.find(m => m.id === mainCat)?.label || 'Ebooks';
+        const genre = mainCat === '15' ? 'Music Book' : (mainCat === '16' ? 'Documentary' : 'Fantasy');
+        return {
+            author: 'J.K. Rowling',
+            series: 'Harry Potter',
+            seriesNumber: '1',
+            title: "Harry Potter and the Sorcerer's Stone",
+            genre,
+            format: mainCat === '14' ? 'EPUB' : 'M4B',
+            // Option 3 in action: the subcategory stands in for the media type.
+            category: subcatReplaces ? genre : label
+        };
+    }
+
+    function updateCategoryOverrideCount() {
+        const count = categoryOverridesList?.querySelectorAll('.category-override-block').length || 0;
+        if (categoryOverridesCount) {
+            categoryOverridesCount.textContent = String(count);
+            categoryOverridesCount.classList.toggle('d-none', count < 1);
+        }
+        categoryOverridesEmpty?.classList.toggle('d-none', count > 0);
+        renderAddCategoryOverrideMenu();
+    }
+
+    /** Only offer media types that do not already have a block. */
+    function renderAddCategoryOverrideMenu() {
+        if (!categoryOverridesMenu) return;
+        const used = new Set(readCategoryOverrides().map(e => e.main_cat));
+        categoryOverridesMenu.innerHTML = '';
+
+        const available = mediaTypeOptions.filter(item => !used.has(item.id));
+        if (!available.length) {
+            const li = document.createElement('li');
+            li.innerHTML = '<span class="dropdown-item-text small text-body-secondary">All media types added</span>';
+            categoryOverridesMenu.appendChild(li);
+            return;
+        }
+        available.forEach(item => {
+            const li = document.createElement('li');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item';
+            btn.textContent = item.label;
+            btn.addEventListener('click', () => {
+                addCategoryOverrideBlock({ main_cat: item.id });
+            });
+            li.appendChild(btn);
+            categoryOverridesMenu.appendChild(li);
+        });
+    }
+
+    function addCategoryOverrideBlock(entry) {
+        const normalized = normalizeCategoryOverride(entry);
+        if (!normalized || !categoryOverridesList) return;
+        categoryOverridesList.appendChild(buildCategoryOverrideBlock(normalized));
+        updateCategoryOverrideCount();
+        syncConfirmDestinationOptions();
+        if (!isRestoringSettings) settingsDirty = true;
+    }
+
+    function renderCategoryOverrides(entries) {
+        if (!categoryOverridesList) return;
+        categoryOverridesList.innerHTML = '';
+        (Array.isArray(entries) ? entries : [])
+            .map(normalizeCategoryOverride)
+            .filter(Boolean)
+            .forEach(entry => categoryOverridesList.appendChild(buildCategoryOverrideBlock(entry)));
+        updateCategoryOverrideCount();
+    }
+
+    function buildCategoryOverrideBlock(entry) {
+        const label = mediaTypeOptions.find(m => m.id === entry.main_cat)?.label || entry.main_cat;
+
+        const block = document.createElement('div');
+        block.className = 'category-override-block card mb-2 border-secondary-subtle';
+        block.dataset.mainCat = entry.main_cat;
+
+        // Whole block submits as one JSON value: its fields are optional and an
+        // unchecked switch would simply be absent, misaligning parallel arrays.
+        const valueInput = document.createElement('input');
+        valueInput.type = 'hidden';
+        valueInput.className = 'category-override-value';
+        valueInput.name = 'category_override_blocks[]';
+
+        const header = document.createElement('div');
+        header.className = 'card-header bg-transparent d-flex justify-content-between align-items-center py-2';
+        header.innerHTML = `<span class="small fw-bold"><i class="bi bi-folder2-open me-2"></i>${label}</span>`;
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-sm btn-outline-danger py-0 remove-category-override-btn';
+        removeBtn.title = `Remove ${label} override`;
+        removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        header.appendChild(removeBtn);
+
+        const body = document.createElement('div');
+        body.className = 'card-body pt-2 pb-3';
+
+        // --- Option 1: custom root directory ---
+        const rootToggle = buildOverrideSwitch(`ov-root-${entry.main_cat}`, 'Custom root directory',
+            'Place this media type under a different library root.');
+        const rootFields = document.createElement('div');
+        rootFields.className = 'ms-4 mt-2 mb-3';
+        const rootInput = document.createElement('input');
+        rootInput.type = 'text';
+        rootInput.className = 'form-control form-control-sm category-override-root';
+        rootInput.placeholder = getDefaultDestinationPath();
+        rootInput.value = entry.root_path;
+        rootFields.appendChild(rootInput);
+
+        // --- Option 2: custom path template ---
+        const templateToggle = buildOverrideSwitch(`ov-tpl-${entry.main_cat}`, 'Custom path template',
+            'Use a different relative path template for this media type.');
+        const templateFields = document.createElement('div');
+        templateFields.className = 'ms-4 mt-2 mb-3';
+
+        const templateGroup = document.createElement('div');
+        templateGroup.className = 'input-group input-group-sm mb-2';
+        const templateInput = document.createElement('input');
+        templateInput.type = 'text';
+        templateInput.className = 'form-control font-monospace category-override-template';
+        templateInput.placeholder = getRelPathTemplateValue();
+        templateInput.value = entry.rel_path_template;
+        const templateReset = document.createElement('button');
+        templateReset.type = 'button';
+        templateReset.className = 'btn btn-outline-secondary category-override-template-reset';
+        templateReset.title = 'Reset to the global template';
+        templateReset.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
+        templateGroup.append(templateInput, templateReset);
+
+        const chipRow = document.createElement('div');
+        chipRow.className = 'd-flex gap-2 flex-wrap mb-2';
+        chipRow.innerHTML = '<span class="small text-muted align-self-center me-1">Tags:</span>';
+        REL_PATH_TOKENS.forEach(spec => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'btn btn-sm btn-outline-primary rounded-pill category-override-token-btn';
+            chip.dataset.token = spec.token;
+            chip.textContent = spec.label;
+            chipRow.appendChild(chip);
+        });
+
+        const preview = document.createElement('div');
+        preview.className = 'alert alert-light border small m-0 py-2';
+        preview.innerHTML = '<span class="text-muted text-uppercase" style="font-size:0.65rem;letter-spacing:1px;">Preview</span>'
+            + '<div class="text-primary fw-bold text-break font-monospace mt-1 category-override-preview"></div>';
+        templateFields.append(templateGroup, chipRow, preview);
+
+        // --- Option 3: subcategory replaces category ---
+        const subcatToggle = buildOverrideSwitch(`ov-sub-${entry.main_cat}`, 'Subcategory replaces category',
+            `When the torrent has a subcategory, {Category} renders it instead of "${label}".`);
+
+        body.append(rootToggle.wrap, rootFields, templateToggle.wrap, templateFields, subcatToggle.wrap);
+        block.append(valueInput, header, body);
+
+        rootToggle.input.checked = Boolean(entry.root_path);
+        templateToggle.input.checked = Boolean(entry.rel_path_template);
+        subcatToggle.input.checked = entry.subcategory_replaces_category;
+
+        const syncBlock = () => {
+            rootFields.classList.toggle('d-none', !rootToggle.input.checked);
+            templateFields.classList.toggle('d-none', !templateToggle.input.checked);
+
+            const state = {
+                main_cat: entry.main_cat,
+                root_path: rootToggle.input.checked ? rootInput.value.trim() : '',
+                rel_path_template: templateToggle.input.checked ? templateInput.value.trim() : '',
+                subcategory_replaces_category: subcatToggle.input.checked
+            };
+            valueInput.value = JSON.stringify(state);
+
+            // The {Category} chip signals that its value may be swapped out.
+            const subcatOn = subcatToggle.input.checked;
+            const categoryChip = chipRow.querySelector('[data-token="{Category}"]');
+            if (categoryChip) {
+                categoryChip.classList.toggle('btn-outline-primary', !subcatOn);
+                categoryChip.classList.toggle('btn-outline-info', subcatOn);
+                categoryChip.title = subcatOn
+                    ? `Replaced by the subcategory when the torrent has one, otherwise "${label}".`
+                    : `Always renders "${label}".`;
+            }
+
+            const effectiveTemplate = normalizeRelPathTemplate(
+                state.rel_path_template || getRelPathTemplateValue()
+            );
+            const effectiveRoot = state.root_path || getDefaultDestinationPath();
+            const rendered = buildRelativePathFromTemplate(
+                effectiveTemplate, categoryPreviewValues(entry.main_cat, subcatOn)
+            );
+            block.querySelector('.category-override-preview').textContent =
+                `${effectiveRoot.replace(/\/+$/, '')}/${rendered}`;
+        };
+
+        let caretRange = null;
+        const captureCaret = () => {
+            if (document.activeElement !== templateInput) return;
+            const { selectionStart: start, selectionEnd: end } = templateInput;
+            if (typeof start === 'number' && typeof end === 'number') caretRange = { start, end };
+        };
+        ['keyup', 'click', 'select', 'focus'].forEach(evt => templateInput.addEventListener(evt, captureCaret));
+
+        chipRow.querySelectorAll('.category-override-token-btn').forEach(chip => {
+            chip.addEventListener('mousedown', captureCaret);
+            chip.addEventListener('click', () => {
+                const token = chip.dataset.token;
+                const current = normalizeRelPathTemplate(templateInput.value || '');
+                if (current.includes(token)) {
+                    templateInput.value = removeTokenFromTemplate(current, token);
+                    caretRange = null;
+                } else {
+                    caretRange = insertTokenIntoTemplateInput(templateInput, token, caretRange);
+                }
+                syncBlock();
+                if (!isRestoringSettings) settingsDirty = true;
+            });
+        });
+
+        [rootToggle.input, templateToggle.input, subcatToggle.input].forEach(input => {
+            input.addEventListener('change', () => {
+                syncBlock();
+                syncConfirmDestinationOptions();
+                if (!isRestoringSettings) settingsDirty = true;
+            });
+        });
+        [rootInput, templateInput].forEach(input => {
+            input.addEventListener('input', () => {
+                syncBlock();
+                if (!isRestoringSettings) settingsDirty = true;
+            });
+        });
+        templateReset.addEventListener('click', () => {
+            templateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
+            caretRange = null;
+            syncBlock();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+        removeBtn.addEventListener('click', () => {
+            block.remove();
+            updateCategoryOverrideCount();
+            syncConfirmDestinationOptions();
+            if (!isRestoringSettings) settingsDirty = true;
+        });
+
+        syncBlock();
+        return block;
+    }
+
+    function buildOverrideSwitch(id, labelText, helpText) {
+        const wrap = document.createElement('div');
+        wrap.className = 'form-check form-switch';
+        const input = document.createElement('input');
+        input.className = 'form-check-input';
+        input.type = 'checkbox';
+        input.role = 'switch';
+        input.id = id;
+        const label = document.createElement('label');
+        label.className = 'form-check-label small';
+        label.setAttribute('for', id);
+        label.innerHTML = `${labelText} <span class="text-body-secondary d-block" style="font-size:0.75rem;">${helpText}</span>`;
+        wrap.append(input, label);
+        return { wrap, input };
+    }
+
+    if (categoryOverridesList) {
+        renderCategoryOverrides(window.CATEGORY_OVERRIDES || []);
+    }
+
     function syncConfirmDestinationOptions(mainCat = '', preferCategoryDefault = false) {
         if (!confirmDestinationSelect) return;
 
         const liveEntries = buildConfiguredDestinationEntries();
+
+        // A category override's root is a valid destination even if it was never added
+        // to the path list, so surface it as an option here.
+        const overrideRoot = getCategoryOverride(mainCat)?.root_path || '';
+        if (overrideRoot && !liveEntries.some(entry => entry.path === overrideRoot)) {
+            liveEntries.push({ path: overrideRoot, default_main_cat: String(mainCat || '') });
+        }
         destinationPathEntries = liveEntries;
 
         const existingValue = confirmDestinationSelect.value;
@@ -5854,9 +6178,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             confirmDestinationSelect.appendChild(option);
         });
 
+        // Precedence: category override root > media-type path rule > global default.
         const mappedDefault = liveEntries.find(entry => entry.default_main_cat === String(mainCat || ''));
         const fallbackDefault = liveEntries[0];
-        const preferredValue = (mappedDefault || fallbackDefault)?.path || '';
+        const preferredValue = overrideRoot || (mappedDefault || fallbackDefault)?.path || '';
         const hasExisting = liveEntries.some(entry => entry.path === existingValue);
 
         if (preferCategoryDefault) {
@@ -6107,7 +6432,9 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         confirmResetTemplateBtn?.addEventListener('click', () => {
-            confirmTemplateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
+            confirmTemplateInput.value = normalizeRelPathTemplate(
+                confirmDefaultTemplate || getRelPathTemplateValue()
+            );
             confirmTemplateCaretRange = null;
             applyConfirmTemplate();
         });
@@ -6939,9 +7266,14 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const cleanTitle = sanitizeFilename(downloadData.title);
                 const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
                 const cleanSeriesNumber = seriesNumber ? sanitizeFilename(seriesNumber) : "";
+                const categoryOverride = getCategoryOverride(downloadData.main_cat);
                 const { category, genre } = splitCatname(downloadData.catname, downloadData.main_cat);
                 const cleanGenre = genre ? sanitizeFilename(genre) : "";
-                const cleanCategory = category ? sanitizeFilename(category) : "";
+                // Option 3: the subcategory stands in for the media type when present.
+                const effectiveCategory = (categoryOverride?.subcategory_replaces_category && genre)
+                    ? genre
+                    : category;
+                const cleanCategory = effectiveCategory ? sanitizeFilename(effectiveCategory) : "";
                 const formatToken = formatFileTypeToken(downloadData.filetype);
                 const cleanFormat = formatToken ? sanitizeFilename(formatToken) : "";
                 syncConfirmDestinationOptions(downloadData.main_cat, true);
@@ -6958,13 +7290,18 @@ document.addEventListener("DOMContentLoaded", async function () {
                     category: cleanCategory
                 };
                 confirmTemplateCaretRange = null;
+                // Category override template beats the global default.
+                confirmDefaultTemplate = normalizeRelPathTemplate(
+                    categoryOverride?.rel_path_template || getRelPathTemplateValue()
+                );
                 if (confirmTemplateInput) {
-                    confirmTemplateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
+                    confirmTemplateInput.value = confirmDefaultTemplate;
                 }
                 applyConfirmTemplate();
             } else {
                 confirmTokenValues = {};
                 confirmTemplateCaretRange = null;
+                confirmDefaultTemplate = '';
                 if (confirmTemplateInput) confirmTemplateInput.value = '';
                 if (confirmInput) confirmInput.value = '';
                 syncConfirmDestinationOptions('', false);
