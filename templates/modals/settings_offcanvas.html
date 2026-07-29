@@ -402,54 +402,17 @@
             <div class="card mb-3 border-secondary-subtle">
               <div class="card-body">
                 <div class="mb-3">
-                  <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold">Default Relative Path</label>
-                  <div class="input-group mb-2">
-                    <input type="text" class="form-control font-monospace" id="REL_PATH_TEMPLATE"
-                      name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
-                      placeholder="e.g. {Author}/{Series}/{Title}">
-                    <button class="btn btn-outline-secondary" type="button" id="reset-template-btn"
+                  {# The token editor is mounted around #REL_PATH_TEMPLATE by main.js. #}
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold m-0">Default Relative Path</label>
+                    <button class="btn btn-sm btn-outline-secondary py-0" type="button" id="reset-template-btn"
                       title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
                   </div>
+                  <input type="text" class="form-control form-control-sm font-monospace mt-2" id="REL_PATH_TEMPLATE"
+                    name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
+                    placeholder="e.g. {Author}/{Series}/{Title}">
 
-                  <div class="d-flex gap-2 mb-3 flex-wrap">
-                    <span class="small text-muted align-self-center me-1">Insert:</span>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Author}">
-                      <i class="bi bi-person-fill"></i> Author
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Series}">
-                      <i class="bi bi-collection-fill"></i> Series
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{SeriesNumber}">
-                      <i class="bi bi-hash"></i> Series Number
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Title}">
-                      <i class="bi bi-book-fill"></i> Title
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Category}" title="Media type, e.g. Audiobooks or Ebooks">
-                      <i class="bi bi-collection"></i> Category
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Genre}" title="MAM subcategory, e.g. Science Fiction">
-                      <i class="bi bi-tag-fill"></i> Genre
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Format}" title="File format, e.g. M4B or EPUB">
-                      <i class="bi bi-file-earmark-fill"></i> Format
-                    </button>
-                    <!--
-                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill insert-token-btn"
-                    data-token="/">
-                    / (Folder)
-                  </button>
-                  -->
-                  </div>
-
-                  <div class="alert alert-light border small m-0">
+                  <div class="alert alert-light border small m-0 mt-3">
                     <div class="d-flex justify-content-between">
                       <span class="text-muted text-uppercase"
                         style="font-size: 0.7rem; letter-spacing: 1px;">Preview</span>

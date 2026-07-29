@@ -1391,7 +1391,7 @@ input:disabled, select:disabled {
 }
 
 /* --- Category override token editor (draggable template tokens) --- */
-#settingsOffcanvas .template-token-editor {
+.template-token-editor {
     padding: 7px;
     border: 1px solid var(--bs-border-color);
     border-radius: 0.25rem;
@@ -1401,12 +1401,12 @@ input:disabled, select:disabled {
     gap: 5px;
 }
 
-#settingsOffcanvas .template-token-slash {
+.template-token-slash {
     opacity: 0.4;
     font-size: 0.8rem;
 }
 
-#settingsOffcanvas .template-token-pill {
+.template-token-pill {
     gap: 5px;
     padding: 3px 7px;
     border-radius: 6px;
@@ -1414,56 +1414,65 @@ input:disabled, select:disabled {
     font-family: ui-monospace, Menlo, monospace;
     cursor: grab;
     user-select: none;
+    -webkit-user-select: none;
     border: 1px solid transparent;
+    /* Dragging is pointer-driven so it works on touch; without this the browser
+       would claim the gesture for scrolling before any pointermove fires. */
+    touch-action: none;
+    -webkit-touch-callout: none;
 }
 
-#settingsOffcanvas .template-token-pill:active {
+.template-token-pill:active {
     cursor: grabbing;
 }
 
 /* A {Tag} segment. */
-#settingsOffcanvas .template-token-pill.token-pill-token {
+.template-token-pill.token-pill-token {
     border-color: rgba(110, 168, 254, 0.55);
     background: rgba(110, 168, 254, 0.14);
     color: #8bb9fe;
 }
 
 /* Literal text the user typed. */
-#settingsOffcanvas .template-token-pill.token-pill-literal {
+.template-token-pill.token-pill-literal {
     border-color: rgba(128, 128, 128, 0.45);
     background: transparent;
     color: inherit;
 }
 
-#settingsOffcanvas .template-token-pill.dragging {
+.template-token-pill.dragging {
     opacity: 0.45;
 }
 
-#settingsOffcanvas .template-token-pill.drag-over {
+.template-token-pill.drag-over {
     outline: 2px solid rgba(110, 168, 254, 0.75);
     outline-offset: 1px;
 }
 
-#settingsOffcanvas .template-token-grip {
+.template-token-grip {
     opacity: 0.5;
     font-size: 0.72rem;
 }
 
-#settingsOffcanvas .template-token-remove {
+.template-token-remove {
     cursor: pointer;
     opacity: 0.75;
+    /* Comfortable tap target without inflating the pill. */
+    margin: -6px -4px -6px 0;
+    padding: 6px 4px;
+    touch-action: manipulation;
 }
 
-#settingsOffcanvas .template-token-remove:hover {
+.template-token-remove:hover {
     opacity: 1;
 }
 
-#settingsOffcanvas .template-token-add-btn {
+.template-token-add-btn {
     font-size: 0.75rem;
     line-height: 1.2;
 }
 
-#settingsOffcanvas .template-token-add-menu {
+.template-token-add-menu {
     min-width: 170px;
     max-width: 230px;
     max-height: 270px;
@@ -1471,15 +1480,32 @@ input:disabled, select:disabled {
     padding: 5px;
 }
 
-#settingsOffcanvas .template-token-add-item {
+.template-token-add-item {
     padding: 5px 8px;
     border-radius: 6px;
     font-size: 0.8rem;
     font-family: ui-monospace, Menlo, monospace;
 }
 
-#settingsOffcanvas .template-token-custom-input {
+.template-token-custom-input {
     font-size: 0.78rem;
+}
+
+.template-token-text-toggle {
+    font-size: 0.72rem;
+}
+
+/* Roomier pills on touch screens, where dragging needs a bigger grab area. */
+@media (pointer: coarse) {
+    .template-token-pill {
+        padding: 6px 9px;
+        font-size: 0.82rem;
+    }
+
+    .template-token-grip {
+        font-size: 0.85rem;
+        opacity: 0.7;
+    }
 }
 
 /* --- Category override cards --- */

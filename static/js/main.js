@@ -1927,44 +1927,254 @@ const REL_PATH_TOKENS = [
     { token: '{Format}', key: 'format', label: 'Format' }
 ];
 
-/** Remove every occurrence of a token, collapsing the folder level it leaves behind. */
-function removeTokenFromTemplate(template, token) {
-    return normalizeRelPathTemplate(template)
-        .split(token).join('')
-        .replace(/\/+/g, '/')
-        .replace(/^\/+|\/+$/g, '');
+/** Split a template into its "/"-separated segments, e.g. ["{Author}", "{SeriesNumber} - {Title}"]. */
+function templateSegments(template) {
+    return normalizeRelPathTemplate(template).split('/').map(s => s.trim()).filter(Boolean);
+}
+
+function segmentsToTemplate(segments) {
+    return segments.filter(Boolean).join('/');
+}
+
+/** A segment is a token when it is exactly one {Tag}; anything else is literal text. */
+function isTokenSegment(segment) {
+    return /^\{[A-Za-z]+\}$/.test(String(segment || ''));
 }
 
 /**
- * Insert a token into a template input at the last known caret position, falling
- * back to appending it as a new path segment. Returns the updated caret range so
- * the caller can keep tracking it. Shared by the Settings and confirm-modal builders.
+ * The one template editor used everywhere path templates are edited: Settings,
+ * the download confirm modal, and each category override block.
+ *
+ * Renders the template as draggable pills, one per "/"-separated segment, with a
+ * [+] menu for adding tokens or literal text and an optional free-text field for
+ * edits the pills are clumsy for.
+ *
+ * `input` is the real form field and stays the source of truth, so names, ids and
+ * form submission are left to the caller. The editor mounts around it.
+ *
+ * options:
+ *   input        the text input holding the template (required)
+ *   fallback     template to show when the input is empty (e.g. the global default)
+ *   tokenValues  optional {token: resolvedValue} used for tooltips, and to disable
+ *                menu entries for tokens the current item has no value for
+ *   onChange     called with the new template after any edit
  */
-function insertTokenIntoTemplateInput(input, token, caretRange) {
-    const currentVal = input.value || '';
-    const hasCaretRange = caretRange
-        && typeof caretRange.start === 'number'
-        && typeof caretRange.end === 'number';
+function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TEMPLATE, tokenValues = null, onChange = () => {} }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'template-token-editor-wrap';
 
-    // With no tracked caret, append to the end.
-    const start = hasCaretRange ? Math.max(0, Math.min(caretRange.start, currentVal.length)) : currentVal.length;
-    const end = hasCaretRange ? Math.max(start, Math.min(caretRange.end, currentVal.length)) : currentVal.length;
-    const before = currentVal.slice(0, start);
-    const after = currentVal.slice(end);
+    const pillRow = document.createElement('div');
+    pillRow.className = 'template-token-editor';
 
-    // Keep each token on its own path segment, adding a separator only where one
-    // is missing. Without this, clicking two tags in a row ran them together:
-    // the first insert focuses the input, so the second landed at the caret with
-    // no separator and produced "{Genre}{Title}".
-    const prefix = token !== '/' && before && !before.endsWith('/') ? '/' : '';
-    const suffix = token !== '/' && after && !after.startsWith('/') ? '/' : '';
+    const addWrap = document.createElement('span');
+    addWrap.className = 'position-relative d-inline-flex dropdown';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-1 template-token-add-btn';
+    addBtn.title = 'Add token';
+    addBtn.setAttribute('aria-label', 'Add token');
+    addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
+    addBtn.setAttribute('data-bs-toggle', 'dropdown');
+    addBtn.setAttribute('aria-expanded', 'false');
+    const addMenu = document.createElement('ul');
+    addMenu.className = 'dropdown-menu template-token-add-menu';
+    addWrap.append(addBtn, addMenu);
+    pillRow.appendChild(addWrap);
 
-    input.value = `${before}${prefix}${token}${suffix}${after}`;
-    const nextCaretPos = before.length + prefix.length + token.length;
+    const textToggle = document.createElement('button');
+    textToggle.type = 'button';
+    textToggle.className = 'btn btn-link btn-sm p-0 mt-1 text-decoration-none template-token-text-toggle';
+    textToggle.textContent = 'Edit as text';
 
-    input.focus();
-    input.setSelectionRange(nextCaretPos, nextCaretPos);
-    return { start: nextCaretPos, end: nextCaretPos };
+    wrap.append(pillRow, textToggle);
+
+    const currentTemplate = () => input.value || fallback() || '';
+
+    function commit(segments) {
+        input.value = segmentsToTemplate(segments);
+        render();
+        onChange(input.value);
+    }
+
+    /**
+     * Pointer-based reordering. HTML5 drag-and-drop does not fire on touch, so
+     * pointer events drive both mouse and touch from one path; CSS sets
+     * touch-action:none on the pills so dragging does not scroll the panel.
+     */
+    function attachDrag(pill, index) {
+        let dragging = false;
+        let pointerId = null;
+
+        const pillsNow = () => Array.from(pillRow.querySelectorAll('.template-token-pill'));
+
+        const dropTargetAt = (x, y) => pillsNow().find(other => {
+            if (other === pill) return false;
+            const r = other.getBoundingClientRect();
+            return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        });
+
+        const clearMarks = () => pillRow.querySelectorAll('.drag-over')
+            .forEach(el => el.classList.remove('drag-over'));
+
+        const onMove = (event) => {
+            if (event.pointerId !== pointerId) return;
+            if (!dragging) {
+                dragging = true;
+                pill.classList.add('dragging');
+            }
+            event.preventDefault();
+            clearMarks();
+            dropTargetAt(event.clientX, event.clientY)?.classList.add('drag-over');
+        };
+
+        const finish = (event) => {
+            if (event.pointerId !== pointerId) return;
+            pill.releasePointerCapture?.(pointerId);
+            pill.removeEventListener('pointermove', onMove);
+            pill.removeEventListener('pointerup', finish);
+            pill.removeEventListener('pointercancel', cancel);
+            pill.classList.remove('dragging');
+            clearMarks();
+            pointerId = null;
+            if (!dragging) return;
+            dragging = false;
+
+            const target = dropTargetAt(event.clientX, event.clientY);
+            if (!target) return;
+            const to = Number(target.dataset.index);
+            if (Number.isNaN(to) || to === index) return;
+            const next = templateSegments(currentTemplate());
+            const [moved] = next.splice(index, 1);
+            next.splice(to, 0, moved);
+            commit(next);
+        };
+
+        const cancel = (event) => {
+            if (event.pointerId !== pointerId) return;
+            pill.removeEventListener('pointermove', onMove);
+            pill.removeEventListener('pointerup', finish);
+            pill.removeEventListener('pointercancel', cancel);
+            pill.classList.remove('dragging');
+            clearMarks();
+            dragging = false;
+            pointerId = null;
+        };
+
+        pill.addEventListener('pointerdown', (event) => {
+            if (event.button != null && event.button !== 0) return;
+            if (event.target.closest('.template-token-remove')) return;
+            pointerId = event.pointerId;
+            pill.setPointerCapture?.(pointerId);
+            pill.addEventListener('pointermove', onMove);
+            pill.addEventListener('pointerup', finish);
+            pill.addEventListener('pointercancel', cancel);
+        });
+    }
+
+    function render() {
+        pillRow.querySelectorAll('.template-token-pill, .template-token-slash').forEach(el => el.remove());
+        const segments = templateSegments(currentTemplate());
+
+        segments.forEach((segment, index) => {
+            if (index > 0) {
+                const slash = document.createElement('span');
+                slash.className = 'template-token-slash';
+                slash.textContent = '/';
+                pillRow.insertBefore(slash, addWrap);
+            }
+
+            const pill = document.createElement('span');
+            pill.className = 'template-token-pill d-inline-flex align-items-center';
+            pill.dataset.index = String(index);
+
+            const isToken = isTokenSegment(segment);
+            pill.classList.add(isToken ? 'token-pill-token' : 'token-pill-literal');
+            const resolved = tokenValues ? (tokenValues()[segment] || '') : '';
+            pill.title = isToken
+                ? (resolved ? `${segment} — ${resolved}` : 'Token — drag to reorder')
+                : 'Literal text';
+
+            const grip = document.createElement('i');
+            grip.className = 'bi bi-grip-vertical template-token-grip';
+            const text = document.createElement('span');
+            text.textContent = segment;
+            const close = document.createElement('i');
+            close.className = 'bi bi-x template-token-remove';
+            close.setAttribute('role', 'button');
+            close.setAttribute('aria-label', `Remove ${segment}`);
+            pill.append(grip, text, close);
+
+            close.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const next = templateSegments(currentTemplate());
+                next.splice(index, 1);
+                commit(next);
+            });
+
+            attachDrag(pill, index);
+            pillRow.insertBefore(pill, addWrap);
+        });
+
+        // Only offer tokens the template does not already use.
+        addMenu.innerHTML = '';
+        const used = currentTemplate();
+        const values = tokenValues ? tokenValues() : null;
+
+        REL_PATH_TOKENS.filter(spec => !used.includes(spec.token)).forEach(spec => {
+            const li = document.createElement('li');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item template-token-add-item';
+            btn.dataset.token = spec.token;
+            btn.textContent = spec.token;
+            // When the caller supplied per-item values, a token with nothing to
+            // render is offered but marked, rather than silently adding an empty level.
+            const resolved = values ? (values[spec.token] || '') : null;
+            if (values && !resolved) {
+                btn.classList.add('disabled');
+                btn.setAttribute('aria-disabled', 'true');
+                btn.title = `No ${spec.label.toLowerCase()} for this item`;
+            } else if (resolved) {
+                btn.title = resolved;
+            }
+            btn.addEventListener('click', (event) => {
+                if (btn.classList.contains('disabled')) { event.preventDefault(); return; }
+                commit([...templateSegments(currentTemplate()), spec.token]);
+            });
+            li.appendChild(btn);
+            addMenu.appendChild(li);
+        });
+
+        const customLi = document.createElement('li');
+        customLi.className = 'template-token-custom border-top mt-1 pt-2 px-2';
+        const customInput = document.createElement('input');
+        customInput.type = 'text';
+        customInput.className = 'form-control form-control-sm template-token-custom-input';
+        customInput.placeholder = 'custom text…';
+        customInput.addEventListener('keydown', (event) => {
+            event.stopPropagation();
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const value = customInput.value.trim();
+                if (value) commit([...templateSegments(currentTemplate()), value]);
+            }
+        });
+        customInput.addEventListener('click', event => event.stopPropagation());
+        customLi.appendChild(customInput);
+        addMenu.appendChild(customLi);
+    }
+
+    textToggle.addEventListener('click', () => {
+        const hidden = input.classList.toggle('d-none');
+        textToggle.textContent = hidden ? 'Edit as text' : 'Hide text editor';
+        if (!hidden) input.focus();
+    });
+
+    // Typing in the free-text field rebuilds the pills live.
+    input.addEventListener('input', render);
+
+    render();
+    return { element: wrap, refresh: render };
 }
 
 function getSeriesName(seriesJsonStr) {
@@ -3604,17 +3814,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     const resetTemplateBtn = document.getElementById('reset-template-btn');
 
     if (relTemplateInput && previewOutput) {
-        let relTemplateCaretRange = null;
-
-        const captureRelTemplateCaretRange = () => {
-            if (document.activeElement !== relTemplateInput) return;
-            const start = relTemplateInput.selectionStart;
-            const end = relTemplateInput.selectionEnd;
-            if (typeof start === 'number' && typeof end === 'number') {
-                relTemplateCaretRange = { start, end };
-            }
-        };
-
         const previewData = {
             '{Author}': 'J.K. Rowling',
             '{Series}': 'Harry Potter',
@@ -3638,31 +3837,28 @@ document.addEventListener("DOMContentLoaded", async function () {
         };
 
         relTemplateInput.addEventListener('input', updatePathPreview);
-        relTemplateInput.addEventListener('keyup', captureRelTemplateCaretRange);
-        relTemplateInput.addEventListener('click', captureRelTemplateCaretRange);
-        relTemplateInput.addEventListener('select', captureRelTemplateCaretRange);
-        relTemplateInput.addEventListener('focus', captureRelTemplateCaretRange);
 
-        document.querySelectorAll('.insert-token-btn').forEach(btn => {
-            btn.addEventListener('mousedown', () => {
-                captureRelTemplateCaretRange();
-            });
-
-            btn.addEventListener('click', () => {
-                const token = btn.dataset.token;
-                if (!token) return;
-
-                relTemplateCaretRange = insertTokenIntoTemplateInput(
-                    relTemplateInput, token, relTemplateCaretRange
-                );
-                relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
-            });
+        // Same token editor as the confirm modal and the category override blocks.
+        const globalTemplateEditor = createTemplateTokenEditor({
+            input: relTemplateInput,
+            fallback: () => DEFAULT_REL_PATH_TEMPLATE,
+            onChange: () => {
+                updatePathPreview();
+                if (!isRestoringSettings) settingsDirty = true;
+            }
         });
+        relTemplateInput.classList.add('d-none');
+        relTemplateInput.parentElement.insertBefore(globalTemplateEditor.element, relTemplateInput);
+        globalTemplateEditor.element.appendChild(relTemplateInput);
 
         resetTemplateBtn?.addEventListener('click', () => {
             relTemplateInput.value = DEFAULT_REL_PATH_TEMPLATE;
             relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
+            updatePathPreview();
         });
+
+        // Snapshot restore writes the field directly, so keep the pills in step.
+        relTemplateInput.addEventListener('input', () => globalTemplateEditor.refresh());
 
         updatePathPreview();
     }
@@ -5660,10 +5856,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     const confirmInput = document.getElementById('confirm-path-input');
     const confirmTemplateInput = document.getElementById('confirm-template-input');
     const confirmResetTemplateBtn = document.getElementById('confirm-reset-template-btn');
-    const confirmTokenButtons = Array.from(document.querySelectorAll('.confirm-token-btn'));
     // Resolved tag values for the torrent currently in the confirm modal.
     let confirmTokenValues = {};
-    let confirmTemplateCaretRange = null;
     // The template the modal was seeded with for the current torrent: its category
     // override's template when it has one, otherwise the global default. Reset
     // returns here, not to the global, so it undoes the user's edits rather than
@@ -5958,15 +6152,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         updateCategoryOverrideCount();
     }
 
-    /** Split a template into its "/"-separated segments, e.g. ["{Author}", "{SeriesNumber} - {Title}"]. */
-    function templateSegments(template) {
-        return normalizeRelPathTemplate(template).split('/').map(s => s.trim()).filter(Boolean);
-    }
-
-    function segmentsToTemplate(segments) {
-        return segments.filter(Boolean).join('/');
-    }
-
     /**
      * Header summary naming which options are switched on, per the design:
      * "· custom root · custom template", or "· inherits everything".
@@ -6048,46 +6233,20 @@ document.addEventListener("DOMContentLoaded", async function () {
         const templateFields = document.createElement('div');
         templateFields.className = 'ms-4 mt-2 mb-3 category-override-template-fields';
 
-        // Token editor: draggable pills + an [+] menu, replacing the old chip row.
-        // Pills are inserted before the [+] button, so it always trails the row.
-        const pillRow = document.createElement('div');
-        pillRow.className = 'template-token-editor d-flex flex-wrap align-items-center gap-1 mb-2';
-
-        const addWrap = document.createElement('span');
-        addWrap.className = 'position-relative d-inline-flex dropdown';
-        const addBtn = document.createElement('button');
-        addBtn.type = 'button';
-        addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-1 template-token-add-btn';
-        addBtn.title = 'Add token';
-        addBtn.setAttribute('aria-label', 'Add token');
-        addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
-        addBtn.setAttribute('data-bs-toggle', 'dropdown');
-        addBtn.setAttribute('aria-expanded', 'false');
-        const addMenu = document.createElement('ul');
-        addMenu.className = 'dropdown-menu template-token-add-menu';
-        addWrap.append(addBtn, addMenu);
-        pillRow.appendChild(addWrap);
-
-        // Source of truth for the template; the pills are a view over it. Also
-        // editable as raw text, for cases the pills are clumsy for.
+        // Source of truth for the template; the shared editor renders pills over it.
         const templateInput = document.createElement('input');
         templateInput.type = 'text';
         templateInput.className = 'form-control form-control-sm font-monospace mt-2 d-none category-override-template';
         templateInput.placeholder = getRelPathTemplateValue();
         templateInput.value = entry.rel_path_template;
 
-        const textToggle = document.createElement('button');
-        textToggle.type = 'button';
-        textToggle.className = 'btn btn-link btn-sm p-0 mt-1 text-decoration-none category-override-text-toggle';
-        textToggle.style.fontSize = '0.72rem';
-        textToggle.textContent = 'Edit as text';
-        textToggle.addEventListener('click', () => {
-            const hidden = templateInput.classList.toggle('d-none');
-            textToggle.textContent = hidden ? 'Edit as text' : 'Hide text editor';
-            if (!hidden) templateInput.focus();
+        const templateEditor = createTemplateTokenEditor({
+            input: templateInput,
+            fallback: () => getRelPathTemplateValue(),
+            onChange: () => { syncBlock(); markDirty(); }
         });
-
-        templateFields.append(pillRow, textToggle, templateInput);
+        templateEditor.element.appendChild(templateInput);
+        templateFields.appendChild(templateEditor.element);
 
         // --- Option 3: link mode ---
         const linkToggle = buildOverrideSwitch(`ov-link-${entry.main_cat}`, 'Custom link mode',
@@ -6127,126 +6286,6 @@ document.addEventListener("DOMContentLoaded", async function () {
             (templateToggle.input.checked ? templateInput.value.trim() : '') || getRelPathTemplateValue()
         );
 
-        function renderTokenPills() {
-            pillRow.querySelectorAll('.template-token-pill, .template-token-slash').forEach(el => el.remove());
-            const segments = templateSegments(templateInput.value || getRelPathTemplateValue());
-
-            segments.forEach((segment, index) => {
-                if (index > 0) {
-                    const slash = document.createElement('span');
-                    slash.className = 'template-token-slash';
-                    slash.textContent = '/';
-                    pillRow.insertBefore(slash, addWrap);
-                }
-
-                const pill = document.createElement('span');
-                pill.className = 'template-token-pill d-inline-flex align-items-center';
-                pill.draggable = true;
-                pill.dataset.index = String(index);
-
-                // A segment is a token when it is exactly one {Tag}; anything else is
-                // literal text the user typed, and is styled more quietly.
-                const isToken = /^\{[A-Za-z]+\}$/.test(segment);
-                pill.classList.add(isToken ? 'token-pill-token' : 'token-pill-literal');
-                pill.title = isToken ? 'Token — drag to reorder' : 'Literal text';
-
-                const grip = document.createElement('i');
-                grip.className = 'bi bi-grip-vertical template-token-grip';
-                const text = document.createElement('span');
-                text.textContent = segment;
-                const close = document.createElement('i');
-                close.className = 'bi bi-x template-token-remove';
-                close.setAttribute('role', 'button');
-                close.setAttribute('aria-label', `Remove ${segment}`);
-                pill.append(grip, text, close);
-
-                close.addEventListener('click', (event) => {
-                    event.stopPropagation();
-                    const next = templateSegments(templateInput.value || getRelPathTemplateValue());
-                    next.splice(index, 1);
-                    templateInput.value = segmentsToTemplate(next);
-                    syncBlock();
-                    markDirty();
-                });
-
-                pill.addEventListener('dragstart', (event) => {
-                    pill.classList.add('dragging');
-                    event.dataTransfer.effectAllowed = 'move';
-                    event.dataTransfer.setData('text/plain', String(index));
-                });
-                pill.addEventListener('dragend', () => {
-                    pill.classList.remove('dragging');
-                    pillRow.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-                });
-                pill.addEventListener('dragover', (event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'move';
-                    pill.classList.add('drag-over');
-                });
-                pill.addEventListener('dragleave', () => pill.classList.remove('drag-over'));
-                pill.addEventListener('drop', (event) => {
-                    event.preventDefault();
-                    pill.classList.remove('drag-over');
-                    const from = Number(event.dataTransfer.getData('text/plain'));
-                    const to = index;
-                    if (Number.isNaN(from) || from === to) return;
-                    const next = templateSegments(templateInput.value || getRelPathTemplateValue());
-                    const [moved] = next.splice(from, 1);
-                    next.splice(to, 0, moved);
-                    templateInput.value = segmentsToTemplate(next);
-                    syncBlock();
-                    markDirty();
-                });
-
-                pillRow.insertBefore(pill, addWrap);
-            });
-
-            // Only offer tokens the template does not already use.
-            addMenu.innerHTML = '';
-            const used = templateInput.value || getRelPathTemplateValue();
-            const available = REL_PATH_TOKENS.filter(spec => !used.includes(spec.token));
-
-            const appendSegment = (value) => {
-                const next = templateSegments(templateInput.value || getRelPathTemplateValue());
-                next.push(value);
-                templateInput.value = segmentsToTemplate(next);
-                syncBlock();
-                markDirty();
-            };
-
-            available.forEach(spec => {
-                const li = document.createElement('li');
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'dropdown-item template-token-add-item';
-                btn.dataset.token = spec.token;
-                btn.textContent = spec.token;
-                btn.addEventListener('click', () => appendSegment(spec.token));
-                li.appendChild(btn);
-                addMenu.appendChild(li);
-            });
-
-            // Free-text segment, so literals like "Books" or "{SeriesNumber} - {Title}"
-            // can be authored without a separate text field.
-            const customLi = document.createElement('li');
-            customLi.className = 'template-token-custom border-top mt-1 pt-2 px-2';
-            const customInput = document.createElement('input');
-            customInput.type = 'text';
-            customInput.className = 'form-control form-control-sm template-token-custom-input';
-            customInput.placeholder = 'custom text…';
-            customInput.addEventListener('keydown', (event) => {
-                event.stopPropagation();
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    const value = customInput.value.trim();
-                    if (value) appendSegment(value);
-                }
-            });
-            customInput.addEventListener('click', event => event.stopPropagation());
-            customLi.appendChild(customInput);
-            addMenu.appendChild(customLi);
-        }
-
         function syncBlock() {
             rootFields.classList.toggle('d-none', !rootToggle.input.checked);
             templateFields.classList.toggle('d-none', !templateToggle.input.checked);
@@ -6261,7 +6300,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             valueInput.value = JSON.stringify(state);
             block.querySelector('.category-override-summary').textContent = categoryOverrideSummary(state);
 
-            renderTokenPills();
+            templateEditor.refresh();
 
             const effectiveRoot = (state.root_path || getDefaultDestinationPath()).replace(/\/+$/, '');
             const rendered = buildRelativePathFromTemplate(
@@ -6535,81 +6574,38 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 
-    /**
-     * Reflect the confirm-modal template in the tag buttons: a tag already in the
-     * template reads as active (click to remove), and a tag with no value for this
-     * torrent is disabled unless it is in the template, so it can still be removed.
-     */
-    function syncConfirmTokenButtons() {
-        if (!confirmTokenButtons.length) return;
-        const template = normalizeRelPathTemplate(confirmTemplateInput?.value || '');
-
-        confirmTokenButtons.forEach(btn => {
-            const spec = REL_PATH_TOKENS.find(t => t.token === btn.dataset.token);
-            if (!spec) return;
-
-            const value = confirmTokenValues[spec.key] || '';
-            const isActive = template.includes(spec.token);
-
-            btn.disabled = !value && !isActive;
-            btn.dataset.active = isActive ? 'true' : 'false';
-            btn.classList.toggle('btn-primary', isActive);
-            btn.classList.toggle('text-white', isActive);
-            btn.classList.toggle('btn-outline-primary', !isActive);
-            btn.title = value
-                ? `${spec.label}: ${value}`
-                : `No ${spec.label.toLowerCase()} for this torrent`;
-        });
-    }
-
     /** Rebuild the relative path from the confirm-modal template, discarding manual edits. */
     function applyConfirmTemplate() {
         if (confirmInput && confirmTemplateInput) {
             confirmInput.value = buildRelativePathFromTemplate(confirmTemplateInput.value, confirmTokenValues);
         }
         updateConfirmPathPreview();
-        syncConfirmTokenButtons();
+        confirmTemplateEditor?.refresh();
     }
 
+    let confirmTemplateEditor = null;
     if (confirmTemplateInput) {
-        const captureConfirmTemplateCaret = () => {
-            if (document.activeElement !== confirmTemplateInput) return;
-            const start = confirmTemplateInput.selectionStart;
-            const end = confirmTemplateInput.selectionEnd;
-            if (typeof start === 'number' && typeof end === 'number') {
-                confirmTemplateCaretRange = { start, end };
-            }
-        };
+        // Same token editor as Settings and the category override blocks. Values for
+        // the torrent being confirmed feed the pill tooltips and mark tokens that
+        // would render nothing.
+        confirmTemplateEditor = createTemplateTokenEditor({
+            input: confirmTemplateInput,
+            fallback: () => confirmDefaultTemplate || getRelPathTemplateValue(),
+            tokenValues: () => Object.fromEntries(
+                REL_PATH_TOKENS.map(spec => [spec.token, confirmTokenValues[spec.key] || ''])
+            ),
+            onChange: () => applyConfirmTemplate()
+        });
+        confirmTemplateInput.classList.add('d-none');
+        confirmTemplateInput.parentElement.insertBefore(confirmTemplateEditor.element, confirmTemplateInput);
+        confirmTemplateEditor.element.appendChild(confirmTemplateInput);
 
         confirmTemplateInput.addEventListener('input', applyConfirmTemplate);
-        ['keyup', 'click', 'select', 'focus'].forEach(evt => {
-            confirmTemplateInput.addEventListener(evt, captureConfirmTemplateCaret);
-        });
-
-        confirmTokenButtons.forEach(btn => {
-            btn.addEventListener('mousedown', captureConfirmTemplateCaret);
-            btn.addEventListener('click', () => {
-                const token = btn.dataset.token;
-                if (!token || btn.disabled) return;
-
-                const template = normalizeRelPathTemplate(confirmTemplateInput.value || '');
-                if (template.includes(token)) {
-                    confirmTemplateInput.value = removeTokenFromTemplate(template, token);
-                    confirmTemplateCaretRange = null;
-                } else {
-                    confirmTemplateCaretRange = insertTokenIntoTemplateInput(
-                        confirmTemplateInput, token, confirmTemplateCaretRange
-                    );
-                }
-                applyConfirmTemplate();
-            });
-        });
 
         confirmResetTemplateBtn?.addEventListener('click', () => {
             confirmTemplateInput.value = normalizeRelPathTemplate(
                 confirmDefaultTemplate || getRelPathTemplateValue()
             );
-            confirmTemplateCaretRange = null;
             applyConfirmTemplate();
         });
     }
@@ -7459,7 +7455,6 @@ document.addEventListener("DOMContentLoaded", async function () {
                     format: cleanFormat,
                     category: cleanCategory
                 };
-                confirmTemplateCaretRange = null;
                 // Category override template beats the global default.
                 confirmDefaultTemplate = normalizeRelPathTemplate(
                     categoryOverride?.rel_path_template || getRelPathTemplateValue()
@@ -7470,13 +7465,12 @@ document.addEventListener("DOMContentLoaded", async function () {
                 applyConfirmTemplate();
             } else {
                 confirmTokenValues = {};
-                confirmTemplateCaretRange = null;
                 confirmDefaultTemplate = '';
                 if (confirmTemplateInput) confirmTemplateInput.value = '';
                 if (confirmInput) confirmInput.value = '';
                 syncConfirmDestinationOptions('', false);
                 updateConfirmPathPreview();
-                syncConfirmTokenButtons();
+                confirmTemplateEditor?.refresh();
             }
 
             // Sync Freeleech UI
