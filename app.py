@@ -4067,6 +4067,9 @@ async def client_add_torrent():
     torrent_url = incoming_data.get('torrent_url') or incoming_data.get('url')
     author = incoming_data.get('author', 'Unknown')
     title = incoming_data.get('title', 'Unknown')
+    # Kept for {Genre}/{Format}/{Category} when the path template is rendered server-side.
+    catname = incoming_data.get('catname', '')
+    filetype = incoming_data.get('filetype', '')
     id = incoming_data.get('id', '0')
     category = incoming_data.get('category', app.config.get("TORRENT_CLIENT_CATEGORY", ""))
     torrent_size_str = incoming_data.get('size', '0 GiB')  # e.g., "1.5 GiB"
@@ -4195,13 +4198,16 @@ async def client_add_torrent():
                 "retry_count": 0,
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
+                "main_cat": main_cat,
+                "catname": catname,
+                "filetype": filetype,
                 "download_link": download_link,
                 "custom_relative_path": custom_relative_path,
                 "custom_destination_path": custom_destination_path,
             }
 
             if resolved_hash:
-                if app.config.get("AUTO_ORGANIZE_ON_ADD"):
+                if auto_organize_tracking_enabled():
                     metadata = load_database()
                     metadata[resolved_hash] = metadata_payload
                     save_database(metadata)
@@ -4241,7 +4247,7 @@ async def client_add_torrent():
         app.logger.warning(f"WARNING: running hash calculation for torrent URL without MID: {torrent_url}")
         hash_val = await calculate_torrent_hash_from_url(torrent_url)
     
-    if app.config.get("AUTO_ORGANIZE_ON_ADD"):
+    if auto_organize_tracking_enabled():
         if not hash_val:
             auto_organize_warning = "Unable to calculate hash - auto-organization will not work."
         else:
@@ -4258,6 +4264,9 @@ async def client_add_torrent():
                 "status": "pending", "retry_count": 0,
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
+                "main_cat": main_cat,
+                "catname": catname,
+                "filetype": filetype,
                 "download_link": download_link,
                 "custom_relative_path": custom_relative_path,
                 "custom_destination_path": custom_destination_path,
@@ -4401,6 +4410,23 @@ async def client_torrent_info_batch():
         except Exception as e2:
             return jsonify({'error': str(e2)}), 503
     
+def auto_organize_tracking_enabled():
+    """
+    True when torrent metadata must be persisted for auto-organization.
+
+    Metadata has to be written for BOTH auto-organize modes: the on-add path
+    organizes as soon as the download finishes, while the scheduled safety net
+    (check_for_unorganized_torrents) can only act on hashes that already have a
+    'pending' record in the database. Gating the write on AUTO_ORGANIZE_ON_ADD
+    alone left schedule-only users with an empty database and nothing to
+    organize (issue #41).
+    """
+    return bool(
+        app.config.get("AUTO_ORGANIZE_ON_ADD")
+        or app.config.get("AUTO_ORGANIZE_ON_SCHEDULE")
+    )
+
+
 def load_database():
     if not os.path.exists(DATABASE_FILE): return {}
     try:
@@ -4435,6 +4461,107 @@ def parse_series_info(series_info_str):
         return json.loads(series_info_str)
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+MAIN_CAT_DISPLAY_NAMES = {
+    13: "Audiobooks",
+    14: "Ebooks",
+    15: "Musicology",
+    16: "Radio",
+}
+
+
+def split_catname(catname, main_cat=""):
+    """
+    Split a MAM catname into its (category, genre) parts.
+
+    MAM reports catname as "Audiobooks - Science Fiction". A few categories
+    (e.g. "Music Book MP3") have no separator at all, in which case the whole
+    string is treated as the genre and the category is derived from main_cat.
+    """
+    text = str(catname or "").strip()
+    category, separator, genre = text.partition(" - ")
+    if not separator:
+        category, genre = "", text
+    category, genre = category.strip(), genre.strip()
+    if not category:
+        try:
+            category = MAIN_CAT_DISPLAY_NAMES.get(int(main_cat), "")
+        except (ValueError, TypeError):
+            category = ""
+    return category, genre
+
+
+def normalize_series_number(series_number):
+    """Trim redundant decimals from a series position. Mirrors normalizeSeriesNumber() in main.js."""
+    text = str(series_number if series_number is not None else "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = float(text)
+    except (TypeError, ValueError):
+        return text
+    if parsed < 0:
+        return ""
+    return str(int(parsed)) if parsed.is_integer() else re.sub(r"\.?0+$", "", text)
+
+
+def format_filetype_token(filetype):
+    """Normalize a MAM filetype ("epub mobi") into a path token ("EPUB MOBI")."""
+    parts = [p for p in re.split(r"[\s,]+", str(filetype or "")) if p]
+    return " ".join(p.upper() for p in parts)
+
+
+def build_relative_path_from_template(template, values):
+    """
+    Render a relative path template ("{Author}/{Genre}/{Title}") from token values.
+
+    Values are expected to be pre-sanitized. Tokens that resolve to an empty
+    string collapse away, so an unmatched {Series} does not leave an empty
+    directory level behind. Mirrors buildRelativePathFromTemplate() in main.js.
+    """
+    output = str(template or "").replace("\\", "/")
+    for token, value in values.items():
+        output = output.replace(token, str(value or ""))
+    output = re.sub(r"/+", "/", output).strip("/")
+    return output
+
+
+def relative_path_tokens_from_metadata(torrent_meta):
+    """Build the template token map for a stored torrent metadata record."""
+    category, genre = split_catname(
+        torrent_meta.get("catname"),
+        torrent_meta.get("main_cat", ""),
+    )
+
+    # series_info is normally {"<id>": [name, number]}, but older records written by
+    # the search-snatched path stored a plain display string instead.
+    raw_series = torrent_meta.get("series_info")
+    if isinstance(raw_series, str):
+        raw_series = parse_series_info(raw_series)
+    if not isinstance(raw_series, dict):
+        raw_series = {}
+
+    series_name, series_number = "", ""
+    series_entries = list(raw_series.values())
+    if series_entries and isinstance(series_entries[0], (list, tuple)) and series_entries[0]:
+        first = series_entries[0]
+        series_name = str(first[0] or "").strip()
+        series_number = normalize_series_number(first[1]) if len(first) > 1 else ""
+
+    def clean(value):
+        text = str(value or "").strip()
+        return sanitize_filename(text) if text else ""
+
+    return {
+        "{Author}": clean(torrent_meta.get("author")),
+        "{Series}": clean(series_name),
+        "{SeriesNumber}": clean(series_number),
+        "{Title}": clean(torrent_meta.get("title")),
+        "{Genre}": clean(genre),
+        "{Format}": clean(format_filetype_token(torrent_meta.get("filetype"))),
+        "{Category}": clean(category),
+    }
 
 async def broadcast_payload(payload: dict):
     """Broadcast a generic payload to all connected SSE clients."""
@@ -5811,7 +5938,28 @@ async def update_settings():
             scheduler.remove_job('upload_check_job')
         except:
             pass
-    
+
+    # Update the auto-organize safety net based on new settings. Without this the
+    # job was only ever registered during startup(), so toggling the setting in the
+    # UI did nothing until the app was restarted (issue #41).
+    if app.config.get("AUTO_ORGANIZE_ON_SCHEDULE"):
+        organize_hours = int(app.config.get("AUTO_ORGANIZE_INTERVAL_HOURS", 1) or 1)
+        scheduler.add_job(
+            check_for_unorganized_torrents,
+            'interval',
+            hours=organize_hours,
+            id='organize_safety_net_job',
+            replace_existing=True,
+            misfire_grace_time=max(1, int(organize_hours * 3600 * 0.8)),
+        )
+        app.logger.info(f"Auto-organize safety net scheduled every {organize_hours}h.")
+    else:
+        try:
+            scheduler.remove_job('organize_safety_net_job')
+            app.logger.info("Auto-organize safety net disabled.")
+        except:
+            pass
+
     # Get the new display name from the source of truth
     new_type = config_to_update.get("TORRENT_CLIENT_TYPE")
     display_name = get_client_display_name(new_type)
@@ -5982,8 +6130,13 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         rel_path = torrent_meta['custom_relative_path'].strip('/\\')
         dest_path = organized_path / rel_path
     else:
-        # Use default logic
-        dest_path = organized_path / sanitize_filename(torrent_meta['author']) / sanitize_filename(torrent_meta['title'])
+        # No per-download path was chosen (the confirm modal only builds one when
+        # AUTO_ORGANIZE_ON_ADD is on), so render the configured template here.
+        template = str(app.config.get("REL_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
+        rel_path = build_relative_path_from_template(template, relative_path_tokens_from_metadata(torrent_meta))
+        if not rel_path:
+            rel_path = str(Path(sanitize_filename(torrent_meta.get('author') or '')) / sanitize_filename(torrent_meta.get('title') or ''))
+        dest_path = organized_path / rel_path
     # --- CHANGED LOGIC END ---
     
     stable_snapshot = None
@@ -6180,6 +6333,14 @@ async def check_for_unorganized_torrents():
         app.logger.info("Running safety net organization job.")
         metadata = load_database()
         pending = [h for h, m in metadata.items() if m.get('status') == 'pending']
+        if not pending:
+            organized = sum(1 for m in metadata.values() if m.get('status') == 'organized')
+            app.logger.info(
+                f"[SAFETY NET] Nothing to organize: {len(metadata)} tracked torrent(s) "
+                f"({organized} already organized, 0 pending). If downloads are missing here, "
+                f"they were added while both AUTO_ORGANIZE_ON_ADD and AUTO_ORGANIZE_ON_SCHEDULE "
+                f"were disabled and are not tracked."
+            )
         succeeded = 0
         failed = 0
         last_error = None

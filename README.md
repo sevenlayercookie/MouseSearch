@@ -28,7 +28,7 @@ MouseSearch is a self-hosted web application that provides a clean, fast search 
 * **Freeleech Tools:** VIP Freeleech awareness in search results, a bonus-store wedge purchase button in the MAM status area, a personal Freeleech wedge button in the download confirmation dialog, and an optional setting to auto-spend an existing wedge on download.
 * **Enhanced Details UI:** Responsive cards, improved book details layout, a high-res cover lightbox, and a **MediaInfo Inspector** tree for viewing technical file metadata.
 * **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time in results and the book details modal. Designates previously downloaded torrents as "Downloaded".
-* **Template-Based Organization Paths:** Define a default relative path template (e.g., `{Author}/{Title}` or `{Author}/{Series}/{Title}`) with token helpers and live preview in Settings.
+* **Template-Based Organization Paths:** Define a default relative path template (e.g., `{Author}/{Title}` or `{Category}/{Genre}/{Author}/{Title}`) with token helpers and live preview in Settings.
 * **[BETA] Auto-Organization:** (See details below) Automatically organizes completed audiobooks from your download folder to a clean library structure (e.g., `Author/Title/file.m4b`) using either hardlinks (instant, no space used) or file copies, with a default destination path plus optional media-type-specific destination paths.
 
 ## Technology Stack
@@ -219,13 +219,40 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | Variable | Required | Description |
 | :--- | :--- | :--- |
 | `TORRENT_CLIENT_TYPE` | No | The type of torrent client (default: `qbittorrent`). Options: `qbittorrent`, `deluge`, `transmission`, `rtorrent`. |
-| `TORRENT_CLIENT_URL` | **Yes** | The full URL to your torrent client WebUI (e.g., `http://192.168.1.10:8080` or `http://qbittorrent:6767` if on the same Docker network). |
+| `TORRENT_CLIENT_URL` | **Yes** | The full URL to your torrent client WebUI (e.g., `http://192.168.1.10:8080` or `http://qbittorrent:6767` if on the same Docker network). **rTorrent is the exception** — it needs an XML-RPC endpoint, not the ruTorrent WebUI URL. See [rTorrent / ruTorrent endpoints](#rtorrent--rutorrent-endpoints). |
 | `TORRENT_CLIENT_USERNAME` | **Yes** | Your torrent client username. |
 | `TORRENT_CLIENT_PASSWORD` | **Yes** | Your torrent client password. |
 | `TORRENT_CLIENT_CATEGORY` | No | (Optional) A default category to assign to downloads (e.g., `audiobooks`). |
 | `QBITTORRENT_VERIFY_WEBUI_CERTIFICATE` | No | qBittorrent only. Defaults to `true`. Set to `false` if the qBittorrent WebUI uses HTTPS with a self-signed or otherwise untrusted certificate. |
 | `QB_FORCE_START` | No | qBittorrent only. Set to `true` to force-start each torrent immediately after MouseSearch adds it. Defaults to `false`. |
 | `RTORRENT_DIGEST_AUTH` | No | rTorrent only. Set to `true` to use HTTP Digest authentication instead of Basic auth. Required by some seedbox providers. Defaults to `false`. |
+
+#### rTorrent / ruTorrent endpoints
+
+MouseSearch talks to rTorrent over **XML-RPC**, so `TORRENT_CLIENT_URL` must point at an XML-RPC endpoint. Pointing it at the ruTorrent WebUI itself (e.g. `https://seedbox.example.com/rutorrent/`) will not work — that URL serves HTML, and MouseSearch will fail to parse the response.
+
+Which endpoint to use depends on how your setup exposes rTorrent:
+
+| Setup | `TORRENT_CLIENT_URL` |
+| :--- | :--- |
+| Self-hosted, XML-RPC proxied by Nginx/Apache (the usual `scgi_pass` / `mod_scgi` setup) | `http://<host>/RPC2` |
+| Shared seedbox running ruTorrent, no direct XML-RPC exposed | `https://<seedbox address>/rutorrent/plugins/httprpc/action.php` |
+| Some providers give each user a named path | `https://<seedbox address>/<username>/rutorrent/plugins/httprpc/action.php` |
+
+Most shared seedbox providers do **not** expose a direct XML-RPC interface, so the ruTorrent `httprpc` plugin endpoint (`plugins/httprpc/action.php`) is typically the one that works. It is served by ruTorrent itself, which means it inherits ruTorrent's HTTP authentication — set `TORRENT_CLIENT_USERNAME` / `TORRENT_CLIENT_PASSWORD` to the same credentials you use to log into ruTorrent in a browser.
+
+Notes:
+
+- If your provider's panel challenges you with HTTP Digest auth rather than Basic (common on seedboxes), also set `RTORRENT_DIGEST_AUTH=true`.
+- The `httprpc` plugin must be enabled in ruTorrent. If it is not in your ruTorrent plugin list, ask your provider to enable it or check whether they document a dedicated XML-RPC URL.
+- To confirm an endpoint before configuring MouseSearch:
+  ```bash
+  curl -u '<user>:<pass>' --data-binary \
+    "<?xml version='1.0'?><methodCall><methodName>system.client_version</methodName><params></params></methodCall>" \
+    -H 'Content-Type: text/xml' \
+    'https://<seedbox address>/rutorrent/plugins/httprpc/action.php'
+  ```
+  A working endpoint returns an XML `<methodResponse>` containing your rTorrent version. HTML back means you have the wrong URL; a `401` means the credentials or auth scheme (see `RTORRENT_DIGEST_AUTH`) are wrong.
 
 ### Additional Configuration
 
@@ -262,7 +289,7 @@ MouseSearch supports modular torrent clients. Currently supported: **qBittorrent
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |
 | `AUTO_ORGANIZE_INTERVAL_HOURS` | No | Number of hours between scheduled organization scans (only applies if `AUTO_ORGANIZE_ON_SCHEDULE` is `true`). Defaults to `1`. |
 | `AUTO_ORGANIZE_USE_COPY` | No | Set to `true` to copy files instead of hardlinking. Useful if download/organize paths are on different filesystems. Defaults to `false`. |
-| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, and `{Title}` tokens. Defaults to `{Author}/{Title}`. |
+| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, `{SeriesNumber}`, `{Title}`, `{Category}`, `{Genre}`, and `{Format}` tokens. Defaults to `{Author}/{Title}`. |
 | `ORGANIZED_PATH` | If auto-organization is enabled | The default *container* path for your organized library (e.g., `/downloads/organized/`). Additional destination paths can be configured from the Settings UI and assigned to media types. |
 | `LOCAL_TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The local path MouseSearch can access for completed torrent files (e.g., `/downloads/torrents/`). |
 | `REMOTE_TORRENT_DOWNLOAD_PATH` | No | Optional remote/client-side view of that same download directory. Recommended when your torrent client runs in a different filesystem namespace, such as Docker vs bare metal. |
@@ -403,7 +430,19 @@ The application will be available at `http://<your-server-ip>:5000`.
 ### Path Customization & Series Support:
 MouseSearch supports configurable default organization templates via Settings -> Directory Structure.
 
-- **Template Editor**: Set `REL_PATH_TEMPLATE` from the UI using `{Author}`, `{Series}`, and `{Title}` tokens, with quick-insert buttons and live preview.
+- **Template Editor**: Set `REL_PATH_TEMPLATE` from the UI using the tokens below, with quick-insert buttons and live preview.
+
+| Token | Value | Example |
+| --- | --- | --- |
+| `{Author}` | Author name | `Frank Herbert` |
+| `{Series}` | Series name (blank if the torrent has no series) | `Dune` |
+| `{SeriesNumber}` | Position within the series | `1` |
+| `{Title}` | Torrent title | `Dune` |
+| `{Category}` | Media type from the MAM category | `Audiobooks`, `Ebooks` |
+| `{Genre}` | MAM subcategory | `Science Fiction` |
+| `{Format}` | File format, uppercased | `M4B`, `EPUB MOBI` |
+
+  Tokens that have no value collapse out of the path rather than leaving an empty folder level, so `{Author}/{Series}/{Title}` yields `Frank Herbert/Dune` for a standalone book. To reproduce a `Audiobooks/Science Fiction/Frank Herbert/Dune` layout, use `{Category}/{Genre}/{Author}/{Title}`.
 - **Environment Default**: Set `DEFAULT_RELATIVE_PATH_TEMPLATE` in `.env` to control the default template used by the app.
 - **Review Path**: When `AUTO_ORGANIZE_ON_ADD` is enabled, the download confirmation modal pre-fills from your template and remains editable.
 - **Destination Selection**: In Settings → Auto-Organize, set a **Default Organized Destination Path** and optionally add extra destination paths that can be assigned as defaults per media type (Audiobooks, E-Books, Musicology, Radio).

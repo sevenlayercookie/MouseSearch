@@ -206,7 +206,8 @@
                     data-free="{{ result.free }}" data-vip-freeleech="{{ result.vip_freeleech }}"
                     data-personal-freeleech="{{ result.personal_freeleech }}"
                     data-fl-vip="{{ result.fl_vip }}"
-                    data-main-cat="{{ result.main_cat }}" data-series-info="{{ result.series_info | escape }}" {% if
+                    data-main-cat="{{ result.main_cat }}" data-series-info="{{ result.series_info | escape }}"
+                    data-catname="{{ result.catname or '' }}" data-filetype="{{ result.filetype or result.filetypes or '' }}" {% if
                     CLIENT_STATUS !='CONNECTED' %}disabled{% endif %}>
                     <i class="bi bi-cloud-arrow-down-fill me-1"></i> Download
                 </button>

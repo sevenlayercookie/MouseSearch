@@ -1872,13 +1872,49 @@ function insertSeriesTokenIntoTemplate(template) {
     return normalized.endsWith('/') ? `${normalized}{Series}` : `${normalized}/{Series}`;
 }
 
+const MAIN_CAT_DISPLAY_NAMES = {
+    13: 'Audiobooks',
+    14: 'Ebooks',
+    15: 'Musicology',
+    16: 'Radio'
+};
+
+/**
+ * Split a MAM catname ("Audiobooks - Science Fiction") into its category and genre parts.
+ * A few categories ("Music Book MP3") have no separator; there the whole string is the
+ * genre and the category falls back to the main_cat mapping.
+ * Mirrors split_catname() in app.py.
+ */
+function splitCatname(catname, mainCat) {
+    const text = String(catname || '').trim();
+    const separatorIndex = text.indexOf(' - ');
+    let category = separatorIndex === -1 ? '' : text.slice(0, separatorIndex).trim();
+    const genre = separatorIndex === -1 ? text : text.slice(separatorIndex + 3).trim();
+    if (!category) {
+        category = MAIN_CAT_DISPLAY_NAMES[parseInt(mainCat, 10)] || '';
+    }
+    return { category, genre };
+}
+
+/** Normalize a MAM filetype ("epub mobi") into a path token ("EPUB MOBI"). */
+function formatFileTypeToken(filetype) {
+    return String(filetype || '')
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map(part => part.toUpperCase())
+        .join(' ');
+}
+
 function buildRelativePathFromTemplate(template, values) {
     let output = normalizeRelPathTemplate(template);
     const replacements = {
         '{Author}': values.author || '',
         '{Series}': values.series || '',
         '{SeriesNumber}': values.seriesNumber || '',
-        '{Title}': values.title || ''
+        '{Title}': values.title || '',
+        '{Genre}': values.genre || '',
+        '{Format}': values.format || '',
+        '{Category}': values.category || ''
     };
     for (const [token, value] of Object.entries(replacements)) {
         output = output.split(token).join(value);
@@ -3546,7 +3582,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             '{Author}': 'J.K. Rowling',
             '{Series}': 'Harry Potter',
             '{SeriesNumber}': '1',
-            '{Title}': "Harry Potter and the Sorcerer's Stone"
+            '{Title}': "Harry Potter and the Sorcerer's Stone",
+            '{Genre}': 'Fantasy',
+            '{Format}': 'M4B',
+            '{Category}': 'Audiobooks'
         };
 
         const updatePathPreview = () => {
@@ -3621,7 +3660,16 @@ document.addEventListener("DOMContentLoaded", async function () {
     const clientTypeSelect = document.getElementById('TORRENT_CLIENT_TYPE');
     const settingsCatSelect = document.getElementById('TORRENT_CLIENT_CATEGORY');
 
+    // Show the rTorrent XML-RPC endpoint hint only when rTorrent is selected.
+    const rtorrentUrlHint = document.getElementById('rtorrent-url-hint');
+    const syncRtorrentUrlHint = () => {
+        if (!rtorrentUrlHint) return;
+        rtorrentUrlHint.classList.toggle('d-none', clientTypeSelect?.value !== 'rtorrent');
+    };
+    syncRtorrentUrlHint();
+
     if (clientTypeSelect) {
+        clientTypeSelect.addEventListener('change', syncRtorrentUrlHint);
         clientTypeSelect.addEventListener('change', function () {
             const tempMsg = '<option value="">Save settings to load...</option>';
 
@@ -6769,6 +6817,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             size: button.dataset.size || '0 GiB',
             main_cat: button.dataset.mainCat || '',
             series_info: rawSeries,
+            // Source values for the {Genre}/{Format}/{Category} path tokens. Sent to the
+            // server so it can render the template itself on the schedule-only path.
+            catname: button.dataset.catname || '',
+            filetype: button.dataset.filetype || '',
 
             // Freeleech flags (used by confirm modal UI)
             free: button.dataset.free ?? 0,
@@ -6804,6 +6856,11 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const cleanTitle = sanitizeFilename(downloadData.title);
                 const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
                 const cleanSeriesNumber = seriesNumber ? sanitizeFilename(seriesNumber) : "";
+                const { category, genre } = splitCatname(downloadData.catname, downloadData.main_cat);
+                const cleanGenre = genre ? sanitizeFilename(genre) : "";
+                const cleanCategory = category ? sanitizeFilename(category) : "";
+                const formatToken = formatFileTypeToken(downloadData.filetype);
+                const cleanFormat = formatToken ? sanitizeFilename(formatToken) : "";
                 const relTemplate = normalizeRelPathTemplate(getRelPathTemplateValue());
                 const templateHasSeries = relTemplate.includes('{Series}') || relTemplate.includes('{SeriesNumber}');
 
@@ -6814,7 +6871,10 @@ document.addEventListener("DOMContentLoaded", async function () {
                     author: cleanAuthor,
                     series: cleanSeries,
                     seriesNumber: cleanSeriesNumber,
-                    title: cleanTitle
+                    title: cleanTitle,
+                    genre: cleanGenre,
+                    format: cleanFormat,
+                    category: cleanCategory
                 });
                 if (confirmInput) confirmInput.value = relativePath;
                 updateConfirmPathPreview();
@@ -6831,6 +6891,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                     addSeriesBtn.dataset.cleanTitle = cleanTitle;
                     addSeriesBtn.dataset.cleanSeries = cleanSeries;
                     addSeriesBtn.dataset.cleanSeriesNumber = cleanSeriesNumber;
+                    addSeriesBtn.dataset.cleanGenre = cleanGenre;
+                    addSeriesBtn.dataset.cleanFormat = cleanFormat;
+                    addSeriesBtn.dataset.cleanCategory = cleanCategory;
                     addSeriesBtn.dataset.templateWithSeries = templateHasSeries
                         ? relTemplate
                         : insertSeriesTokenIntoTemplate(relTemplate);
@@ -7101,6 +7164,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         dlBtn.dataset.size = data.size;
         dlBtn.dataset.mainCat = data.main_cat;
         dlBtn.dataset.seriesInfo = data.series_info;
+        dlBtn.dataset.catname = data.catname || '';
+        dlBtn.dataset.filetype = data.filetype || data.filetypes || '';
         dlBtn.dataset.free = data.free;
         dlBtn.dataset.vipFreeleech = data.vip_freeleech;
         dlBtn.dataset.personalFreeleech = data.personal_freeleech;
@@ -7176,7 +7241,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     document.getElementById('add-series-btn')?.addEventListener('click', function () {
         const input = document.getElementById('confirm-path-input');
         const hintEl = document.getElementById('path-format-hint');
-        const { cleanAuthor, cleanTitle, cleanSeries, cleanSeriesNumber, active, templateWithSeries, templateWithoutSeries } = this.dataset;
+        const { cleanAuthor, cleanTitle, cleanSeries, cleanSeriesNumber, cleanGenre, cleanFormat, cleanCategory, active, templateWithSeries, templateWithoutSeries } = this.dataset;
         const isActive = active === "true";
         const nextTemplate = isActive
             ? (templateWithoutSeries || DEFAULT_REL_PATH_TEMPLATE)
@@ -7186,7 +7251,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             author: cleanAuthor || '',
             series: cleanSeries || '',
             seriesNumber: cleanSeriesNumber || '',
-            title: cleanTitle || ''
+            title: cleanTitle || '',
+            genre: cleanGenre || '',
+            format: cleanFormat || '',
+            category: cleanCategory || ''
         });
         if (hintEl) hintEl.textContent = `Template: ${nextTemplate}`;
         setSeriesToggleButtonState(this, !isActive);

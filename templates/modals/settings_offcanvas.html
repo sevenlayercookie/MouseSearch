@@ -66,6 +66,14 @@
                 <label for="TORRENT_CLIENT_URL">Client URL</label>
               </div>
 
+              <div class="form-text small mb-3 d-none" id="rtorrent-url-hint">
+                rTorrent needs an <strong>XML-RPC endpoint</strong>, not the ruTorrent WebUI URL.
+                Self-hosted behind Nginx/Apache: <code>http://&lt;host&gt;/RPC2</code>.
+                Shared seedbox running ruTorrent:
+                <code>https://&lt;seedbox&gt;/rutorrent/plugins/httprpc/action.php</code>.
+                Some providers also require Digest auth (<code>RTORRENT_DIGEST_AUTH=true</code>).
+              </div>
+
               <div class="row">
                 <div class="col-6 mb-3">
                   <div class="form-floating">
@@ -420,6 +428,18 @@
                     <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
                       data-token="{Title}">
                       <i class="bi bi-book-fill"></i> Title
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Category}" title="Media type, e.g. Audiobooks or Ebooks">
+                      <i class="bi bi-collection"></i> Category
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Genre}" title="MAM subcategory, e.g. Science Fiction">
+                      <i class="bi bi-tag-fill"></i> Genre
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Format}" title="File format, e.g. M4B or EPUB">
+                      <i class="bi bi-file-earmark-fill"></i> Format
                     </button>
                     <!--
                   <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill insert-token-btn"
