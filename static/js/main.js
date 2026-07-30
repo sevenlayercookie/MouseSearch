@@ -1927,27 +1927,20 @@ const REL_PATH_TOKENS = [
     { token: '{Format}', key: 'format', label: 'Format' }
 ];
 
-/** Split a template into its "/"-separated segments, e.g. ["{Author}", "{SeriesNumber} - {Title}"]. */
-function templateSegments(template) {
-    return normalizeRelPathTemplate(template).split('/').map(s => s.trim()).filter(Boolean);
-}
-
-function segmentsToTemplate(segments) {
-    return segments.filter(Boolean).join('/');
-}
-
-/** A segment is a token when it is exactly one {Tag}; anything else is literal text. */
-function isTokenSegment(segment) {
-    return /^\{[A-Za-z]+\}$/.test(String(segment || ''));
-}
+/** The tokens the editor renders as pills; anything else in braces stays plain text. */
+const REL_PATH_TOKEN_SET = new Set(REL_PATH_TOKENS.map(spec => spec.token));
+const REL_PATH_TOKEN_PATTERN = /\{[A-Za-z]+\}/g;
+/** Zero-width space, used to keep a caret position available next to a pill. */
+const TEMPLATE_ZWSP = '\u200b';
 
 /**
  * The one template editor used everywhere path templates are edited: Settings,
  * the download confirm modal, and each category override block.
  *
- * Renders the template as draggable pills, one per "/"-separated segment, with a
- * [+] menu for adding tokens or literal text and an optional free-text field for
- * edits the pills are clumsy for.
+ * It behaves like an ordinary text box. Tokens are inline pills the caret steps
+ * over as a unit; everything between them - separators, literal text - is typed
+ * and edited normally. Pills can be dragged to another spot in the text, and the
+ * [+] menu inserts a token at the caret.
  *
  * `input` is the real form field and stays the source of truth, so names, ids and
  * form submission are left to the caller. The editor mounts around it.
@@ -1955,7 +1948,7 @@ function isTokenSegment(segment) {
  * options:
  *   input        the text input holding the template (required)
  *   fallback     template to show when the input is empty (e.g. the global default)
- *   tokenValues  optional {token: resolvedValue} used for tooltips, and to disable
+ *   tokenValues  optional {token: resolvedValue} used for tooltips, and to mark
  *                menu entries for tokens the current item has no value for
  *   onChange     called with the new template after any edit
  */
@@ -1963,163 +1956,209 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     const wrap = document.createElement('div');
     wrap.className = 'template-token-editor-wrap';
 
-    const pillRow = document.createElement('div');
-    pillRow.className = 'template-token-editor';
+    const editor = document.createElement('div');
+    editor.className = 'form-control template-token-editor';
+    editor.setAttribute('contenteditable', 'true');
+    editor.setAttribute('role', 'textbox');
+    editor.setAttribute('aria-multiline', 'false');
+    editor.setAttribute('aria-label', 'Path template');
+    editor.setAttribute('spellcheck', 'false');
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'd-flex align-items-center gap-3 mt-1 template-token-toolbar';
 
     const addWrap = document.createElement('span');
-    addWrap.className = 'position-relative d-inline-flex dropdown';
+    addWrap.className = 'dropdown d-inline-flex';
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-1 template-token-add-btn';
-    addBtn.title = 'Add token';
-    addBtn.setAttribute('aria-label', 'Add token');
+    addBtn.title = 'Insert a token at the cursor';
+    addBtn.setAttribute('aria-label', 'Insert token');
     addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
     addBtn.setAttribute('data-bs-toggle', 'dropdown');
     addBtn.setAttribute('aria-expanded', 'false');
     const addMenu = document.createElement('ul');
     addMenu.className = 'dropdown-menu template-token-add-menu';
     addWrap.append(addBtn, addMenu);
-    pillRow.appendChild(addWrap);
 
     const textToggle = document.createElement('button');
     textToggle.type = 'button';
-    textToggle.className = 'btn btn-link btn-sm p-0 mt-1 text-decoration-none template-token-text-toggle';
+    textToggle.className = 'btn btn-link btn-sm p-0 text-decoration-none template-token-text-toggle';
     textToggle.textContent = 'Edit as text';
 
-    wrap.append(pillRow, textToggle);
+    toolbar.append(addWrap, textToggle);
+    wrap.append(editor, toolbar);
+
+    /** Caret to insert at, remembered because opening the [+] menu takes focus away. */
+    let savedRange = null;
+    let dropCaret = null;
 
     const currentTemplate = () => input.value || fallback() || '';
 
-    function commit(segments) {
-        input.value = segmentsToTemplate(segments);
-        render();
-        onChange(input.value);
+    // --- reading the field back out ---------------------------------------
+
+    function serialize() {
+        let out = '';
+        editor.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) { out += node.textContent; return; }
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            if (node.dataset.token) { out += node.dataset.token; return; }
+            if (node.classList.contains('template-token-drop-caret')) return;
+            if (node.tagName === 'BR') return;
+            out += node.textContent;   // stray markup from a paste
+        });
+        return out.split(TEMPLATE_ZWSP).join('').replace(/[\r\n]+/g, '');
+    }
+
+    /** Push the field's contents back onto the real input and tell the caller. */
+    function sync() {
+        ensureCaretGaps();
+        decoratePills();
+        renderMenu();
+        const value = serialize();
+        if (input.value === value) return;
+        input.value = value;
+        onChange(value);
+    }
+
+    // --- building the field ------------------------------------------------
+
+    function makePill(token) {
+        const pill = document.createElement('span');
+        pill.className = 'template-token-pill token-pill-token';
+        pill.dataset.token = token;
+        pill.setAttribute('contenteditable', 'false');
+        pill.draggable = false;
+
+        const grip = document.createElement('i');
+        grip.className = 'bi bi-grip-vertical template-token-grip';
+        const text = document.createElement('span');
+        text.textContent = token;
+        const close = document.createElement('i');
+        close.className = 'bi bi-x template-token-remove';
+        close.setAttribute('role', 'button');
+        close.setAttribute('aria-label', `Remove ${token}`);
+        pill.append(grip, text, close);
+
+        close.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            removePill(pill);
+            sync();
+        });
+
+        attachDrag(pill);
+        return pill;
+    }
+
+    const pillsIn = () => Array.from(editor.querySelectorAll('.template-token-pill'));
+
+    /** A text node either side of a pill, looking past the zero-width caret gaps. */
+    function textBeside(pill, dir) {
+        let node = pill[dir];
+        while (node && node.nodeType === Node.TEXT_NODE
+            && node.textContent.split(TEMPLATE_ZWSP).join('') === '') node = node[dir];
+        return node && node.nodeType === Node.TEXT_NODE ? node : null;
     }
 
     /**
-     * Pointer-based reordering. HTML5 drag-and-drop does not fire on touch, so
-     * pointer events drive both mouse and touch from one path; CSS sets
-     * touch-action:none on the pills so dragging does not scroll the panel.
+     * Removing a token takes the separator it leaves orphaned with it, so deleting
+     * a level out of "a/{Genre}/b" gives "a/b" rather than "a//b".
      */
-    function attachDrag(pill, index) {
-        let dragging = false;
-        let pointerId = null;
+    function removePill(pill) {
+        const before = textBeside(pill, 'previousSibling');
+        const after = textBeside(pill, 'nextSibling');
+        pill.remove();
+        if (after && after.textContent.startsWith('/') && (!before || before.textContent.endsWith('/'))) {
+            after.textContent = after.textContent.slice(1);
+        } else if (before && before.textContent.endsWith('/') && !after) {
+            before.textContent = before.textContent.slice(0, -1);
+        }
+    }
 
-        const pillsNow = () => Array.from(pillRow.querySelectorAll('.template-token-pill'));
-
-        const dropTargetAt = (x, y) => pillsNow().find(other => {
-            if (other === pill) return false;
-            const r = other.getBoundingClientRect();
-            return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-        });
-
-        const clearMarks = () => pillRow.querySelectorAll('.drag-over')
-            .forEach(el => el.classList.remove('drag-over'));
-
-        const onMove = (event) => {
-            if (event.pointerId !== pointerId) return;
-            if (!dragging) {
-                dragging = true;
-                pill.classList.add('dragging');
-            }
-            event.preventDefault();
-            clearMarks();
-            dropTargetAt(event.clientX, event.clientY)?.classList.add('drag-over');
-        };
-
-        const finish = (event) => {
-            if (event.pointerId !== pointerId) return;
-            pill.releasePointerCapture?.(pointerId);
-            pill.removeEventListener('pointermove', onMove);
-            pill.removeEventListener('pointerup', finish);
-            pill.removeEventListener('pointercancel', cancel);
-            pill.classList.remove('dragging');
-            clearMarks();
-            pointerId = null;
-            if (!dragging) return;
-            dragging = false;
-
-            const target = dropTargetAt(event.clientX, event.clientY);
-            if (!target) return;
-            const to = Number(target.dataset.index);
-            if (Number.isNaN(to) || to === index) return;
-            const next = templateSegments(currentTemplate());
-            const [moved] = next.splice(index, 1);
-            next.splice(to, 0, moved);
-            commit(next);
-        };
-
-        const cancel = (event) => {
-            if (event.pointerId !== pointerId) return;
-            pill.removeEventListener('pointermove', onMove);
-            pill.removeEventListener('pointerup', finish);
-            pill.removeEventListener('pointercancel', cancel);
-            pill.classList.remove('dragging');
-            clearMarks();
-            dragging = false;
-            pointerId = null;
-        };
-
-        pill.addEventListener('pointerdown', (event) => {
-            if (event.button != null && event.button !== 0) return;
-            if (event.target.closest('.template-token-remove')) return;
-            pointerId = event.pointerId;
-            pill.setPointerCapture?.(pointerId);
-            pill.addEventListener('pointermove', onMove);
-            pill.addEventListener('pointerup', finish);
-            pill.addEventListener('pointercancel', cancel);
+    function decoratePills() {
+        // Shown only when the field is emptied, i.e. "no override, inherit this".
+        editor.dataset.placeholder = normalizeRelPathTemplate(fallback() || '');
+        const values = tokenValues ? tokenValues() : null;
+        pillsIn().forEach(pill => {
+            const token = pill.dataset.token;
+            const resolved = values ? (values[token] || '') : '';
+            pill.title = resolved ? `${token} — ${resolved}` : `${token} — drag to move`;
         });
     }
 
-    function render() {
-        pillRow.querySelectorAll('.template-token-pill, .template-token-slash').forEach(el => el.remove());
-        const segments = templateSegments(currentTemplate());
-
-        segments.forEach((segment, index) => {
-            if (index > 0) {
-                const slash = document.createElement('span');
-                slash.className = 'template-token-slash';
-                slash.textContent = '/';
-                pillRow.insertBefore(slash, addWrap);
-            }
-
-            const pill = document.createElement('span');
-            pill.className = 'template-token-pill d-inline-flex align-items-center';
-            pill.dataset.index = String(index);
-
-            const isToken = isTokenSegment(segment);
-            pill.classList.add(isToken ? 'token-pill-token' : 'token-pill-literal');
-            const resolved = tokenValues ? (tokenValues()[segment] || '') : '';
-            pill.title = isToken
-                ? (resolved ? `${segment} — ${resolved}` : 'Token — drag to reorder')
-                : 'Literal text';
-
-            const grip = document.createElement('i');
-            grip.className = 'bi bi-grip-vertical template-token-grip';
-            const text = document.createElement('span');
-            text.textContent = segment;
-            const close = document.createElement('i');
-            close.className = 'bi bi-x template-token-remove';
-            close.setAttribute('role', 'button');
-            close.setAttribute('aria-label', `Remove ${segment}`);
-            pill.append(grip, text, close);
-
-            close.addEventListener('click', (event) => {
-                event.stopPropagation();
-                const next = templateSegments(currentTemplate());
-                next.splice(index, 1);
-                commit(next);
-            });
-
-            attachDrag(pill, index);
-            pillRow.insertBefore(pill, addWrap);
+    /**
+     * Browsers leave nowhere to put the caret when two atomic pills sit next to
+     * each other, or when one starts or ends the field. A zero-width space in each
+     * of those gaps restores a normal text position; serialize() strips them out.
+     */
+    function ensureCaretGaps() {
+        const isPill = node => node && node.nodeType === Node.ELEMENT_NODE && !!node.dataset.token;
+        const kids = Array.from(editor.childNodes);
+        if (isPill(kids[0])) editor.insertBefore(document.createTextNode(TEMPLATE_ZWSP), kids[0]);
+        kids.forEach((node, index) => {
+            const next = kids[index + 1];
+            if (isPill(node) && isPill(next)) editor.insertBefore(document.createTextNode(TEMPLATE_ZWSP), next);
         });
+        if (isPill(editor.lastChild)) editor.appendChild(document.createTextNode(TEMPLATE_ZWSP));
+    }
 
-        // Only offer tokens the template does not already use.
+    /**
+     * Rebuild the field from the input. Skipped when the field already says the
+     * same thing, so that typing - which syncs the other way - keeps its caret.
+     */
+    function render(force = false) {
+        const template = normalizeRelPathTemplate(currentTemplate());
+        if (!force && template === serialize()) {
+            decoratePills();
+            renderMenu();
+            return;
+        }
+        editor.textContent = '';
+        appendTemplate(editor, template);
+        ensureCaretGaps();
+        decoratePills();
+        renderMenu();
+    }
+
+    /** Append `text` to `parent`, turning every known {Tag} into a pill. */
+    function appendTemplate(parent, text) {
+        let last = 0;
+        let match;
+        let lastPill = null;
+        REL_PATH_TOKEN_PATTERN.lastIndex = 0;
+        while ((match = REL_PATH_TOKEN_PATTERN.exec(text)) !== null) {
+            if (!REL_PATH_TOKEN_SET.has(match[0])) continue;
+            if (match.index > last) parent.appendChild(document.createTextNode(text.slice(last, match.index)));
+            lastPill = makePill(match[0]);
+            parent.appendChild(lastPill);
+            last = match.index + match[0].length;
+        }
+        if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+        return lastPill;
+    }
+
+    /** A {Tag} typed or pasted by hand becomes a pill as soon as it is complete. */
+    function pillifyTypedTokens() {
+        let lastPill = null;
+        Array.from(editor.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE && /\{[A-Za-z]+\}/.test(node.textContent))
+            .forEach(node => {
+                const frag = document.createDocumentFragment();
+                const pill = appendTemplate(frag, node.textContent);
+                if (!pill) return;
+                lastPill = pill;
+                node.replaceWith(frag);
+            });
+        if (lastPill) placeCaretAfter(lastPill);
+    }
+
+    function renderMenu() {
         addMenu.innerHTML = '';
-        const used = currentTemplate();
+        const used = serialize() || currentTemplate();
         const values = tokenValues ? tokenValues() : null;
 
+        // Only offer tokens the template does not already use.
         REL_PATH_TOKENS.filter(spec => !used.includes(spec.token)).forEach(spec => {
             const li = document.createElement('li');
             const btn = document.createElement('button');
@@ -2139,30 +2178,272 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             }
             btn.addEventListener('click', (event) => {
                 if (btn.classList.contains('disabled')) { event.preventDefault(); return; }
-                commit([...templateSegments(currentTemplate()), spec.token]);
+                insertToken(spec.token);
             });
             li.appendChild(btn);
             addMenu.appendChild(li);
         });
 
-        const customLi = document.createElement('li');
-        customLi.className = 'template-token-custom border-top mt-1 pt-2 px-2';
-        const customInput = document.createElement('input');
-        customInput.type = 'text';
-        customInput.className = 'form-control form-control-sm template-token-custom-input';
-        customInput.placeholder = 'custom text…';
-        customInput.addEventListener('keydown', (event) => {
-            event.stopPropagation();
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                const value = customInput.value.trim();
-                if (value) commit([...templateSegments(currentTemplate()), value]);
-            }
-        });
-        customInput.addEventListener('click', event => event.stopPropagation());
-        customLi.appendChild(customInput);
-        addMenu.appendChild(customLi);
+        if (!addMenu.childElementCount) {
+            const li = document.createElement('li');
+            li.className = 'dropdown-item-text small text-muted';
+            li.textContent = 'Every token is already in use';
+            addMenu.appendChild(li);
+        }
     }
+
+    // --- caret -------------------------------------------------------------
+
+    const selection = () => (document.getSelection ? document.getSelection() : null);
+
+    function rangeAtEnd() {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        return range;
+    }
+
+    /** Where an insert should land: the live caret, the remembered one, or the end. */
+    function activeRange() {
+        const sel = selection();
+        if (sel && sel.rangeCount) {
+            const live = sel.getRangeAt(0);
+            if (editor.contains(live.commonAncestorContainer)) return live.cloneRange();
+        }
+        if (savedRange && editor.contains(savedRange.commonAncestorContainer)) return savedRange.cloneRange();
+        return rangeAtEnd();
+    }
+
+    function placeCaretAfter(node) {
+        const sel = selection();
+        if (!sel) return;
+        const range = document.createRange();
+        range.setStartAfter(node);
+        range.collapse(true);
+        editor.focus();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        savedRange = range.cloneRange();
+    }
+
+    /**
+     * A pill that lands directly against another pill gets a "/" between them, so
+     * inserting or dropping one never silently glues two tokens together. Text the
+     * user typed is left exactly as it is.
+     */
+    function separatePill(pill) {
+        const isPill = node => node && node.nodeType === Node.ELEMENT_NODE && !!node.dataset.token;
+        const skipGaps = (node, dir) => {
+            while (node && node.nodeType === Node.TEXT_NODE
+                && node.textContent.split(TEMPLATE_ZWSP).join('') === '') node = node[dir];
+            return node;
+        };
+        if (isPill(skipGaps(pill.previousSibling, 'previousSibling'))) {
+            editor.insertBefore(document.createTextNode('/'), pill);
+        }
+        if (isPill(skipGaps(pill.nextSibling, 'nextSibling'))) {
+            editor.insertBefore(document.createTextNode('/'), pill.nextSibling);
+        }
+    }
+
+    function insertToken(token) {
+        const range = activeRange();
+        range.deleteContents();
+        const pill = makePill(token);
+        range.insertNode(pill);
+        separatePill(pill);
+        sync();
+        placeCaretAfter(pill);
+    }
+
+    // --- dragging a pill to a new spot -------------------------------------
+
+    function nodeRect(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) return node.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getBoundingClientRect ? range.getBoundingClientRect() : null;
+    }
+
+    /** Nearest gap between the field's children; used when the browser has no caret-from-point. */
+    function nearestGap(x, y) {
+        let best = null;
+        Array.from(editor.childNodes)
+            .filter(node => node !== dropCaret)
+            .forEach(node => {
+                const rect = nodeRect(node);
+                if (!rect || (!rect.width && !rect.height)) return;
+                const midY = (rect.top + rect.bottom) / 2;
+                [['setStartBefore', rect.left], ['setStartAfter', rect.right]].forEach(([method, edgeX]) => {
+                    const score = Math.abs(y - midY) * 4 + Math.abs(x - edgeX);
+                    if (!best || score < best.score) best = { node, method, score };
+                });
+            });
+        if (!best) return rangeAtEnd();
+        const range = document.createRange();
+        range[best.method](best.node);
+        range.collapse(true);
+        return range;
+    }
+
+    /** The text position under the pointer, snapped outside any pill it lands in. */
+    function insertionRange(x, y) {
+        let range = null;
+        if (document.caretRangeFromPoint) {
+            range = document.caretRangeFromPoint(x, y);
+        } else if (document.caretPositionFromPoint) {
+            const pos = document.caretPositionFromPoint(x, y);
+            if (pos) {
+                range = document.createRange();
+                range.setStart(pos.offsetNode, pos.offset);
+            }
+        }
+        if (range && editor.contains(range.startContainer)) {
+            range.collapse(true);
+            const node = range.startContainer;
+            const host = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+            const pill = host?.closest('.template-token-pill');
+            if (!pill) return range;
+            const rect = pill.getBoundingClientRect();
+            const snapped = document.createRange();
+            if (x < (rect.left + rect.right) / 2) snapped.setStartBefore(pill);
+            else snapped.setStartAfter(pill);
+            snapped.collapse(true);
+            return snapped;
+        }
+        return nearestGap(x, y);
+    }
+
+    function removeDropCaret() {
+        dropCaret?.remove();
+        dropCaret = null;
+    }
+
+    function showDropCaret(x, y) {
+        removeDropCaret();
+        const range = insertionRange(x, y);
+        dropCaret = document.createElement('span');
+        dropCaret.className = 'template-token-drop-caret';
+        dropCaret.setAttribute('contenteditable', 'false');
+        range.insertNode(dropCaret);
+    }
+
+    /**
+     * Pointer-based dragging. HTML5 drag-and-drop does not fire on touch, so
+     * pointer events drive both mouse and touch from one path; CSS sets
+     * touch-action:none on the pills so dragging does not scroll the panel.
+     */
+    function attachDrag(pill) {
+        let pointerId = null;
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const detach = () => {
+            pill.removeEventListener('pointermove', onMove);
+            pill.removeEventListener('pointerup', onUp);
+            pill.removeEventListener('pointercancel', onCancel);
+            pill.releasePointerCapture?.(pointerId);
+            pill.classList.remove('dragging');
+            editor.classList.remove('template-token-editor-dragging');
+            removeDropCaret();
+            pointerId = null;
+        };
+
+        const onMove = (event) => {
+            if (event.pointerId !== pointerId) return;
+            if (!dragging) {
+                // A small threshold so a tap still just places the caret.
+                if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) < 5) return;
+                dragging = true;
+                pill.classList.add('dragging');
+                editor.classList.add('template-token-editor-dragging');
+            }
+            event.preventDefault();
+            showDropCaret(event.clientX, event.clientY);
+        };
+
+        const onUp = (event) => {
+            if (event.pointerId !== pointerId) return;
+            const moved = !!(dragging && dropCaret?.parentNode);
+            if (moved) {
+                dropCaret.parentNode.insertBefore(pill, dropCaret);
+                removeDropCaret();          // out of the way before looking at neighbours
+                separatePill(pill);
+            }
+            dragging = false;
+            detach();
+            if (moved) sync();
+            placeCaretAfter(pill);          // a plain tap just parks the caret here
+        };
+
+        const onCancel = (event) => {
+            if (event.pointerId !== pointerId) return;
+            dragging = false;
+            detach();
+        };
+
+        pill.addEventListener('pointerdown', (event) => {
+            if (event.button != null && event.button !== 0) return;
+            if (event.target.closest('.template-token-remove')) return;
+            pointerId = event.pointerId;
+            startX = event.clientX;
+            startY = event.clientY;
+            pill.setPointerCapture?.(pointerId);
+            pill.addEventListener('pointermove', onMove);
+            pill.addEventListener('pointerup', onUp);
+            pill.addEventListener('pointercancel', onCancel);
+        });
+    }
+
+    // --- wiring ------------------------------------------------------------
+
+    editor.addEventListener('input', () => {
+        pillifyTypedTokens();
+        sync();
+    });
+
+    // One line only: Enter would otherwise split the field into blocks.
+    editor.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') event.preventDefault();
+    });
+
+    editor.addEventListener('paste', (event) => {
+        if (!event.clipboardData) return;
+        event.preventDefault();
+        const text = String(event.clipboardData.getData('text/plain') || '').replace(/[\r\n]+/g, ' ');
+        const range = activeRange();
+        range.deleteContents();
+        const node = document.createTextNode(text);
+        range.insertNode(node);
+        placeCaretAfter(node);
+        pillifyTypedTokens();
+        sync();
+    });
+
+    // Clicking the padding around the text behaves like clicking a text input.
+    editor.addEventListener('click', (event) => {
+        if (event.target !== editor) return;
+        const sel = selection();
+        if (!sel) return;
+        const range = rangeAtEnd();
+        editor.focus();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        savedRange = range.cloneRange();
+    });
+
+    // Opening the [+] menu focuses the button and collapses the caret, so keep a
+    // copy of it while it is still ours. Scoped to the field, not the document, so
+    // an override block that is removed takes its listeners with it.
+    const rememberCaret = () => {
+        const sel = selection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (editor.contains(range.commonAncestorContainer)) savedRange = range.cloneRange();
+    };
+    ['keyup', 'mouseup', 'pointerup', 'input', 'focus'].forEach(type =>
+        editor.addEventListener(type, rememberCaret));
 
     textToggle.addEventListener('click', () => {
         const hidden = input.classList.toggle('d-none');
@@ -2170,11 +2451,11 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         if (!hidden) input.focus();
     });
 
-    // Typing in the free-text field rebuilds the pills live.
-    input.addEventListener('input', render);
+    // The raw field is written directly by resets and by settings snapshot restore.
+    input.addEventListener('input', () => render(true));
 
-    render();
-    return { element: wrap, refresh: render };
+    render(true);
+    return { element: wrap, refresh: () => render(false) };
 }
 
 function getSeriesName(seriesJsonStr) {
@@ -3815,25 +4096,19 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     if (relTemplateInput && previewOutput) {
         const previewData = {
-            '{Author}': 'J.K. Rowling',
-            '{Series}': 'Harry Potter',
-            '{SeriesNumber}': '1',
-            '{Title}': "Harry Potter and the Sorcerer's Stone",
-            '{Genre}': 'Fantasy',
-            '{Format}': 'M4B',
-            '{Category}': 'Audiobooks'
+            author: 'J.K. Rowling',
+            series: 'Harry Potter',
+            seriesNumber: '1',
+            title: "Harry Potter and the Sorcerer's Stone",
+            genre: 'Fantasy',
+            format: 'M4B',
+            category: 'Audiobooks'
         };
 
+        // Built the same way the real path is, so stray separators preview honestly.
         const updatePathPreview = () => {
             const template = relTemplateInput.value?.trim() || DEFAULT_REL_PATH_TEMPLATE;
-            let preview = template;
-
-            for (const [token, value] of Object.entries(previewData)) {
-                preview = preview.split(token).join(value);
-            }
-
-            preview = preview.replace(/\/+/g, '/');
-            previewOutput.textContent = preview;
+            previewOutput.textContent = buildRelativePathFromTemplate(template, previewData);
         };
 
         relTemplateInput.addEventListener('input', updatePathPreview);

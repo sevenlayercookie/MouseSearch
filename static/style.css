@@ -1390,32 +1390,48 @@ input:disabled, select:disabled {
     border-radius: 10px;
 }
 
-/* --- Category override token editor (draggable template tokens) --- */
+/* --- Path template editor (an editable text box with inline token pills) --- */
 .template-token-editor {
-    padding: 7px;
-    border: 1px solid var(--bs-border-color);
-    border-radius: 0.25rem;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
+    /* A text field, so literal text and separators are typed inline between the
+       pills; pre-wrap keeps the spaces the user types. */
+    display: block;
+    min-height: calc(1.5em + 0.75rem + 2px);
+    height: auto;
+    padding: 7px 9px;
+    line-height: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    cursor: text;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.82rem;
 }
 
-.template-token-slash {
-    opacity: 0.4;
-    font-size: 0.8rem;
+.template-token-editor:empty::before {
+    content: attr(data-placeholder);
+    opacity: 0.5;
+}
+
+/* Nothing to select while a pill is being dragged across the text. */
+.template-token-editor-dragging {
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .template-token-pill {
-    gap: 5px;
-    padding: 3px 7px;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: baseline;
+    gap: 4px;
+    padding: 2px 5px;
     border-radius: 6px;
     font-size: 0.78rem;
     font-family: ui-monospace, Menlo, monospace;
     cursor: grab;
     user-select: none;
     -webkit-user-select: none;
-    border: 1px solid transparent;
+    border: 1px solid rgba(110, 168, 254, 0.55);
+    background: rgba(110, 168, 254, 0.14);
+    color: #8bb9fe;
     /* Dragging is pointer-driven so it works on touch; without this the browser
        would claim the gesture for scrolling before any pointermove fires. */
     touch-action: none;
@@ -1426,27 +1442,19 @@ input:disabled, select:disabled {
     cursor: grabbing;
 }
 
-/* A {Tag} segment. */
-.template-token-pill.token-pill-token {
-    border-color: rgba(110, 168, 254, 0.55);
-    background: rgba(110, 168, 254, 0.14);
-    color: #8bb9fe;
-}
-
-/* Literal text the user typed. */
-.template-token-pill.token-pill-literal {
-    border-color: rgba(128, 128, 128, 0.45);
-    background: transparent;
-    color: inherit;
-}
-
 .template-token-pill.dragging {
     opacity: 0.45;
 }
 
-.template-token-pill.drag-over {
-    outline: 2px solid rgba(110, 168, 254, 0.75);
-    outline-offset: 1px;
+/* Where the dragged pill would land, drawn between the characters it sits in. */
+.template-token-drop-caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.15em;
+    margin: 0 -1px;
+    vertical-align: text-bottom;
+    background: rgba(110, 168, 254, 0.95);
+    border-radius: 1px;
 }
 
 .template-token-grip {
@@ -1458,8 +1466,8 @@ input:disabled, select:disabled {
     cursor: pointer;
     opacity: 0.75;
     /* Comfortable tap target without inflating the pill. */
-    margin: -6px -4px -6px 0;
-    padding: 6px 4px;
+    margin: -7px -3px -7px 0;
+    padding: 7px 3px;
     touch-action: manipulation;
 }
 
@@ -1487,18 +1495,18 @@ input:disabled, select:disabled {
     font-family: ui-monospace, Menlo, monospace;
 }
 
-.template-token-custom-input {
-    font-size: 0.78rem;
-}
-
 .template-token-text-toggle {
     font-size: 0.72rem;
 }
 
 /* Roomier pills on touch screens, where dragging needs a bigger grab area. */
 @media (pointer: coarse) {
+    .template-token-editor {
+        line-height: 2.2;
+    }
+
     .template-token-pill {
-        padding: 6px 9px;
+        padding: 4px 7px;
         font-size: 0.82rem;
     }
 
