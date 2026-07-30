@@ -2056,7 +2056,6 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     }
 
     const pillsIn = () => Array.from(editor.querySelectorAll('.template-token-pill'));
-    const isPill = node => !!(node && node.nodeType === Node.ELEMENT_NODE && node.dataset.token);
     const isText = node => !!(node && node.nodeType === Node.TEXT_NODE);
 
     /**
@@ -2220,23 +2219,12 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         savedRange = range.cloneRange();
     }
 
-    /**
-     * A token added from the [+] menu, where the user typed nothing, gets a "/" if
-     * it lands against another token - otherwise appending one would silently fold
-     * two tokens into a single folder name. Dragging is left literal: there the
-     * user placed it by hand and may well have meant them to touch.
-     */
-    function separatePill(pill) {
-        if (isPill(beside(pill, 'previousSibling'))) editor.insertBefore(document.createTextNode('/'), pill);
-        if (isPill(beside(pill, 'nextSibling'))) editor.insertBefore(document.createTextNode('/'), pill.nextSibling);
-    }
-
+    /** Insert a token at the caret, exactly there and nothing else. */
     function insertToken(token) {
         const range = activeRange();
         range.deleteContents();
         const pill = makePill(token);
         range.insertNode(pill);
-        separatePill(pill);
         sync();
         placeCaretAfter(pill);
     }
