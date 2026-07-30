@@ -2017,9 +2017,13 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     function sync() {
         // Chrome parks a <br> in the field as it empties; it is not part of the template.
         editor.querySelectorAll('br').forEach(br => br.remove());
+        ensureCaretAnchors();
         decoratePills();
         renderMenu();
         const value = serialize();
+        // A class rather than emptying the field: the leftover anchors are invisible
+        // anyway, and clearing them by hand would cost the user their undo history.
+        editor.classList.toggle('template-token-editor-empty', !value);
         if (input.value === value) return;
         input.value = value;
         onChange(value);
@@ -2057,15 +2061,66 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
     const pillsIn = () => Array.from(editor.querySelectorAll('.template-token-pill'));
     const isText = node => !!(node && node.nodeType === Node.TEXT_NODE);
+    const isPill = node => !!(node && node.nodeType === Node.ELEMENT_NODE && node.dataset.token);
+    /** A caret anchor: a text node of nothing but zero-width spaces. */
+    const isAnchor = node => isText(node) && node.textContent.length > 0
+        && node.textContent.split(TEMPLATE_ZWSP).join('') === '';
 
     /**
-     * The neighbour in `dir`, ignoring empty text nodes. Inserting into a range
-     * splits the text node it lands in, and trimming a separator can empty one, so
-     * these blanks turn up between real neighbours and would otherwise hide them.
+     * A caret at an element boundary - after the last token, before the first, or
+     * between two touching ones - has no text node to sit in, and so no rect for
+     * the browser to paint it from. Desktop browsers guess well enough; mobile
+     * Chrome and Safari paint it at the far right of the field. A zero-width space
+     * gives those positions a text node to live in; serialize() strips them out.
+     *
+     * Adding only, never tidying: Chrome throws away its undo stack the moment we
+     * mutate the field behind its back, so an ordinary keystroke has to leave the
+     * DOM alone. An anchor left behind by a deleted token is invisible, is stripped
+     * from the value, and goes on the next rebuild.
+     */
+    function ensureCaretAnchors() {
+        const anchor = () => document.createTextNode(TEMPLATE_ZWSP);
+        const kids = Array.from(editor.childNodes);
+        if (isPill(kids[0])) editor.insertBefore(anchor(), kids[0]);
+        kids.forEach((node, index) => {
+            if (isPill(node) && isPill(kids[index + 1])) editor.insertBefore(anchor(), kids[index + 1]);
+        });
+        if (isPill(editor.lastChild)) editor.appendChild(anchor());
+    }
+
+    /**
+     * Both offsets in an anchor paint in the same place, so the caret is parked on
+     * the side that keeps the keys honest: at the end of the field that is in front
+     * of the anchor, where Backspace reaches the token rather than the invisible
+     * character; at the start it is behind it, so Delete does. An anchor between
+     * two tokens is left alone - there both sides are somewhere the caret can go.
+     */
+    function settleCaretInAnchor() {
+        const sel = selection();
+        if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+        const range = sel.getRangeAt(0);
+        const node = range.startContainer;
+        if (!isAnchor(node)) return;
+        let offset = null;
+        if (!node.nextSibling) offset = 0;
+        else if (!node.previousSibling) offset = node.textContent.length;
+        if (offset === null || range.startOffset === offset) return;
+        const settled = document.createRange();
+        settled.setStart(node, offset);
+        settled.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(settled);
+    }
+
+    /**
+     * The neighbour in `dir`, ignoring text nodes that contribute nothing to the
+     * template. Inserting into a range splits the text node it lands in, trimming a
+     * separator can empty one, and caret anchors sit between tokens by design; all
+     * of them would otherwise hide a node's real neighbour.
      */
     function beside(node, dir) {
         let next = node[dir];
-        while (isText(next) && next.textContent === '') next = next[dir];
+        while (isText(next) && (next.textContent === '' || isAnchor(next))) next = next[dir];
         return next;
     }
 
@@ -2110,6 +2165,8 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         }
         editor.textContent = '';
         appendTemplate(editor, template);
+        ensureCaretAnchors();
+        editor.classList.toggle('template-token-editor-empty', !template);
         decoratePills();
         renderMenu();
     }
@@ -2211,7 +2268,11 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         const sel = selection();
         if (!sel) return;
         const range = document.createRange();
-        if (before) range.setStartBefore(node); else range.setStartAfter(node);
+        // Aim for a text node: a caret against an element has no rect to paint from.
+        const neighbour = before ? node.previousSibling : node.nextSibling;
+        if (isText(neighbour)) range.setStart(neighbour, before ? neighbour.textContent.length : 0);
+        else if (before) range.setStartBefore(node);
+        else range.setStartAfter(node);
         range.collapse(true);
         editor.focus();
         sel.removeAllRanges();
@@ -2437,6 +2498,7 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     // copy of it while it is still ours. Scoped to the field, not the document, so
     // an override block that is removed takes its listeners with it.
     const rememberCaret = () => {
+        settleCaretInAnchor();
         const sel = selection();
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);

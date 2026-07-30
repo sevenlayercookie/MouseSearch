@@ -1406,7 +1406,9 @@ input:disabled, select:disabled {
     font-size: 0.82rem;
 }
 
-.template-token-editor:empty::before {
+/* Marked empty by the editor rather than :empty, because a cleared field still
+   holds the zero-width anchors the caret needs. */
+.template-token-editor-empty::before {
     content: attr(data-placeholder);
     opacity: 0.5;
 }
@@ -1423,6 +1425,8 @@ input:disabled, select:disabled {
     vertical-align: baseline;
     gap: 4px;
     padding: 2px 5px;
+    /* Breathing room from neighbouring tokens and from the text either side. */
+    margin: 0 2px;
     border-radius: 6px;
     font-size: 0.78rem;
     font-family: ui-monospace, Menlo, monospace;
