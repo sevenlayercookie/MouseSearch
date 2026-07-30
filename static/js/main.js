@@ -2221,9 +2221,10 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     }
 
     /**
-     * A pill that lands directly against another pill gets a "/" between them, so
-     * inserting or dropping one never silently glues two tokens together. Text the
-     * user typed is left exactly as it is.
+     * A token added from the [+] menu, where the user typed nothing, gets a "/" if
+     * it lands against another token - otherwise appending one would silently fold
+     * two tokens into a single folder name. Dragging is left literal: there the
+     * user placed it by hand and may well have meant them to touch.
      */
     function separatePill(pill) {
         if (isPill(beside(pill, 'previousSibling'))) editor.insertBefore(document.createTextNode('/'), pill);
@@ -2351,13 +2352,11 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             if (event.pointerId !== pointerId) return;
             const moved = !!(dragging && dropCaret?.parentNode);
             if (moved) {
-                // A move, not a copy: the token leaves its old slot the way the
-                // remove button would, then lands where the caret was shown.
-                const target = dropCaret;
-                removePill(pill);
-                target.parentNode.insertBefore(pill, target);
-                removeDropCaret();          // out of the way before looking at neighbours
-                separatePill(pill);
+                // Literally a move: the token goes exactly where the caret was
+                // shown and the text around it is left alone, so it can be dropped
+                // flush against another token when that is what you want.
+                dropCaret.parentNode.insertBefore(pill, dropCaret);
+                removeDropCaret();
             }
             dragging = false;
             detach();
