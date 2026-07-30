@@ -1930,7 +1930,7 @@ const REL_PATH_TOKENS = [
 /** The tokens the editor renders as pills; anything else in braces stays plain text. */
 const REL_PATH_TOKEN_SET = new Set(REL_PATH_TOKENS.map(spec => spec.token));
 const REL_PATH_TOKEN_PATTERN = /\{[A-Za-z]+\}/g;
-/** Zero-width space, used to keep a caret position available next to a pill. */
+/** Zero-width space: never inserted, but stripped out of anything pasted in. */
 const TEMPLATE_ZWSP = '\u200b';
 
 /**
@@ -1997,9 +1997,10 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
     // --- reading the field back out ---------------------------------------
 
-    function serialize() {
+    /** Read a run of the field back as template text, pills included as their tag. */
+    function serializeNodes(nodes) {
         let out = '';
-        editor.childNodes.forEach(node => {
+        nodes.forEach(node => {
             if (node.nodeType === Node.TEXT_NODE) { out += node.textContent; return; }
             if (node.nodeType !== Node.ELEMENT_NODE) return;
             if (node.dataset.token) { out += node.dataset.token; return; }
@@ -2010,9 +2011,12 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         return out.split(TEMPLATE_ZWSP).join('').replace(/[\r\n]+/g, '');
     }
 
+    const serialize = () => serializeNodes(Array.from(editor.childNodes));
+
     /** Push the field's contents back onto the real input and tell the caller. */
     function sync() {
-        ensureCaretGaps();
+        // Chrome parks a <br> in the field as it empties; it is not part of the template.
+        editor.querySelectorAll('br').forEach(br => br.remove());
         decoratePills();
         renderMenu();
         const value = serialize();
@@ -2052,13 +2056,18 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     }
 
     const pillsIn = () => Array.from(editor.querySelectorAll('.template-token-pill'));
+    const isPill = node => !!(node && node.nodeType === Node.ELEMENT_NODE && node.dataset.token);
+    const isText = node => !!(node && node.nodeType === Node.TEXT_NODE);
 
-    /** A text node either side of a pill, looking past the zero-width caret gaps. */
-    function textBeside(pill, dir) {
-        let node = pill[dir];
-        while (node && node.nodeType === Node.TEXT_NODE
-            && node.textContent.split(TEMPLATE_ZWSP).join('') === '') node = node[dir];
-        return node && node.nodeType === Node.TEXT_NODE ? node : null;
+    /**
+     * The neighbour in `dir`, ignoring empty text nodes. Inserting into a range
+     * splits the text node it lands in, and trimming a separator can empty one, so
+     * these blanks turn up between real neighbours and would otherwise hide them.
+     */
+    function beside(node, dir) {
+        let next = node[dir];
+        while (isText(next) && next.textContent === '') next = next[dir];
+        return next;
     }
 
     /**
@@ -2066,8 +2075,10 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
      * a level out of "a/{Genre}/b" gives "a/b" rather than "a//b".
      */
     function removePill(pill) {
-        const before = textBeside(pill, 'previousSibling');
-        const after = textBeside(pill, 'nextSibling');
+        const prev = beside(pill, 'previousSibling');
+        const next = beside(pill, 'nextSibling');
+        const before = isText(prev) ? prev : null;
+        const after = isText(next) ? next : null;
         pill.remove();
         if (after && after.textContent.startsWith('/') && (!before || before.textContent.endsWith('/'))) {
             after.textContent = after.textContent.slice(1);
@@ -2088,22 +2099,6 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     }
 
     /**
-     * Browsers leave nowhere to put the caret when two atomic pills sit next to
-     * each other, or when one starts or ends the field. A zero-width space in each
-     * of those gaps restores a normal text position; serialize() strips them out.
-     */
-    function ensureCaretGaps() {
-        const isPill = node => node && node.nodeType === Node.ELEMENT_NODE && !!node.dataset.token;
-        const kids = Array.from(editor.childNodes);
-        if (isPill(kids[0])) editor.insertBefore(document.createTextNode(TEMPLATE_ZWSP), kids[0]);
-        kids.forEach((node, index) => {
-            const next = kids[index + 1];
-            if (isPill(node) && isPill(next)) editor.insertBefore(document.createTextNode(TEMPLATE_ZWSP), next);
-        });
-        if (isPill(editor.lastChild)) editor.appendChild(document.createTextNode(TEMPLATE_ZWSP));
-    }
-
-    /**
      * Rebuild the field from the input. Skipped when the field already says the
      * same thing, so that typing - which syncs the other way - keeps its caret.
      */
@@ -2116,7 +2111,6 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         }
         editor.textContent = '';
         appendTemplate(editor, template);
-        ensureCaretGaps();
         decoratePills();
         renderMenu();
     }
@@ -2214,11 +2208,11 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         return rangeAtEnd();
     }
 
-    function placeCaretAfter(node) {
+    function placeCaretAfter(node, before = false) {
         const sel = selection();
         if (!sel) return;
         const range = document.createRange();
-        range.setStartAfter(node);
+        if (before) range.setStartBefore(node); else range.setStartAfter(node);
         range.collapse(true);
         editor.focus();
         sel.removeAllRanges();
@@ -2232,18 +2226,8 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
      * user typed is left exactly as it is.
      */
     function separatePill(pill) {
-        const isPill = node => node && node.nodeType === Node.ELEMENT_NODE && !!node.dataset.token;
-        const skipGaps = (node, dir) => {
-            while (node && node.nodeType === Node.TEXT_NODE
-                && node.textContent.split(TEMPLATE_ZWSP).join('') === '') node = node[dir];
-            return node;
-        };
-        if (isPill(skipGaps(pill.previousSibling, 'previousSibling'))) {
-            editor.insertBefore(document.createTextNode('/'), pill);
-        }
-        if (isPill(skipGaps(pill.nextSibling, 'nextSibling'))) {
-            editor.insertBefore(document.createTextNode('/'), pill.nextSibling);
-        }
+        if (isPill(beside(pill, 'previousSibling'))) editor.insertBefore(document.createTextNode('/'), pill);
+        if (isPill(beside(pill, 'nextSibling'))) editor.insertBefore(document.createTextNode('/'), pill.nextSibling);
     }
 
     function insertToken(token) {
@@ -2367,14 +2351,20 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             if (event.pointerId !== pointerId) return;
             const moved = !!(dragging && dropCaret?.parentNode);
             if (moved) {
-                dropCaret.parentNode.insertBefore(pill, dropCaret);
+                // A move, not a copy: the token leaves its old slot the way the
+                // remove button would, then lands where the caret was shown.
+                const target = dropCaret;
+                removePill(pill);
+                target.parentNode.insertBefore(pill, target);
                 removeDropCaret();          // out of the way before looking at neighbours
                 separatePill(pill);
             }
             dragging = false;
             detach();
-            if (moved) sync();
-            placeCaretAfter(pill);          // a plain tap just parks the caret here
+            if (moved) { sync(); placeCaretAfter(pill); return; }
+            // A plain tap parks the caret on whichever side of the token it landed.
+            const rect = pill.getBoundingClientRect();
+            placeCaretAfter(pill, event.clientX < (rect.left + rect.right) / 2);
         };
 
         const onCancel = (event) => {
@@ -2382,6 +2372,11 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             dragging = false;
             detach();
         };
+
+        // Stop the browser starting a text selection (or its own drag) from the
+        // pill: inside a contenteditable, pressing on one otherwise begins
+        // selecting across the field the moment the pointer moves.
+        pill.addEventListener('mousedown', event => event.preventDefault());
 
         pill.addEventListener('pointerdown', (event) => {
             if (event.button != null && event.button !== 0) return;
@@ -2403,10 +2398,27 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         sync();
     });
 
-    // One line only: Enter would otherwise split the field into blocks.
+    // One line only: Enter would otherwise split the field into blocks. Backspace
+    // and Delete are left to the browser, which already treats a pill as one
+    // character and, unlike anything we could do by hand, records it for undo.
     editor.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') event.preventDefault();
     });
+
+    // Left alone, the clipboard gets Chrome's rendering of the pills - "{Author} /
+    // {Title} ", spaces and all. Copy the template text instead, so it pastes back
+    // as itself here or anywhere else.
+    ['copy', 'cut'].forEach(type => editor.addEventListener(type, (event) => {
+        const sel = selection();
+        if (!event.clipboardData || !sel || !sel.rangeCount || sel.isCollapsed) return;
+        const range = sel.getRangeAt(0);
+        if (!editor.contains(range.commonAncestorContainer)) return;
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', serializeNodes(Array.from(range.cloneContents().childNodes)));
+        if (type !== 'cut') return;
+        range.deleteContents();
+        sync();
+    }));
 
     editor.addEventListener('paste', (event) => {
         if (!event.clipboardData) return;
@@ -2422,10 +2434,11 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     });
 
     // Clicking the padding around the text behaves like clicking a text input.
+    // A drag that happens to start there is a selection, so leave that alone.
     editor.addEventListener('click', (event) => {
         if (event.target !== editor) return;
         const sel = selection();
-        if (!sel) return;
+        if (!sel || (sel.rangeCount && !sel.isCollapsed)) return;
         const range = rangeAtEnd();
         editor.focus();
         sel.removeAllRanges();
