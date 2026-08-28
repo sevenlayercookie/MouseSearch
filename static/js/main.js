@@ -558,12 +558,14 @@ function renderHardcoverStatusIcon(statusDef, extraClass = '') {
 function renderHardcoverStatusPicker(metadata, { torrentId = '', variant = 'compact' } = {}) {
     const userBook = normalizeHardcoverUserBook(metadata?.user_book);
     const userBookKnown = metadata?.user_book_known === true || metadata?.user_book_known === 'true' || !!userBook;
+    const userActionsAvailable = metadata?.user_actions_available !== false
+        && metadata?.user_actions_available !== 'false';
     const objectType = String(metadata?.object_type || '').trim().toLowerCase();
     const bookId = Number(metadata?.book_id);
     const currentStatusId = Number(userBook?.status_id || 0);
     const statusDef = hardcoverStatusDefinition(currentStatusId) || HARDCOVER_STATUS_PLACEHOLDER;
     const isPending = hardcoverPendingStatusBookIds.has(bookId);
-    if (objectType !== 'book' || !Number.isFinite(bookId) || bookId <= 0) return '';
+    if (!userActionsAvailable || objectType !== 'book' || !Number.isFinite(bookId) || bookId <= 0) return '';
 
     const safeTorrentId = String(torrentId || '').trim();
     const safeTitle = String(metadata?.title || 'this book').trim() || 'this book';

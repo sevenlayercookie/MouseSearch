@@ -2088,7 +2088,24 @@ async def send_auto_task_webhook_notification(event, success, **details):
     except Exception as e:
         app.logger.warning(f"[AUTO-WEBHOOK] Failed to send {event} {status} notification: {e}")
     
+def hardcover_client_config_signature(config) -> tuple:
+    try:
+        rate_limit = int(config.get("HARDCOVER_RATE_LIMIT", FALLBACK_CONFIG["HARDCOVER_RATE_LIMIT"]))
+    except (TypeError, ValueError):
+        rate_limit = FALLBACK_CONFIG["HARDCOVER_RATE_LIMIT"]
+    return (
+        bool(config.get("HARDCOVER_ENRICHMENT_ENABLED", True)),
+        str(config.get("HARDCOVER_API_TOKEN") or "").strip(),
+        str(config.get("HARDCOVER_API_URL") or FALLBACK_CONFIG["HARDCOVER_API_URL"]).strip(),
+        str(config.get("HARDCOVER_USER_AGENT") or FALLBACK_CONFIG["HARDCOVER_USER_AGENT"]).strip(),
+        rate_limit,
+    )
+
+
 async def load_new_app_config():
+    global HARDCOVER_CLIENT
+
+    old_hardcover_signature = hardcover_client_config_signature(app.config)
     new_config = load_config()
 
     raw_destination_paths = new_config.get("DESTINATION_PATHS")
@@ -2109,6 +2126,13 @@ async def load_new_app_config():
     app.secret_key = new_config["QUART_SECRET_KEY"]
     app.config.update(new_config)
     reset_mam_proxy_route_state()
+
+    if (
+        HARDCOVER_CLIENT is not None
+        and old_hardcover_signature != hardcover_client_config_signature(app.config)
+    ):
+        await HARDCOVER_CLIENT.aclose()
+        HARDCOVER_CLIENT = None
     
     # Update path globals
     global ORGANIZED_PATH, LOCAL_TORRENT_DOWNLOAD_PATH, REMOTE_TORRENT_DOWNLOAD_PATH
@@ -3917,21 +3941,22 @@ async def test_torrent_client_settings():
     return jsonify(status)
 
 
-HARDCOVER_SETTINGS_PROBE_QUERY = """
-query {
-  me {
-    id
-    username
-  }
-}
-"""
-
-
 def format_hardcover_probe_error(exc: Exception) -> tuple[str, int | None]:
     raw_message = str(exc or "").strip()
+    if isinstance(exc, HardcoverAPIError):
+        status_code = exc.status_code
+        if status_code is not None:
+            details = []
+            if exc.code:
+                details.append(exc.code)
+            if exc.scope:
+                details.append(f"required scope: {exc.scope}")
+            suffix = f": {', '.join(details)}" if details else ""
+            return f"HTTP {status_code}{suffix}", status_code
+
     if raw_message.startswith("http_"):
         try:
-            status_code = int(raw_message.split("_", 1)[1])
+            status_code = int(raw_message.split("_", 1)[1].split(":", 1)[0])
         except (IndexError, ValueError):
             return raw_message or "Hardcover request failed.", None
         return f"HTTP {status_code}", status_code
@@ -3981,7 +4006,11 @@ async def test_hardcover_settings():
     )
     try:
         async with client:
-            data = await client.graphql(HARDCOVER_SETTINGS_PROBE_QUERY, {}, cache_key=None, retry_5xx=0)
+            # A single search validates the catalog scope and the operation that
+            # enrichment depends on. Account identity is a separate optional
+            # capability for library/status features.
+            await client.search("MouseSearch connection test", "Book", 1)
+            await client.resolve_identity()
     except HardcoverAPIError as exc:
         message, http_status = format_hardcover_probe_error(exc)
         return jsonify({
@@ -3996,33 +4025,28 @@ async def test_hardcover_settings():
             "http_status": None,
         })
 
-    me = data.get("me") if isinstance(data, dict) else None
-    if isinstance(me, list):
-        me = me[0] if me else None
-
-    if not isinstance(me, dict):
-        return jsonify({
-            "status": "error",
-            "message": "Hardcover responded without account details.",
-            "http_status": 200,
-        })
-
-    username = str(me.get("username") or "").strip()
-    account_id = me.get("id")
-    account_label = username or "unknown user"
-    if account_id not in (None, ""):
+    username = client.viewer_username or ""
+    account_id = client.user_id
+    if client.user_features_available:
+        account_label = username or "Hardcover user"
         message = f"HTTP 200: Connected as {account_label} (ID {account_id})."
+    elif client.identity_state == "unavailable":
+        message = (
+            "HTTP 200: Catalog access is working. This token cannot read the signed-in "
+            "account, so library status display and changes will be disabled."
+        )
     else:
-        message = f"HTTP 200: Connected as {account_label}."
+        message = (
+            "HTTP 200: Catalog access is working, but the account capability check "
+            "could not be completed. Library status features will remain disabled."
+        )
 
     return jsonify({
         "status": "success",
         "message": message,
         "http_status": 200,
-        "me": {
-            "id": account_id,
-            "username": username,
-        },
+        "user_actions_available": client.user_features_available,
+        "me": ({"id": account_id, "username": username} if client.user_features_available else None),
     })
 
 @app.route('/client/categories', methods=['GET'])
@@ -4668,7 +4692,10 @@ async def preload_hardcover_user_book_cache() -> None:
     global HARDCOVER_USER_BOOK_PRELOAD_ACTIVE
 
     client = create_hardcover_client()
-    if client is None or not client.user_id or HARDCOVER_USER_BOOK_PRELOAD_ACTIVE:
+    if client is None or HARDCOVER_USER_BOOK_PRELOAD_ACTIVE:
+        return
+    await client.resolve_identity()
+    if not client.user_features_available:
         return
 
     HARDCOVER_USER_BOOK_PRELOAD_ACTIVE = True
@@ -5053,6 +5080,13 @@ async def hardcover_get_user_book(book_id):
             "message": "A valid Hardcover book_id is required.",
         }), 400
 
+    await client.resolve_identity()
+    if not client.user_features_available:
+        return jsonify({
+            "status": "error",
+            "message": "This Hardcover token cannot read the signed-in account, so library status actions are unavailable.",
+        }), 403
+
     try:
         user_book = await client.user_book_for_book(book_id)
     except Exception as exc:
@@ -5077,6 +5111,13 @@ async def hardcover_update_user_book_status():
             "status": "error",
             "message": "Hardcover integration is not configured.",
         }), 503
+
+    await client.resolve_identity()
+    if not client.user_features_available:
+        return jsonify({
+            "status": "error",
+            "message": "This Hardcover token cannot read the signed-in account, so status changes are disabled.",
+        }), 403
 
     payload = await request.get_json(silent=True) or {}
     action = str(payload.get("action") or "").strip().lower()
