@@ -254,6 +254,19 @@ Notes:
   ```
   A working endpoint returns an XML `<methodResponse>` containing your rTorrent version. HTML back means you have the wrong URL; a `401` means the credentials or auth scheme (see `RTORRENT_DIGEST_AUTH`) are wrong.
 
+### Hardcover API permissions
+
+MouseSearch uses a server-side Hardcover Personal Access Token (PAT). For the complete integration, including book enrichment and reading-status controls, grant these scopes:
+
+* `read:catalog` — search and retrieve book, edition, author, and series metadata
+* `read:me:content` — identify the signed-in Hardcover account without exposing email or role data
+* `read:library` — display existing library and reading-status records
+* `write:library` — add, update, and remove reading statuses
+
+[Create a Hardcover PAT with the recommended MouseSearch scopes](https://hardcover.app/account/api/keys/new?scope=read%3Acatalog+read%3Ame%3Acontent+read%3Alibrary+write%3Alibrary).
+
+For book enrichment only, the minimum required scope is `read:catalog:search`. Library status display and changes will remain unavailable without the additional account and library scopes. MouseSearch does not require the unrestricted `all` scope.
+
 ### Additional Configuration
 
 | Variable | Required | Description |
@@ -301,7 +314,7 @@ Notes:
 | `HARDCOVER_API_TOKEN` | No | Hardcover GraphQL API token. Keep this server-side; it is never sent to browser code. Use the raw token; `Bearer ` is added automatically if omitted. |
 | `HARDCOVER_API_URL` | No | Hardcover GraphQL endpoint. Defaults to `https://api.hardcover.app/v1/graphql`. |
 | `HARDCOVER_USER_AGENT` | No | Descriptive User-Agent sent to Hardcover. Defaults to `MouseSearch Hardcover Enrichment`. |
-| `HARDCOVER_RATE_LIMIT` | No | Shared global rate cap for all server-side Hardcover API requests, in requests per minute. Defaults to `55` to stay under Hardcover's `60/min` limit. |
+| `HARDCOVER_RATE_LIMIT` | No | Shared global rate cap for all server-side Hardcover API requests, in requests per minute. Defaults to `60`; MouseSearch also honors the limits advertised in Hardcover's response headers. |
 | `HARDCOVER_MATCH_THRESHOLD` | No | Fuzzy validation threshold on a 0-100 scale. Defaults to `78`. |
 | `HARDCOVER_CONCURRENCY` | No | Maximum in-flight Hardcover enrichments. Defaults to `6`. |
 | `HARDCOVER_SEARCH_PER_PAGE` | No | Hardcover candidates checked per search path. Defaults to `5`. |

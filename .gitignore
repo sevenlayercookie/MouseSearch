@@ -5,6 +5,8 @@ docs-dontcommit/
 ._.DS_Store
 reloadService.sh
 
+docs-dontcommit
+
 # GitHub directory
 .github/
 
