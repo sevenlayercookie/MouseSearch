@@ -1,5 +1,6 @@
 import copy
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -13,6 +14,9 @@ from .normalization import (
     mam_original_metadata,
 )
 from .validator import pick_valid_candidate
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -582,6 +586,7 @@ class HardcoverBatchRunner:
             grouped_results.setdefault(group_key, []).append((index, result))
 
         primary_results = [items[0][1] for items in grouped_results.values()]
+        await self.resolver.client.resolve_identity()
         await self._prime_client_cache(primary_results)
 
         async def worker(group_key: str, items: list[tuple[int, dict[str, Any]]]) -> list[tuple[int, dict[str, Any], dict[str, Any]]]:
@@ -616,21 +621,57 @@ class HardcoverBatchRunner:
             return
 
         isbns: list[str] = []
-        searches: list[tuple[str, str, int]] = []
         for result in results:
             isbns.extend(extract_isbns(result))
+
+        if isbns:
+            try:
+                await self.resolver.client.prefetch_editions_by_isbns(isbns)
+            except HardcoverAPIError as exc:
+                logger.warning("[HARDCOVER] ISBN prefetch failed; falling back per item: %s", exc)
+
+        searches: list[tuple[str, str, int]] = []
+        for result in results:
+            result_isbns = extract_isbns(result)
+            cached_isbns = [
+                self.resolver.client.cached_edition_by_isbn(isbn)
+                for isbn in result_isbns
+            ]
+            if any(known and edition is not None for known, edition in cached_isbns):
+                continue
+            # Unknown ISBNs indicate a failed/partial prefetch. Let the normal
+            # per-item ISBN-first resolver retry before spending a search call.
+            if cached_isbns and not all(known for known, _ in cached_isbns):
+                continue
+
             cleaned_query = clean_title(result.get("title"))
             if cleaned_query:
                 searches.append((cleaned_query, "Book", self.resolver.config.per_page))
 
-        if isbns:
-            await self.resolver.client.prefetch_editions_by_isbns(isbns)
         if searches:
-            await self.resolver.client.prefetch_searches(searches)
+            try:
+                await self.resolver.client.prefetch_searches(searches)
+            except HardcoverAPIError as exc:
+                logger.warning("[HARDCOVER] Search prefetch failed; falling back per item: %s", exc)
 
     async def _hydrate_user_books(self, entries: list[tuple[int, dict[str, Any], dict[str, Any]]]) -> None:
-        if not self.resolver.client.user_id:
+        book_metadata = []
+        for _, _, enrichment in entries:
+            metadata = enrichment.get("hardcover") or {}
+            if isinstance(metadata, dict) and str(metadata.get("object_type") or "").strip().lower() == "book":
+                book_metadata.append(metadata)
+
+        if not book_metadata:
             return
+
+        await self.resolver.client.resolve_identity()
+        if not self.resolver.client.user_features_available:
+            for metadata in book_metadata:
+                metadata["user_actions_available"] = False
+            return
+
+        for metadata in book_metadata:
+            metadata["user_actions_available"] = True
 
         book_ids: list[int] = []
         seen_ids: set[int] = set()
@@ -656,7 +697,10 @@ class HardcoverBatchRunner:
 
         try:
             user_books = await self.resolver.client.user_books_for_books(book_ids)
-        except HardcoverAPIError:
+        except HardcoverAPIError as exc:
+            logger.warning("[HARDCOVER] User library hydration unavailable: %s", exc)
+            for metadata in book_metadata:
+                metadata["user_actions_available"] = False
             return
 
         for _, _, enrichment in entries:
