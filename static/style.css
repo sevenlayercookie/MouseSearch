@@ -554,6 +554,15 @@ input:disabled, select:disabled {
 
 .hardcover-enrichment {
     min-width: 0;
+    /* The fully populated widget measures 128.17px at a 16px root size. */
+    min-height: 8.25rem;
+}
+
+@media (max-width: 575.98px) {
+    .hardcover-enrichment {
+        /* With mobile-only fields hidden, the populated widget is 104.98px. */
+        min-height: 6.75rem;
+    }
 }
 
 .hardcover-match {
