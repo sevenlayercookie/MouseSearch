@@ -1,11 +1,12 @@
+#
+.claude/
+nocommit-docs/
 docs-dontcommit/
 
 # mac os
 .DS_Store
 ._.DS_Store
 reloadService.sh
-
-docs-dontcommit
 
 # GitHub directory
 .github/
