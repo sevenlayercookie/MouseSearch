@@ -2916,60 +2916,71 @@ function updateMamProxyStatusPanel(proxyStatus) {
 }
 
 async function fetchPublicIP() {
-    Promise.allSettled([
-        fetch(`${APP_BASE}/system/public_ip?route=direct`).then(r => r.json()),
-        fetch(`${APP_BASE}/system/public_ip?route=mam`).then(r => r.json()),
-    ])
-        .then(([directResult, proxyResult]) => {
-            const directData = directResult.status === 'fulfilled' ? directResult.value : null;
-            const proxyData = proxyResult.status === 'fulfilled' ? proxyResult.value : null;
+    const fetchIpRoute = async (route) => {
+        try {
+            const response = await fetch(`${APP_BASE}/system/public_ip?route=${route}`);
+            return await response.json();
+        } catch (err) {
+            console.error(`[Network] ${route} IP request failed:`, err);
+            return null;
+        }
+    };
 
-            if (directData?.ip) {
-                window.mousesearchPublicIp = directData.ip;
-                document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = directData.ip);
-                document.querySelectorAll('.backend-ip-display-badge').forEach(el => el.style.display = 'inline-block');
-                document.querySelectorAll('.copy-ip-btn').forEach(btn => {
-                    if (navigator.clipboard) {
-                        btn.onclick = () => {
-                            copyTextWithFeedback(btn, directData.ip);
-                        };
-                    } else {
-                        btn.style.display = 'none';
-                    }
-                });
-            } else {
-                window.mousesearchPublicIp = '';
-                document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
-            }
+    try {
+        const directData = await fetchIpRoute('direct');
 
-            if (proxyData?.ip && String(proxyData?.route || '') === 'mam') {
-                window.mousesearchProxyIp = proxyData.ip;
-            } else {
-                window.mousesearchProxyIp = '';
-            }
+        // The direct response carries the authoritative proxy_status, so use it to decide
+        // whether the MAM route is worth probing. With the proxy disabled that probe can
+        // only fail (force_proxy with no proxy URL) and the Proxy IP row stays hidden.
+        const proxyEnabled = directData?.proxy_status?.enabled === true;
+        const proxyData = proxyEnabled ? await fetchIpRoute('mam') : null;
 
-            if (proxyData?.error) {
-                const resolverErrors = Array.isArray(proxyData.resolver_errors) ? proxyData.resolver_errors : [];
-                console.error('[Network] Proxy IP lookup failed:', proxyData.error, resolverErrors);
-            }
-
-            if (directData?.error) {
-                const resolverErrors = Array.isArray(directData.resolver_errors) ? directData.resolver_errors : [];
-                console.error('[Network] Direct IP lookup failed:', directData.error, resolverErrors);
-            }
-
-            if (proxyData?.proxy_status) {
-                updateMamProxyStatusPanel(proxyData.proxy_status);
-            }
-            updateNetworkSection();
-        })
-        .catch(err => {
-            console.error("Failed to fetch IP", err);
-            document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
+        if (directData?.ip) {
+            window.mousesearchPublicIp = directData.ip;
+            document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = directData.ip);
+            document.querySelectorAll('.backend-ip-display-badge').forEach(el => el.style.display = 'inline-block');
+            document.querySelectorAll('.copy-ip-btn').forEach(btn => {
+                if (navigator.clipboard) {
+                    btn.onclick = () => {
+                        copyTextWithFeedback(btn, directData.ip);
+                    };
+                } else {
+                    btn.style.display = 'none';
+                }
+            });
+        } else {
             window.mousesearchPublicIp = '';
+            document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
+        }
+
+        if (proxyData?.ip && String(proxyData?.route || '') === 'mam') {
+            window.mousesearchProxyIp = proxyData.ip;
+        } else {
             window.mousesearchProxyIp = '';
-            updateNetworkSection();
-        });
+        }
+
+        if (proxyData?.error) {
+            const resolverErrors = Array.isArray(proxyData.resolver_errors) ? proxyData.resolver_errors : [];
+            console.error('[Network] Proxy IP lookup failed:', proxyData.error, resolverErrors);
+        }
+
+        if (directData?.error) {
+            const resolverErrors = Array.isArray(directData.resolver_errors) ? directData.resolver_errors : [];
+            console.error('[Network] Direct IP lookup failed:', directData.error, resolverErrors);
+        }
+
+        const proxyStatus = proxyData?.proxy_status || directData?.proxy_status;
+        if (proxyStatus) {
+            updateMamProxyStatusPanel(proxyStatus);
+        }
+        updateNetworkSection();
+    } catch (err) {
+        console.error("Failed to fetch IP", err);
+        document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
+        window.mousesearchPublicIp = '';
+        window.mousesearchProxyIp = '';
+        updateNetworkSection();
+    }
 }
 
 // ============================================================
