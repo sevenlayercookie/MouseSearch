@@ -3,6 +3,8 @@
 ._.DS_Store
 reloadService.sh
 
+docs-dontcommit
+
 # GitHub directory
 .github/
 

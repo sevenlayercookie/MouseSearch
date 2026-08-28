@@ -584,6 +584,16 @@
                     value="{{ HARDCOVER_API_TOKEN }}" placeholder="Hardcover API key" autocomplete="off">
                   <label for="HARDCOVER_API_TOKEN" class="small">Hardcover API key</label>
                 </div>
+                <div class="form-text small mt-2">
+                  <a href="https://hardcover.app/account/api/keys/new?scope=read%3Acatalog+read%3Ame%3Acontent+read%3Alibrary+write%3Alibrary"
+                    target="_blank" rel="noopener noreferrer">
+                    Create a Hardcover API key with the recommended permissions
+                    <i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i>
+                  </a>
+                  <span class="d-block mt-1">
+                    Book enrichment alone requires <code>read:catalog:search</code>.
+                  </span>
+                </div>
                 <div id="settings-hardcover-status" class="alert alert-secondary small mt-3 mb-0" role="status">
                   <div class="d-flex align-items-center gap-2">
                     <span id="settings-hardcover-status-icon" aria-hidden="true"></span>
