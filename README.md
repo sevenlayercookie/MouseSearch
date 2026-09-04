@@ -236,6 +236,7 @@ Which endpoint to use depends on how your setup exposes rTorrent:
 | Setup | `TORRENT_CLIENT_URL` |
 | :--- | :--- |
 | Self-hosted, XML-RPC proxied by Nginx/Apache (the usual `scgi_pass` / `mod_scgi` setup) | `http://<host>/RPC2` |
+| Local rTorrent SCGI socket (`network.scgi.open_local = /path/to/rpc.sock` in `.rtorrent.rc`) | `scgi+unix:///path/to/rpc.sock` |
 | Shared seedbox running ruTorrent, no direct XML-RPC exposed | `https://<seedbox address>/rutorrent/plugins/httprpc/action.php` |
 | Some providers give each user a named path | `https://<seedbox address>/<username>/rutorrent/plugins/httprpc/action.php` |
 
@@ -243,6 +244,7 @@ Most shared seedbox providers do **not** expose a direct XML-RPC interface, so t
 
 Notes:
 
+- With a `scgi+unix://` URL, MouseSearch talks to rTorrent's native SCGI listener directly — no webserver involved. Username/password and `RTORRENT_DIGEST_AUTH` do not apply, and the MouseSearch process needs read/write permission on the socket file.
 - If your provider's panel challenges you with HTTP Digest auth rather than Basic (common on seedboxes), also set `RTORRENT_DIGEST_AUTH=true`.
 - The `httprpc` plugin must be enabled in ruTorrent. If it is not in your ruTorrent plugin list, ask your provider to enable it or check whether they document a dedicated XML-RPC URL.
 - To confirm an endpoint before configuring MouseSearch:
