@@ -244,7 +244,20 @@ Most shared seedbox providers do **not** expose a direct XML-RPC interface, so t
 
 Notes:
 
-- With a `scgi+unix://` URL, MouseSearch talks to rTorrent's native SCGI listener directly — no webserver involved. Username/password and `RTORRENT_DIGEST_AUTH` do not apply, and the MouseSearch process needs read/write permission on the socket file.
+- With a `scgi+unix://` URL, MouseSearch talks to rTorrent's native SCGI listener directly — no webserver involved. Username/password and `RTORRENT_DIGEST_AUTH` do not apply, and the MouseSearch process needs permission to traverse the socket directory and connect to the socket.
+- When MouseSearch runs in Docker, mount the directory containing the socket into the container. Mounting the directory allows rTorrent to recreate the socket without leaving the container attached to a stale socket inode. For example:
+
+  ```yaml
+  services:
+    mousesearch:
+      volumes:
+        - /path/on/host/rtorrent:/run/rtorrent
+      environment:
+        - TORRENT_CLIENT_TYPE=rtorrent
+        - TORRENT_CLIENT_URL=scgi+unix:///run/rtorrent/rpc.sock
+  ```
+
+  Ensure the container user can traverse the mounted directory and connect to `rpc.sock`.
 - If your provider's panel challenges you with HTTP Digest auth rather than Basic (common on seedboxes), also set `RTORRENT_DIGEST_AUTH=true`.
 - The `httprpc` plugin must be enabled in ruTorrent. If it is not in your ruTorrent plugin list, ask your provider to enable it or check whether they document a dedicated XML-RPC URL.
 - To confirm an endpoint before configuring MouseSearch:
