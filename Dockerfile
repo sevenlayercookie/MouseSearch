@@ -26,7 +26,10 @@ COPY version.txt ./version.txt
 COPY hashing.py ./
 
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# Keep web assets readable when the build context has a restrictive umask.
+# This also supports rootless starts that intentionally bypass the entrypoint.
+RUN chmod -R a+rX /app/templates /app/static \
+    && chmod +x /app/entrypoint.sh
 
 # Make port 5000 available to the world outside this container
 EXPOSE 5000
