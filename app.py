@@ -674,6 +674,29 @@ def apply_default_destination_path(default_path, destination_paths):
     return default_root, combined
 
 
+def get_organized_destination_root(torrent_meta: dict, config: dict | None = None) -> str:
+    """Choose a per-book destination using explicit, type-specific, then default precedence."""
+    active_config = config or app.config
+    explicit_destination = str(torrent_meta.get("custom_destination_path") or "").strip()
+    if explicit_destination:
+        return explicit_destination
+
+    main_cat = str(torrent_meta.get("main_cat") or "").strip()
+    if main_cat:
+        destination_paths = normalize_destination_paths(
+            active_config.get("DESTINATION_PATHS"),
+            active_config.get("ORGANIZED_PATH") or FALLBACK_CONFIG["ORGANIZED_PATH"],
+        )
+        for destination in destination_paths:
+            if str(destination.get("default_main_cat") or "").strip() == main_cat:
+                mapped_path = str(destination.get("path") or "").strip()
+                if mapped_path:
+                    return mapped_path
+
+    default_root = str(active_config.get("ORGANIZED_PATH") or "").strip()
+    return default_root or FALLBACK_CONFIG["ORGANIZED_PATH"]
+
+
 @app.before_serving
 async def startup():
     # 1. Load the configuration FIRST
@@ -6160,9 +6183,7 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         return False, f"Unable to resolve source path for torrent {hash_val}."
     torrent_meta = metadata[hash_val]
 
-    destination_root = str(torrent_meta.get('custom_destination_path') or ORGANIZED_PATH or "").strip()
-    if not destination_root:
-        destination_root = str(FALLBACK_CONFIG["ORGANIZED_PATH"])
+    destination_root = get_organized_destination_root(torrent_meta)
     organized_path = Path(destination_root)
     
     # --- CHANGED LOGIC START ---
