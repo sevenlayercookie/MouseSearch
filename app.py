@@ -4188,6 +4188,7 @@ async def add_torrent_to_client(
     torrent_url = incoming_data.get('torrent_url') or incoming_data.get('url')
     author = incoming_data.get('author', 'Unknown')
     title = incoming_data.get('title', 'Unknown')
+    narrator = parse_mam_metadata(incoming_data.get("narrator", ""))
     # Kept for {Genre}/{Format}/{Category} when the path template is rendered server-side.
     catname = incoming_data.get('catname', '')
     filetype = incoming_data.get('filetype', '')
@@ -4319,6 +4320,7 @@ async def add_torrent_to_client(
                 "added_on": datetime.now().isoformat(),
                 "status": "pending",
                 "retry_count": 0,
+                "narrator": narrator,
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
                 "main_cat": main_cat,
@@ -4387,6 +4389,7 @@ async def add_torrent_to_client(
                 "mid": id, "author": author, "title": title,
                 "added_on": datetime.now().isoformat(),
                 "status": "pending", "retry_count": 0,
+                "narrator": narrator,
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
                 "main_cat": main_cat,
@@ -4732,7 +4735,7 @@ def author_token_values(author):
 # Longest names first so "SeriesNumber" is never read as "Series" + "Number".
 RELATIVE_PATH_TOKEN_NAMES = (
     "FirstAuthorLastFirst", "AuthorLastFirst", "SeriesNumber", "FirstAuthor",
-    "Category", "Author", "Series", "Format", "Genre", "Title", "Year",
+    "Category", "Author", "Narrator", "Series", "Format", "Genre", "Title", "Year",
 )
 _REL_PATH_GROUP_RE = re.compile(r"\{([^{}]*)\}")
 _REL_PATH_TOKEN_NAME_RE = re.compile(
@@ -4797,6 +4800,7 @@ def relative_path_tokens_from_metadata(torrent_meta):
     author_values = author_token_values(torrent_meta.get("author"))
     return {
         **{token: clean(value) for token, value in author_values.items()},
+        "{Narrator}": clean(parse_mam_metadata(torrent_meta.get("narrator", ""))),
         "{Series}": clean(series_name),
         "{SeriesNumber}": clean(series_number),
         "{Title}": clean(torrent_meta.get("title")),
@@ -5682,6 +5686,7 @@ async def mam_search():
                         "added_on": datetime.now().isoformat(),
                         "status": "unknown",
                         "retry_count": 0,
+                        "narrator": item.get("narrator_info", ""),
                         "series_info": item.get('series_display', ''),
                         "category": get_category_name(item.get('main_cat', '')),
                         "download_link": item.get('download_link', '')
@@ -6936,6 +6941,7 @@ async def watch_add_torrent(item: dict, *, category: str, use_wedge: bool) -> di
         'title': item.get('title') or "Unknown",
         'size': item.get('size') or '0 GiB',
         'main_cat': str(item.get('main_cat') or ''),
+        'narrator': parse_mam_metadata(item.get('narrator_info', '')),
         'series_info': item.get('series_info', ''),
         'catname': item.get('catname', '') or '',
         'filetype': item.get('filetype', '') or '',
