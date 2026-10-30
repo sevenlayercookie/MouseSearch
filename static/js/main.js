@@ -2154,6 +2154,15 @@ function normalizeSeriesNumber(seriesNumber) {
     return numberText;
 }
 
+// Decode entity references only, never interpret metadata as HTML markup.
+function decodeMamSeriesName(value) {
+    const decoder = document.createElement('textarea');
+    return String(value || '').replace(/&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]+);/gi, entity => {
+        decoder.innerHTML = entity;
+        return decoder.value;
+    });
+}
+
 function getPrimarySeriesInfo(seriesInfo) {
     try {
         if (!seriesInfo) return null;
@@ -2161,7 +2170,7 @@ function getPrimarySeriesInfo(seriesInfo) {
         const values = Object.values(data);
         if (values.length > 0 && Array.isArray(values[0])) {
             const [seriesName, seriesNumber] = values[0];
-            const name = String(seriesName || '').trim();
+            const name = decodeMamSeriesName(seriesName).trim();
             if (!name) return null;
             return {
                 name,

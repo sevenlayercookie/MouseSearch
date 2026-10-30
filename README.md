@@ -469,7 +469,7 @@ MouseSearch supports configurable default organization templates via Settings ->
 | `{FirstAuthor}` | Only the first listed author | `Frank Herbert` |
 | `{FirstAuthorLastFirst}` | Only the first listed author, as Last, First | `Herbert, Frank` |
 | `{Narrator}` | Narrator names, joined with commas (blank when unavailable) | `Stephen Fry` |
-| `{Series}` | Series name (blank if the torrent has no series) | `Dune` |
+| `{Series}` | Series name, with HTML entities decoded before filename sanitization (blank if the torrent has no series) | `Dune` |
 | `{SeriesNumber}` | Position within the series | `1` |
 | `{Title}` | Torrent title | `Dune` |
 | `{Category}` | Media type from the MAM category | `Audiobooks`, `Ebooks` |
