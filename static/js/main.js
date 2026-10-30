@@ -1987,7 +1987,7 @@ function authorTokenValues(author) {
 }
 
 // Longest names first so "SeriesNumber" is never read as "Series" + "Number".
-const REL_PATH_TOKEN_NAME_RE = /(^|[^A-Za-z])(FirstAuthorLastFirst|AuthorLastFirst|SeriesNumber|FirstAuthor|Category|Author|Series|Format|Genre|Title|Year)(?![A-Za-z])/;
+const REL_PATH_TOKEN_NAME_RE = /(^|[^A-Za-z])(FirstAuthorLastFirst|AuthorLastFirst|SeriesNumber|FirstAuthor|Category|Author|Narrator|Series|Format|Genre|Title|Year)(?![A-Za-z])/;
 
 /**
  * Find every brace group in a template. A group is either a bare token ("{Series}")
@@ -2021,6 +2021,7 @@ function buildRelativePathFromTemplate(template, values) {
         '{AuthorLastFirst}': values.authorLastFirst || '',
         '{FirstAuthor}': values.firstAuthor || '',
         '{FirstAuthorLastFirst}': values.firstAuthorLastFirst || '',
+        '{Narrator}': values.narrator || '',
         '{Series}': values.series || '',
         '{SeriesNumber}': values.seriesNumber || '',
         '{Title}': values.title || '',
@@ -2069,6 +2070,7 @@ const REL_PATH_TOKENS = [
     { token: '{AuthorLastFirst}', key: 'authorLastFirst', label: 'Author (Last, First)' },
     { token: '{FirstAuthor}', key: 'firstAuthor', label: 'First Author' },
     { token: '{FirstAuthorLastFirst}', key: 'firstAuthorLastFirst', label: 'First Author (Last, First)' },
+    { token: '{Narrator}', key: 'narrator', label: 'Narrator' },
     { token: '{Series}', key: 'series', label: 'Series' },
     { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series Number' },
     { token: '{Title}', key: 'title', label: 'Title' },
@@ -3779,6 +3781,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         const previewData = {
             ...authorTokenValues('J.K. Rowling'),
+            narrator: 'Stephen Fry',
             series: 'Harry Potter',
             seriesNumber: '1',
             title: "Harry Potter and the Sorcerer's Stone",
@@ -7190,6 +7193,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             category: resultItem ? (resultItem.querySelector('.category-dropdown')?.value || '') : (document.getElementById('detail-cat-select')?.value || ''),
             id: button.dataset.id,
             author: button.dataset.author || "Unknown",
+            narrator: button.dataset.narrator || "",
             title: button.dataset.title || "Unknown",
             size: button.dataset.size || '0 GiB',
             main_cat: button.dataset.mainCat || '',
@@ -7248,6 +7252,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 // configured template. Editing either field from here is up to the user.
                 confirmTokenValues = {
                     ...authorValues,
+                    narrator: downloadData.narrator ? sanitizeFilename(downloadData.narrator) : "",
                     series: cleanSeries,
                     seriesNumber: cleanSeriesNumber,
                     title: cleanTitle,
@@ -7512,6 +7517,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         dlBtn.dataset.torrentUrl = data.download_link;
         dlBtn.dataset.id = data.id;
         dlBtn.dataset.author = authors;
+        dlBtn.dataset.narrator = parseMamJson(data.narrator_info) || "";
         dlBtn.dataset.title = data.title;
         dlBtn.dataset.size = data.size;
         dlBtn.dataset.mainCat = data.main_cat;
