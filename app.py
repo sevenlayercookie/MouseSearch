@@ -4787,7 +4787,7 @@ def relative_path_tokens_from_metadata(torrent_meta):
     series_entries = list(raw_series.values())
     if series_entries and isinstance(series_entries[0], (list, tuple)) and series_entries[0]:
         first = series_entries[0]
-        series_name = str(first[0] or "").strip()
+        series_name = html.unescape(str(first[0] or "")).strip()
         series_number = normalize_series_number(first[1]) if len(first) > 1 else ""
 
     def clean(value):

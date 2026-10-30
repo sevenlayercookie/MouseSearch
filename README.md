@@ -468,7 +468,7 @@ MouseSearch supports configurable default organization templates via Settings ->
 | `{AuthorLastFirst}` | Every author as Last, First, joined with ` & ` | `Preston, Douglas & Child, Lincoln` |
 | `{FirstAuthor}` | Only the first listed author | `Frank Herbert` |
 | `{FirstAuthorLastFirst}` | Only the first listed author, as Last, First | `Herbert, Frank` |
-| `{Series}` | Series name (blank if the torrent has no series) | `Dune` |
+| `{Series}` | Series name, with HTML entities decoded before filename sanitization (blank if the torrent has no series) | `Dune` |
 | `{SeriesNumber}` | Position within the series | `1` |
 | `{Title}` | Torrent title | `Dune` |
 | `{Category}` | Media type from the MAM category | `Audiobooks`, `Ebooks` |
