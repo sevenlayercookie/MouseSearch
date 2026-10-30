@@ -4749,7 +4749,8 @@ def build_relative_path_from_template(template, values):
 
     Values are expected to be pre-sanitized. A brace group may wrap literal text
     around a token name ("{ - Series}", "{ (Year)}"); the whole group renders only
-    when that token has a value. Tokens that resolve to an empty string collapse
+    when that token has a value. SeriesNumber supports :02 through :010 padding
+    of its integer part. Tokens that resolve to an empty string collapse
     away, so an unmatched {Series} does not leave an empty directory level behind.
     Mirrors buildRelativePathFromTemplate() in main.js.
     """
@@ -4764,7 +4765,16 @@ def build_relative_path_from_template(template, values):
         value = str(values.get(token) or "")
         if not value:
             return ""
-        return content[:token_match.start()] + value + content[token_match.end():]
+        suffix = content[token_match.end():]
+        # Optional zero-padding applies only to the integer part of series numbers.
+        # Bound the width so a mistyped template cannot allocate a huge filename.
+        padding = re.match(r":0(10|[1-9])(?![0-9])", suffix) if token == "{SeriesNumber}" else None
+        if padding:
+            suffix = suffix[padding.end():]
+            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
+                integer, dot, fraction = value.partition(".")
+                value = integer.zfill(int(padding.group(1))) + dot + fraction
+        return content[:token_match.start()] + value + suffix
 
     output = _REL_PATH_GROUP_RE.sub(render_group, text)
     segments = (segment.strip() for segment in output.split("/"))
