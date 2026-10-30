@@ -2008,6 +2008,13 @@ function parseRelPathTemplateGroups(template) {
             group.token = `{${name}}`;
             group.prefix = content.slice(0, nameStart);
             group.suffix = content.slice(nameStart + name.length);
+            if (name === 'SeriesNumber') {
+                const padding = /^:0(10|[1-9])(?![0-9])/.exec(group.suffix);
+                if (padding) {
+                    group.paddingWidth = Number(padding[1]);
+                    group.suffix = group.suffix.slice(padding[0].length);
+                }
+            }
         }
         groups.push(group);
     }
@@ -2039,7 +2046,11 @@ function buildRelativePathFromTemplate(template, values) {
             output += group.raw;
             continue;
         }
-        const value = String(replacements[group.token] || '');
+        let value = String(replacements[group.token] || '');
+        if (group.paddingWidth && /^[0-9]+(?:\.[0-9]+)?$/.test(value)) {
+            const [integer, fraction] = value.split('.');
+            value = integer.padStart(group.paddingWidth, '0') + (fraction === undefined ? '' : `.${fraction}`);
+        }
         if (value) output += `${group.prefix}${value}${group.suffix}`;
     }
     output += text.slice(cursor);
@@ -2145,6 +2156,7 @@ function normalizeSeriesNumber(seriesNumber) {
     if (!numberText) return '';
 
     const parsed = Number(numberText);
+    if (Number.isFinite(parsed) && parsed < 0) return '';
     if (!Number.isNaN(parsed) && Number.isFinite(parsed) && parsed >= 0) {
         return Number.isInteger(parsed) ? String(parsed) : String(parsed).replace(/\.?0+$/, '');
     }

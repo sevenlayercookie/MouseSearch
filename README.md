@@ -470,6 +470,7 @@ MouseSearch supports configurable default organization templates via Settings ->
 | `{FirstAuthorLastFirst}` | Only the first listed author, as Last, First | `Herbert, Frank` |
 | `{Series}` | Series name (blank if the torrent has no series) | `Dune` |
 | `{SeriesNumber}` | Position within the series | `1` |
+| `{SeriesNumber:02}` | Series position with a minimum two-digit integer part (use `:03` for three digits; widths 1–10 supported) | `01`, `23`, `01.5` |
 | `{Title}` | Torrent title | `Dune` |
 | `{Category}` | Media type from the MAM category | `Audiobooks`, `Ebooks` |
 | `{Genre}` | MAM subcategory | `Science Fiction` |
@@ -477,6 +478,8 @@ MouseSearch supports configurable default organization templates via Settings ->
 | `{Year}` | Publication year from the torrent's Hardcover book match (blank when Hardcover enrichment is off or found no book) | `1965` |
 
   Tokens that have no value collapse out of the path rather than leaving an empty folder level, so `{Author}/{Series}/{Title}` yields `Frank Herbert/Dune` for a standalone book. To reproduce a `Audiobooks/Science Fiction/Frank Herbert/Dune` layout, use `{Category}/{Genre}/{Author}/{Title}`.
+
+  **Series-number padding:** `{SeriesNumber}` stays unpadded. Use `{SeriesNumber:02}` or an optional group like `{ #SeriesNumber:02}` to add leading zeros. Fractional positions keep their fraction (`1.5` → `01.5`), larger positions are never truncated, and absent numbers stay blank. Non-numeric positions are left unchanged. This changes new organization paths; existing folders are not renamed.
 
   **Optional text:** put fixed text inside the braces, next to the token name, to include it only when that token has a value. `{prefix Token suffix}` renders as `prefix + value + suffix`, or nothing at all when the token is empty. For example, `{Author}/{Title}{ - Series}{ #SeriesNumber}{ (Year)}` yields:
 
