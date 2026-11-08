@@ -2077,25 +2077,50 @@ function getRelPathTemplateValue() {
  * tag builders. `key` maps a token to its buildRelativePathFromTemplate() value.
  */
 const REL_PATH_TOKENS = [
-    { token: '{Author}', key: 'author', label: 'Author' },
-    { token: '{AuthorLastFirst}', key: 'authorLastFirst', label: 'Author (Last, First)' },
-    { token: '{FirstAuthor}', key: 'firstAuthor', label: 'First Author' },
-    { token: '{FirstAuthorLastFirst}', key: 'firstAuthorLastFirst', label: 'First Author (Last, First)' },
-    { token: '{Narrator}', key: 'narrator', label: 'Narrator' },
-    { token: '{Series}', key: 'series', label: 'Series' },
-    { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series Number' },
-    { token: '{Title}', key: 'title', label: 'Title' },
-    { token: '{Category}', key: 'category', label: 'Category' },
-    { token: '{Genre}', key: 'genre', label: 'Genre' },
-    { token: '{Format}', key: 'format', label: 'Format' },
-    { token: '{Year}', key: 'year', label: 'Year' }
+    { token: '{Author}', key: 'author', label: 'Author', hint: 'Every author, e.g. Frank Herbert, Kevin J. Anderson' },
+    { token: '{AuthorLastFirst}', key: 'authorLastFirst', label: 'Author (Last, First)', hint: 'Every author as Last, First, joined with &' },
+    { token: '{FirstAuthor}', key: 'firstAuthor', label: 'First Author', hint: 'Only the first listed author' },
+    { token: '{FirstAuthorLastFirst}', key: 'firstAuthorLastFirst', label: 'First Author (Last, First)', hint: 'Only the first author, as Last, First' },
+    { token: '{Narrator}', key: 'narrator', label: 'Narrator', hint: 'Audiobook narrator' },
+    { token: '{Series}', key: 'series', label: 'Series', hint: 'Series name' },
+    { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series #', hint: 'Position in the series; can be zero-padded' },
+    { token: '{Title}', key: 'title', label: 'Title', hint: 'Book title' },
+    { token: '{Category}', key: 'category', label: 'Category', hint: 'Media type, e.g. Audiobooks or Ebooks' },
+    { token: '{Genre}', key: 'genre', label: 'Genre', hint: 'MAM subcategory, e.g. Science Fiction' },
+    { token: '{Format}', key: 'format', label: 'Format', hint: 'File format, e.g. M4B or EPUB' },
+    { token: '{Year}', key: 'year', label: 'Year', hint: 'Publication year (from Hardcover)' }
 ];
 
-/** The tokens the editor renders as pills; anything else in braces stays plain text. */
-const REL_PATH_TOKEN_SET = new Set(REL_PATH_TOKENS.map(spec => spec.token));
-const REL_PATH_TOKEN_PATTERN = /\{[A-Za-z]+\}/g;
+const REL_PATH_TOKEN_SPECS = new Map(REL_PATH_TOKENS.map(spec => [spec.token, spec]));
 /** Zero-width space: never inserted, but stripped out of anything pasted in. */
 const TEMPLATE_ZWSP = '\u200b';
+
+/**
+ * Write a token group back out as template text: "{ #SeriesNumber:02}".
+ * Inverse of parseRelPathTemplateGroups() for a single group.
+ */
+function formatRelPathTemplateGroup({ token, prefix = '', suffix = '', paddingWidth = 0 }) {
+    const name = token.slice(1, -1);
+    const padding = name === 'SeriesNumber' && paddingWidth ? `:0${paddingWidth}` : '';
+    return `{${prefix}${name}${padding}${suffix}}`;
+}
+
+/**
+ * Split template text into literal runs and recognised token groups, the way the
+ * path builder will read it. Unknown brace groups stay literal text.
+ */
+function splitRelPathTemplate(text) {
+    const parts = [];
+    let cursor = 0;
+    for (const group of parseRelPathTemplateGroups(text)) {
+        if (!group.token || !REL_PATH_TOKEN_SPECS.has(group.token)) continue;
+        if (group.start > cursor) parts.push({ text: text.slice(cursor, group.start) });
+        parts.push({ group });
+        cursor = group.end;
+    }
+    if (cursor < text.length) parts.push({ text: text.slice(cursor) });
+    return parts;
+}
 
 /**
  * The one template editor used everywhere path templates are edited: Settings,
@@ -2103,8 +2128,10 @@ const TEMPLATE_ZWSP = '\u200b';
  *
  * It behaves like an ordinary text box. Tokens are inline pills the caret steps
  * over as a unit; everything between them - separators, literal text - is typed
- * and edited normally. Pills can be dragged to another spot in the text, and the
- * [+] menu inserts a token at the caret.
+ * and edited normally. Pills can be dragged to another spot in the text, the
+ * [+] menu inserts a token at the caret, and tapping a pill opens its options
+ * (text shown only when the token has a value, and zero-padding for Series #).
+ * A pill stands for a whole brace group, so "{ (Year)}" is one pill.
  *
  * `input` is the real form field and stays the source of truth, so names, ids and
  * form submission are left to the caller. The editor mounts around it.
@@ -2129,39 +2156,49 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     editor.setAttribute('spellcheck', 'false');
 
     const toolbar = document.createElement('div');
-    toolbar.className = 'd-flex align-items-center gap-3 mt-1 template-token-toolbar';
+    toolbar.className = 'd-flex align-items-center flex-wrap gap-2 mt-1 template-token-toolbar';
 
     const addWrap = document.createElement('span');
     addWrap.className = 'dropdown d-inline-flex';
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-1 template-token-add-btn';
+    addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-2 template-token-add-btn';
     addBtn.title = 'Insert a token at the cursor';
-    addBtn.setAttribute('aria-label', 'Insert token');
-    addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
+    addBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Token';
     addBtn.setAttribute('data-bs-toggle', 'dropdown');
+    addBtn.setAttribute('data-bs-auto-close', 'true');
     addBtn.setAttribute('aria-expanded', 'false');
     const addMenu = document.createElement('ul');
     addMenu.className = 'dropdown-menu template-token-add-menu';
     addWrap.append(addBtn, addMenu);
+
+    const hint = document.createElement('span');
+    hint.className = 'form-text small m-0 me-auto template-token-hint';
+    hint.textContent = 'Tap a token for options';
 
     const textToggle = document.createElement('button');
     textToggle.type = 'button';
     textToggle.className = 'btn btn-link btn-sm p-0 text-decoration-none template-token-text-toggle';
     textToggle.textContent = 'Edit as text';
 
-    toolbar.append(addWrap, textToggle);
-    wrap.append(editor, toolbar);
+    toolbar.append(addWrap, hint, textToggle);
+
+    const optionsPanel = document.createElement('div');
+    optionsPanel.className = 'template-token-options d-none';
+
+    wrap.append(editor, toolbar, optionsPanel);
 
     /** Caret to insert at, remembered because opening the [+] menu takes focus away. */
     let savedRange = null;
     let dropCaret = null;
+    /** The pill whose options panel is open. */
+    let optionsPill = null;
 
     const currentTemplate = () => input.value || fallback() || '';
 
     // --- reading the field back out ---------------------------------------
 
-    /** Read a run of the field back as template text, pills included as their tag. */
+    /** Read a run of the field back as template text, pills included as their group. */
     function serializeNodes(nodes) {
         let out = '';
         nodes.forEach(node => {
@@ -2184,6 +2221,7 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         ensureCaretAnchors();
         decoratePills();
         renderMenu();
+        if (optionsPill && !editor.contains(optionsPill)) closeOptions();
         const value = serialize();
         // A class rather than emptying the field: the leftover anchors are invisible
         // anyway, and clearing them by hand would cost the user their undo history.
@@ -2195,30 +2233,67 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
     // --- building the field ------------------------------------------------
 
-    function makePill(token) {
-        const pill = document.createElement('span');
-        pill.className = 'template-token-pill token-pill-token';
-        pill.dataset.token = token;
-        pill.setAttribute('contenteditable', 'false');
-        pill.draggable = false;
+    const pillGroup = pill => parseRelPathTemplateGroups(pill.dataset.token)[0] || { token: pill.dataset.base };
+
+    /** Optional text is shown with its spaces made visible, since they matter. */
+    const visibleSpaces = text => text.replace(/ /g, '·');
+
+    /** (Re)draw a pill's contents from its group text. */
+    function paintPill(pill) {
+        const group = pillGroup(pill);
+        const spec = REL_PATH_TOKEN_SPECS.get(group.token);
+        pill.dataset.base = group.token;
+        pill.textContent = '';
 
         const grip = document.createElement('i');
         grip.className = 'bi bi-grip-vertical template-token-grip';
-        const text = document.createElement('span');
-        text.textContent = token;
+        pill.appendChild(grip);
+
+        if (group.prefix) {
+            const prefix = document.createElement('span');
+            prefix.className = 'template-token-affix';
+            prefix.textContent = visibleSpaces(group.prefix);
+            pill.appendChild(prefix);
+        }
+        const label = document.createElement('span');
+        label.className = 'template-token-label';
+        label.textContent = spec ? spec.label : group.token;
+        pill.appendChild(label);
+        if (group.paddingWidth) {
+            const pad = document.createElement('span');
+            pad.className = 'template-token-pad';
+            pad.textContent = '0'.repeat(group.paddingWidth - 1) + '1';
+            pad.title = `Zero-padded to ${group.paddingWidth} digits`;
+            pill.appendChild(pad);
+        }
+        if (group.suffix) {
+            const suffix = document.createElement('span');
+            suffix.className = 'template-token-affix';
+            suffix.textContent = visibleSpaces(group.suffix);
+            pill.appendChild(suffix);
+        }
+
         const close = document.createElement('i');
         close.className = 'bi bi-x template-token-remove';
         close.setAttribute('role', 'button');
-        close.setAttribute('aria-label', `Remove ${token}`);
-        pill.append(grip, text, close);
-
+        close.setAttribute('aria-label', `Remove ${spec ? spec.label : group.token}`);
         close.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
             removePill(pill);
             sync();
         });
+        pill.appendChild(close);
+        pill.classList.toggle('template-token-pill-optional', Boolean(group.prefix || group.suffix));
+    }
 
+    function makePill(groupText) {
+        const pill = document.createElement('span');
+        pill.className = 'template-token-pill token-pill-token';
+        pill.dataset.token = groupText;
+        pill.setAttribute('contenteditable', 'false');
+        pill.draggable = false;
+        paintPill(pill);
         attachDrag(pill);
         return pill;
     }
@@ -2235,7 +2310,8 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
      * between two touching ones - has no text node to sit in, and so no rect for
      * the browser to paint it from. Desktop browsers guess well enough; mobile
      * Chrome and Safari paint it at the far right of the field. A zero-width space
-     * gives those positions a text node to live in; serialize() strips them out.
+     * gives those positions a text node to live in; serialize() strips them out,
+     * and moveCaretPastAnchors() keeps the keyboard from tripping over them.
      *
      * Adding only, never tidying: Chrome throws away its undo stack the moment we
      * mutate the field behind its back, so an ordinary keystroke has to leave the
@@ -2250,30 +2326,6 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             if (isPill(node) && isPill(kids[index + 1])) editor.insertBefore(anchor(), kids[index + 1]);
         });
         if (isPill(editor.lastChild)) editor.appendChild(anchor());
-    }
-
-    /**
-     * Both offsets in an anchor paint in the same place, so the caret is parked on
-     * the side that keeps the keys honest: at the end of the field that is in front
-     * of the anchor, where Backspace reaches the token rather than the invisible
-     * character; at the start it is behind it, so Delete does. An anchor between
-     * two tokens is left alone - there both sides are somewhere the caret can go.
-     */
-    function settleCaretInAnchor() {
-        const sel = selection();
-        if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
-        const range = sel.getRangeAt(0);
-        const node = range.startContainer;
-        if (!isAnchor(node)) return;
-        let offset = null;
-        if (!node.nextSibling) offset = 0;
-        else if (!node.previousSibling) offset = node.textContent.length;
-        if (offset === null || range.startOffset === offset) return;
-        const settled = document.createRange();
-        settled.setStart(node, offset);
-        settled.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(settled);
     }
 
     /**
@@ -2297,6 +2349,7 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         const next = beside(pill, 'nextSibling');
         const before = isText(prev) ? prev : null;
         const after = isText(next) ? next : null;
+        if (pill === optionsPill) closeOptions();
         pill.remove();
         if (after && after.textContent.startsWith('/') && (!before || before.textContent.endsWith('/'))) {
             after.textContent = after.textContent.slice(1);
@@ -2305,14 +2358,32 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         }
     }
 
+    /** {token: value} for the current item, or null when the caller has none. */
+    const currentValues = () => (tokenValues ? tokenValues() : null);
+
+    /** What one group renders to for the current item, e.g. " (1997)". */
+    function renderGroup(groupText, values) {
+        const byKey = {};
+        REL_PATH_TOKENS.forEach(spec => { byKey[spec.key] = values[spec.token] || ''; });
+        // Rendered on its own so the path builder's segment trimming cannot eat
+        // the group's spaces.
+        return buildRelativePathFromTemplate(`\u0001${groupText}\u0001`, byKey).slice(1, -1);
+    }
+
     function decoratePills() {
         // Shown only when the field is emptied, i.e. "no override, inherit this".
         editor.dataset.placeholder = normalizeRelPathTemplate(fallback() || '');
-        const values = tokenValues ? tokenValues() : null;
+        const values = currentValues();
         pillsIn().forEach(pill => {
-            const token = pill.dataset.token;
-            const resolved = values ? (values[token] || '') : '';
-            pill.title = resolved ? `${token} — ${resolved}` : `${token} — drag to move`;
+            const spec = REL_PATH_TOKEN_SPECS.get(pill.dataset.base);
+            const name = spec ? spec.label : pill.dataset.base;
+            if (values) {
+                const rendered = renderGroup(pill.dataset.token, values);
+                pill.title = rendered ? `${name}: "${rendered}"` : `${name}: nothing for this item`;
+                pill.classList.toggle('template-token-pill-empty', !rendered);
+            } else {
+                pill.title = `${name}. Tap for options, drag to move.`;
+            }
         });
     }
 
@@ -2327,7 +2398,10 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             renderMenu();
             return;
         }
+        closeOptions();
         editor.textContent = '';
+        // The old caret pointed into nodes that no longer exist.
+        savedRange = null;
         appendTemplate(editor, template);
         ensureCaretAnchors();
         editor.classList.toggle('template-token-editor-empty', !template);
@@ -2335,20 +2409,17 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         renderMenu();
     }
 
-    /** Append `text` to `parent`, turning every known {Tag} into a pill. */
+    /** Append `text` to `parent`, turning every recognised token group into a pill. */
     function appendTemplate(parent, text) {
-        let last = 0;
-        let match;
         let lastPill = null;
-        REL_PATH_TOKEN_PATTERN.lastIndex = 0;
-        while ((match = REL_PATH_TOKEN_PATTERN.exec(text)) !== null) {
-            if (!REL_PATH_TOKEN_SET.has(match[0])) continue;
-            if (match.index > last) parent.appendChild(document.createTextNode(text.slice(last, match.index)));
-            lastPill = makePill(match[0]);
-            parent.appendChild(lastPill);
-            last = match.index + match[0].length;
-        }
-        if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+        splitRelPathTemplate(text).forEach(part => {
+            if (part.text !== undefined) {
+                parent.appendChild(document.createTextNode(part.text));
+            } else {
+                lastPill = makePill(part.group.raw);
+                parent.appendChild(lastPill);
+            }
+        });
         return lastPill;
     }
 
@@ -2356,12 +2427,12 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     function pillifyTypedTokens() {
         let lastPill = null;
         Array.from(editor.childNodes)
-            .filter(node => node.nodeType === Node.TEXT_NODE && /\{[A-Za-z]+\}/.test(node.textContent))
+            .filter(node => isText(node) && node.textContent.includes('}'))
             .forEach(node => {
+                const text = node.textContent.split(TEMPLATE_ZWSP).join('');
+                if (!splitRelPathTemplate(text).some(part => part.group)) return;
                 const frag = document.createDocumentFragment();
-                const pill = appendTemplate(frag, node.textContent);
-                if (!pill) return;
-                lastPill = pill;
+                lastPill = appendTemplate(frag, text);
                 node.replaceWith(frag);
             });
         if (lastPill) placeCaretAfter(lastPill);
@@ -2370,40 +2441,44 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     function renderMenu() {
         addMenu.innerHTML = '';
         const used = serialize() || currentTemplate();
-        const values = tokenValues ? tokenValues() : null;
+        const values = currentValues();
 
-        // Only offer tokens the template does not already use.
-        REL_PATH_TOKENS.filter(spec => !used.includes(spec.token)).forEach(spec => {
+        REL_PATH_TOKENS.forEach(spec => {
             const li = document.createElement('li');
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'dropdown-item template-token-add-item';
             btn.dataset.token = spec.token;
-            btn.textContent = spec.token;
-            // When the caller supplied per-item values, a token with nothing to
-            // render is offered but marked, rather than silently adding an empty level.
+
+            const title = document.createElement('span');
+            title.className = 'template-token-add-label';
+            title.textContent = spec.label;
+            const detail = document.createElement('span');
+            detail.className = 'template-token-add-detail';
+
+            // When the caller supplied per-item values, show what the token would be
+            // for this item; one with nothing to render is offered but marked, rather
+            // than silently adding an empty level.
             const resolved = values ? (values[spec.token] || '') : null;
             if (values && !resolved) {
-                btn.classList.add('disabled');
-                btn.setAttribute('aria-disabled', 'true');
-                btn.title = `No ${spec.label.toLowerCase()} for this item`;
-            } else if (resolved) {
-                btn.title = resolved;
+                btn.classList.add('template-token-add-item-empty');
+                detail.textContent = `No ${spec.label.toLowerCase()} for this item`;
+            } else {
+                detail.textContent = resolved || spec.hint;
             }
-            btn.addEventListener('click', (event) => {
-                if (btn.classList.contains('disabled')) { event.preventDefault(); return; }
-                insertToken(spec.token);
-            });
+
+            if (templateHasToken(used, spec.token)) {
+                const check = document.createElement('i');
+                check.className = 'bi bi-check2 template-token-add-used';
+                check.title = 'Already in the template';
+                title.appendChild(check);
+            }
+
+            btn.append(title, detail);
+            btn.addEventListener('click', () => insertToken(spec.token));
             li.appendChild(btn);
             addMenu.appendChild(li);
         });
-
-        if (!addMenu.childElementCount) {
-            const li = document.createElement('li');
-            li.className = 'dropdown-item-text small text-muted';
-            li.textContent = 'Every token is already in use';
-            addMenu.appendChild(li);
-        }
     }
 
     // --- caret -------------------------------------------------------------
@@ -2412,20 +2487,33 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
     function rangeAtEnd() {
         const range = document.createRange();
-        range.selectNodeContents(editor);
-        range.collapse(false);
+        const last = editor.lastChild;
+        if (isText(last)) range.setStart(last, last.textContent.length);
+        else { range.selectNodeContents(editor); range.collapse(false); }
+        range.collapse(true);
         return range;
     }
 
-    /** Where an insert should land: the live caret, the remembered one, or the end. */
-    function activeRange() {
+    function setCaret(node, offset) {
+        const sel = selection();
+        if (!sel) return;
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        savedRange = range.cloneRange();
+    }
+
+    /** The caret the user placed in the field, if there is one. */
+    function caretInEditor() {
         const sel = selection();
         if (sel && sel.rangeCount) {
             const live = sel.getRangeAt(0);
             if (editor.contains(live.commonAncestorContainer)) return live.cloneRange();
         }
         if (savedRange && editor.contains(savedRange.commonAncestorContainer)) return savedRange.cloneRange();
-        return rangeAtEnd();
+        return null;
     }
 
     function placeCaretAfter(node, before = false) {
@@ -2438,20 +2526,206 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         else if (before) range.setStartBefore(node);
         else range.setStartAfter(node);
         range.collapse(true);
-        editor.focus();
+        editor.focus({ preventScroll: true });
         sel.removeAllRanges();
         sel.addRange(range);
         savedRange = range.cloneRange();
     }
 
-    /** Insert a token at the caret, exactly there and nothing else. */
+    /**
+     * Insert a token. With a caret in the field it goes exactly there and nothing
+     * else; with none (the menu was opened without clicking into the field first)
+     * it is appended as a new folder level, since gluing it onto the last token is
+     * never what that meant.
+     */
     function insertToken(token) {
-        const range = activeRange();
-        range.deleteContents();
+        const placed = caretInEditor();
         const pill = makePill(token);
-        range.insertNode(pill);
+        if (placed) {
+            placed.deleteContents();
+            placed.insertNode(pill);
+        } else {
+            const current = serialize();
+            if (current && !current.endsWith('/')) editor.appendChild(document.createTextNode('/'));
+            editor.appendChild(pill);
+        }
         sync();
         placeCaretAfter(pill);
+    }
+
+    /**
+     * Turn a caret parked on the editor element itself (between child nodes) into
+     * the equivalent spot inside a text node, so it can be reasoned about.
+     */
+    function caretInText() {
+        const sel = selection();
+        if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+        let node = sel.anchorNode;
+        let offset = sel.anchorOffset;
+        if (node === editor) {
+            const before = editor.childNodes[offset - 1];
+            const after = editor.childNodes[offset];
+            if (isText(before)) { node = before; offset = before.textContent.length; }
+            else if (isText(after)) { node = after; offset = 0; }
+            else return null;
+        }
+        return isText(node) && node.parentNode === editor ? { node, offset } : null;
+    }
+
+    /**
+     * Step the caret over any zero-width anchor characters in `dir`, so the key
+     * about to act (an arrow, Backspace, Delete) reaches the next real character
+     * or token instead of spending a press on something invisible.
+     */
+    function moveCaretPastAnchors(backward) {
+        const at = caretInText();
+        if (!at) return;
+        let { node, offset } = at;
+        for (;;) {
+            const text = node.textContent;
+            if (backward) {
+                while (offset > 0 && text[offset - 1] === TEMPLATE_ZWSP) offset -= 1;
+                if (offset === 0 && isText(node.previousSibling)) {
+                    node = node.previousSibling;
+                    offset = node.textContent.length;
+                    continue;
+                }
+            } else {
+                while (offset < text.length && text[offset] === TEMPLATE_ZWSP) offset += 1;
+                if (offset === text.length && isText(node.nextSibling)) {
+                    node = node.nextSibling;
+                    offset = 0;
+                    continue;
+                }
+            }
+            break;
+        }
+        if (node !== at.node || offset !== at.offset) setCaret(node, offset);
+    }
+
+    // --- token options -----------------------------------------------------
+
+    function closeOptions() {
+        optionsPill?.classList.remove('template-token-pill-selected');
+        optionsPill = null;
+        optionsPanel.classList.add('d-none');
+        optionsPanel.textContent = '';
+    }
+
+    /**
+     * Options for one token, edited live: text that only appears when the token
+     * has a value (" (" + Year + ")"), and zero-padding for the series number.
+     */
+    function openOptions(pill) {
+        if (optionsPill === pill) { closeOptions(); return; }
+        closeOptions();
+        optionsPill = pill;
+        pill.classList.add('template-token-pill-selected');
+
+        const group = pillGroup(pill);
+        const spec = REL_PATH_TOKEN_SPECS.get(group.token);
+        const name = spec ? spec.label : group.token;
+        const uid = `tto-${Math.random().toString(36).slice(2, 8)}`;
+
+        optionsPanel.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="small fw-bold"></span>
+                <button type="button" class="btn-close btn-close-sm" aria-label="Close"></button>
+            </div>
+            <div class="row g-2">
+                <div class="col-6">
+                    <label class="form-label small mb-1" for="${uid}-pre">Text before</label>
+                    <input type="text" class="form-control form-control-sm font-monospace" id="${uid}-pre" autocomplete="off">
+                </div>
+                <div class="col-6">
+                    <label class="form-label small mb-1" for="${uid}-suf">Text after</label>
+                    <input type="text" class="form-control form-control-sm font-monospace" id="${uid}-suf" autocomplete="off">
+                </div>
+                <div class="col-12 template-token-options-pad">
+                    <label class="form-label small mb-1" for="${uid}-pad">Leading zeros</label>
+                    <select class="form-select form-select-sm" id="${uid}-pad">
+                        <option value="0">None (1, 2, 10)</option>
+                        <option value="2">2 digits (01, 02, 10)</option>
+                        <option value="3">3 digits (001, 002, 010)</option>
+                        <option value="4">4 digits (0001)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-text small mt-2 template-token-options-help"></div>
+            <div class="invalid-feedback d-block small template-token-options-error"></div>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <span class="small font-monospace text-body-secondary text-break template-token-options-raw"></span>
+                <button type="button" class="btn btn-sm btn-outline-danger py-0 template-token-options-remove">
+                    <i class="bi bi-trash"></i> Remove
+                </button>
+            </div>`;
+
+        optionsPanel.querySelector('.fw-bold').textContent = `${name} options`;
+        const pre = optionsPanel.querySelector(`#${uid}-pre`);
+        const suf = optionsPanel.querySelector(`#${uid}-suf`);
+        const pad = optionsPanel.querySelector(`#${uid}-pad`);
+        const help = optionsPanel.querySelector('.template-token-options-help');
+        const error = optionsPanel.querySelector('.template-token-options-error');
+        const raw = optionsPanel.querySelector('.template-token-options-raw');
+        const isSeriesNumber = group.token === '{SeriesNumber}';
+
+        optionsPanel.querySelector('.template-token-options-pad').classList.toggle('d-none', !isSeriesNumber);
+        pre.value = group.prefix || '';
+        suf.value = group.suffix || '';
+        pre.placeholder = isSeriesNumber ? 'e.g.  #' : 'e.g.  - ';
+        suf.placeholder = group.token === '{Year}' ? 'e.g. )' : '';
+        pad.value = String(group.paddingWidth || 0);
+        help.textContent = `Text before and after only appears when the item has a ${name.toLowerCase()}, `
+            + `so nothing is left dangling. A "/" in it adds a folder level only when there is a value.`;
+
+        const apply = () => {
+            const next = {
+                token: group.token,
+                prefix: pre.value.replace(/[{}]/g, ''),
+                suffix: suf.value.replace(/[{}]/g, ''),
+                paddingWidth: isSeriesNumber ? Number(pad.value) || 0 : 0
+            };
+            const text = formatRelPathTemplateGroup(next);
+            // Only accept text that reads back as the same token: a letter right
+            // against the token name, or another token's name inside the text,
+            // would make the path builder see something else entirely.
+            const back = parseRelPathTemplateGroups(text)[0];
+            const ok = back && back.token === next.token && back.prefix === next.prefix
+                && back.suffix === next.suffix && (back.paddingWidth || 0) === next.paddingWidth;
+            pre.classList.toggle('is-invalid', !ok);
+            suf.classList.toggle('is-invalid', !ok);
+            if (!ok) {
+                error.textContent = 'Start the text after (and end the text before) with a space or symbol, '
+                    + 'and do not use another token\'s name in it.';
+                return;
+            }
+            error.textContent = '';
+            raw.textContent = text;
+            if (pill.dataset.token === text) return;
+            pill.dataset.token = text;
+            paintPill(pill);
+            pill.classList.add('template-token-pill-selected');
+            sync();
+        };
+
+        raw.textContent = pill.dataset.token;
+        [pre, suf].forEach(field => {
+            field.addEventListener('input', apply);
+            field.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') { event.preventDefault(); closeOptions(); }
+                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeOptions(); }
+            });
+        });
+        pad.addEventListener('change', apply);
+        optionsPanel.querySelector('.btn-close').addEventListener('click', closeOptions);
+        optionsPanel.querySelector('.template-token-options-remove').addEventListener('click', () => {
+            removePill(pill);
+            sync();
+        });
+
+        optionsPanel.classList.remove('d-none');
+        // Not on touch, where focusing pops the keyboard over the panel.
+        if (!window.matchMedia?.('(pointer: coarse)').matches) pre.focus({ preventScroll: true });
     }
 
     // --- dragging a pill to a new spot -------------------------------------
@@ -2544,15 +2818,14 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
             pill.releasePointerCapture?.(pointerId);
             pill.classList.remove('dragging');
             editor.classList.remove('template-token-editor-dragging');
-            removeDropCaret();
             pointerId = null;
         };
 
         const onMove = (event) => {
             if (event.pointerId !== pointerId) return;
             if (!dragging) {
-                // A small threshold so a tap still just places the caret.
-                if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) < 5) return;
+                // A small threshold so a tap still opens the token's options.
+                if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) < 6) return;
                 dragging = true;
                 pill.classList.add('dragging');
                 editor.classList.add('template-token-editor-dragging');
@@ -2563,25 +2836,25 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
         const onUp = (event) => {
             if (event.pointerId !== pointerId) return;
-            const moved = !!(dragging && dropCaret?.parentNode);
-            if (moved) {
+            const wasDragging = dragging;
+            const target = wasDragging && dropCaret?.parentNode ? dropCaret : null;
+            if (target) {
                 // Literally a move: the token goes exactly where the caret was
                 // shown and the text around it is left alone, so it can be dropped
                 // flush against another token when that is what you want.
-                dropCaret.parentNode.insertBefore(pill, dropCaret);
-                removeDropCaret();
+                target.parentNode.insertBefore(pill, target);
             }
+            removeDropCaret();
             dragging = false;
             detach();
-            if (moved) { sync(); placeCaretAfter(pill); return; }
-            // A plain tap parks the caret on whichever side of the token it landed.
-            const rect = pill.getBoundingClientRect();
-            placeCaretAfter(pill, event.clientX < (rect.left + rect.right) / 2);
+            if (target) { sync(); placeCaretAfter(pill); return; }
+            if (!wasDragging) openOptions(pill);
         };
 
         const onCancel = (event) => {
             if (event.pointerId !== pointerId) return;
             dragging = false;
+            removeDropCaret();
             detach();
         };
 
@@ -2610,16 +2883,21 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         sync();
     });
 
-    // One line only: Enter would otherwise split the field into blocks. Backspace
-    // and Delete are left to the browser, which already treats a pill as one
-    // character and, unlike anything we could do by hand, records it for undo.
     editor.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') event.preventDefault();
+        // One line only: Enter would otherwise split the field into blocks.
+        if (event.key === 'Enter') { event.preventDefault(); return; }
+        if (event.key === 'Escape' && optionsPill) { closeOptions(); return; }
+        // Backspace and Delete themselves are left to the browser, which already
+        // treats a pill as one character and, unlike anything we could do by hand,
+        // records it for undo. We only step over the invisible anchors first.
+        if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+        if (event.key === 'ArrowLeft' || event.key === 'Backspace') moveCaretPastAnchors(true);
+        else if (event.key === 'ArrowRight' || event.key === 'Delete') moveCaretPastAnchors(false);
     });
 
-    // Left alone, the clipboard gets Chrome's rendering of the pills - "{Author} /
-    // {Title} ", spaces and all. Copy the template text instead, so it pastes back
-    // as itself here or anywhere else.
+    // Left alone, the clipboard gets Chrome's rendering of the pills, labels and
+    // all. Copy the template text instead, so it pastes back as itself here or
+    // anywhere else.
     ['copy', 'cut'].forEach(type => editor.addEventListener(type, (event) => {
         const sel = selection();
         if (!event.clipboardData || !sel || !sel.rangeCount || sel.isCollapsed) return;
@@ -2635,8 +2913,9 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
     editor.addEventListener('paste', (event) => {
         if (!event.clipboardData) return;
         event.preventDefault();
-        const text = String(event.clipboardData.getData('text/plain') || '').replace(/[\r\n]+/g, ' ');
-        const range = activeRange();
+        const text = String(event.clipboardData.getData('text/plain') || '')
+            .replace(/[\r\n]+/g, ' ').split(TEMPLATE_ZWSP).join('');
+        const range = caretInEditor() || rangeAtEnd();
         range.deleteContents();
         const node = document.createTextNode(text);
         range.insertNode(node);
@@ -2645,24 +2924,26 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         sync();
     });
 
-    // Clicking the padding around the text behaves like clicking a text input.
-    // A drag that happens to start there is a selection, so leave that alone.
+    // Clicking the empty space after the text behaves like clicking a text input:
+    // the caret goes to the end. Clicks on the text itself are the browser's.
     editor.addEventListener('click', (event) => {
         if (event.target !== editor) return;
         const sel = selection();
         if (!sel || (sel.rangeCount && !sel.isCollapsed)) return;
-        const range = rangeAtEnd();
+        const last = editor.lastChild;
+        const rect = last ? nodeRect(last) : null;
+        const pastEnd = !rect || event.clientY > rect.bottom
+            || (event.clientY >= rect.top && event.clientX > rect.right);
+        if (!pastEnd) return;
         editor.focus();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        savedRange = range.cloneRange();
+        const end = rangeAtEnd();
+        setCaret(end.startContainer, end.startOffset);
     });
 
     // Opening the [+] menu focuses the button and collapses the caret, so keep a
     // copy of it while it is still ours. Scoped to the field, not the document, so
     // an override block that is removed takes its listeners with it.
     const rememberCaret = () => {
-        settleCaretInAnchor();
         const sel = selection();
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
@@ -2677,7 +2958,8 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         if (!hidden) input.focus();
     });
 
-    // The raw field is written directly by resets and by settings snapshot restore.
+    // The raw field is written directly by resets, by settings snapshot restore,
+    // and by typing into it under "Edit as text".
     input.addEventListener('input', () => render(true));
 
     render(true);
@@ -6665,13 +6947,15 @@ document.addEventListener("DOMContentLoaded", async function () {
         const label = mediaTypeOptions.find(m => m.id === mainCat)?.label || 'Ebooks';
         const genre = mainCat === '15' ? 'Music Book' : (mainCat === '16' ? 'Documentary' : 'Fantasy');
         return {
-            author: 'J.K. Rowling',
+            ...authorTokenValues('J.K. Rowling'),
+            narrator: mainCat === '13' ? 'Stephen Fry' : '',
             series: 'Harry Potter',
             seriesNumber: '1',
             title: "Harry Potter and the Sorcerer's Stone",
             genre,
             format: mainCat === '14' ? 'EPUB' : 'M4B',
-            category: label
+            category: label,
+            year: '1997'
         };
     }
 
