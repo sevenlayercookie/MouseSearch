@@ -26,7 +26,7 @@
 
   <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" />
 
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=STATIC_ASSET_VERSION) }}">
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://cdn.jsdelivr.net/npm/tom-select@2.4.5/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
@@ -223,6 +223,13 @@
               <i class="bi bi-sliders me-2"></i>Filters & Advanced
               <span class="badge bg-secondary ms-1 rounded-pill" id="filter-count" style="display:none;">0</span>
             </button>
+            {% if WATCHES_ENABLED %}
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="offcanvas"
+              data-bs-target="#watchesOffcanvas" aria-controls="watchesOffcanvas">
+              <i class="bi bi-binoculars me-2"></i>Watches
+              <span class="badge text-bg-warning ms-1">Beta</span>
+            </button>
+            {% endif %}
           </div>
         </form>
 
@@ -511,14 +518,17 @@
   {% include 'modals/settings_offcanvas.html' %}
   {% include 'modals/insufficient_buffer.html' %}
   {% include 'modals/book_details.html' %}
+  {% if WATCHES_ENABLED %}{% include 'modals/watches_offcanvas.html' %}{% endif %}
 
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}">import "bootstrap";</script>
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.5/dist/js/tom-select.complete.min.js"></script>
   <script>
     window.resultDisplayFields = {{ RESULTS_DISPLAY_FIELDS | tojson }};
     window.resultsSortMode = {{ RESULTS_SORT_MODE | tojson }};
+    window.mamSortedResultModes = {{ MAM_SORTED_RESULT_MODES | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/main.js', v=STATIC_ASSET_VERSION) }}"></script>
+  {% if WATCHES_ENABLED %}<script src="{{ url_for('static', filename='js/watches.js', v=STATIC_ASSET_VERSION) }}"></script>{% endif %}
 
 
   <div id="toast-container" aria-live="polite" aria-atomic="true" class="position-fixed bottom-0 end-0 p-3"

@@ -1,0 +1,160 @@
+<div class="offcanvas offcanvas-end roundTop roundBottom w-md-50" tabindex="-1" id="watchesOffcanvas"
+  aria-labelledby="watchesOffcanvasLabel">
+  <div class="offcanvas-header border-bottom roundTop">
+    <h5 class="offcanvas-title fw-bold d-flex align-items-center" id="watchesOffcanvasLabel">
+      <i class="bi bi-binoculars me-2 text-primary"></i>Watches
+      <span class="badge text-bg-warning ms-2 fs-6">Beta</span>
+    </h5>
+    <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+
+  <div class="offcanvas-body bg-body-tertiary">
+
+    <!-- LIST -->
+    <div id="watches-list-view" class="watches-view">
+      <div class="small text-body-secondary mb-2">
+        Saved searches that are checked on a schedule. New matches are sent to your client within the limits set
+        under Settings &rarr; Watches. The first run of a new watch only records what already exists.
+      </div>
+      <div id="watches-status" class="small mb-3"></div>
+      <div class="d-flex gap-2 mb-3">
+        <button type="button" class="btn btn-primary btn-sm" id="watches-new"><i class="bi bi-plus-lg me-1"></i>New
+          watch</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="watches-new-from-search"
+          title="Prefill from the main search box"><i class="bi bi-search me-1"></i>From current search</button>
+      </div>
+      <div id="watches-empty" class="text-body-secondary small d-none">No watches yet.</div>
+      <div id="watches-list" class="list-group"></div>
+    </div>
+
+    <!-- FORM -->
+    <div id="watch-form-view" class="watches-view d-none">
+      <button type="button" class="btn btn-link btn-sm px-0 mb-2" data-watch-back><i
+          class="bi bi-arrow-left me-1"></i>Back</button>
+      <h6 class="fw-bold mb-3" id="watch-form-title">New watch</h6>
+      <form id="watch-form" autocomplete="off">
+        <input type="hidden" id="watch-id">
+        <div class="form-floating mb-2">
+          <input type="text" class="form-control" id="watch-name" placeholder="Name" required>
+          <label for="watch-name" class="small">Name</label>
+        </div>
+        <div class="form-floating mb-1">
+          <input type="text" class="form-control" id="watch-query" placeholder="Search" required>
+          <label for="watch-query" class="small">MAM search (e.g. "T J Klune" or "Dungeon Crawler Carl")</label>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mb-3 small">
+          <span class="text-body-secondary">Search in:</span>
+          {% for field in ['title', 'author', 'series', 'narrator'] %}
+          <div class="form-check">
+            <input class="form-check-input watch-search-in" type="checkbox" value="{{ field }}" id="watch-in-{{ field }}">
+            <label class="form-check-label" for="watch-in-{{ field }}">{{ field | capitalize }}</label>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="small text-body-secondary" for="watch-main-cat">Type</label>
+            <select class="form-select form-select-sm" id="watch-main-cat">
+              <option value="">All</option>
+              <option value="13">Audiobooks</option>
+              <option value="14">E-Books</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="small text-body-secondary" for="watch-language">Language</label>
+            <select class="form-select form-select-sm" id="watch-language">
+              <option value="">Any</option>
+              {% for lang, lang_id in LANGUAGE_CHOICES %}
+              <option value="{{ lang_id }}">{{ lang }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="small text-body-secondary mb-1">What may a grab cost?</div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="watch-cost" id="watch-cost-free" value="free">
+            <label class="form-check-label small" for="watch-cost-free">Only freeleech torrents
+              <span class="text-body-secondary">(global, VIP or personal freeleech)</span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="watch-cost" id="watch-cost-wedge" value="wedge">
+            <label class="form-check-label small" for="watch-cost-wedge">Freeleech, or spend a wedge I own</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="watch-cost" id="watch-cost-ratio" value="ratio">
+            <label class="form-check-label small" for="watch-cost-ratio">Freeleech, a wedge, or ratio
+              <span class="text-body-secondary">(above your ratio floor)</span></label>
+          </div>
+          <div class="form-text small d-none" id="watch-wedges-off-note">
+            Wedge use is currently off in Settings, so these watches will only grab freeleech
+            <span class="watch-ratio-only d-none">or ratio</span> torrents.
+          </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="small text-body-secondary" for="watch-interval">Check every (minutes)</label>
+            <input type="number" class="form-control form-control-sm" id="watch-interval" min="30" step="5">
+          </div>
+          <div class="col-6">
+            <label class="small text-body-secondary" for="watch-max-grabs">Max grabs per run</label>
+            <input type="number" class="form-control form-control-sm" id="watch-max-grabs" min="1" max="10">
+          </div>
+        </div>
+
+        <details class="mb-3 small">
+          <summary class="text-body-secondary">More options</summary>
+          <div class="mt-2">
+            <label class="small text-body-secondary" for="watch-title-regex">Only titles matching (optional regular
+              expression, case-insensitive)</label>
+            <input type="text" class="form-control form-control-sm mb-2" id="watch-title-regex"
+              placeholder="e.g. book (1[0-9]|[2-9][0-9])">
+            <label class="small text-body-secondary" for="watch-category">Client category (optional)</label>
+            <input type="text" class="form-control form-control-sm mb-2" id="watch-category"
+              placeholder="Uses your default category when blank">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="watch-grab-existing">
+              <label class="form-check-label" for="watch-grab-existing">Also grab matches that already exist
+                <span class="text-body-secondary">(otherwise the first run only records them)</span></label>
+            </div>
+          </div>
+        </details>
+
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="watch-enabled">
+          <label class="form-check-label small" for="watch-enabled">Enabled</label>
+        </div>
+
+        <div id="watch-form-error" class="alert alert-danger small py-2 d-none"></div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-primary btn-sm" id="watch-save">Save</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="watch-preview">Preview</button>
+          <button type="button" class="btn btn-outline-danger btn-sm ms-auto d-none" id="watch-delete">Delete</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- RESULT (preview / run) -->
+    <div id="watch-result-view" class="watches-view d-none">
+      <button type="button" class="btn btn-link btn-sm px-0 mb-2" data-watch-back><i
+          class="bi bi-arrow-left me-1"></i>Back</button>
+      <h6 class="fw-bold mb-1" id="watch-result-title"></h6>
+      <div class="small mb-1" id="watch-result-summary"></div>
+      <div class="small text-body-secondary mb-3" id="watch-result-budget"></div>
+      <ul class="list-group small" id="watch-result-items"></ul>
+    </div>
+
+    <!-- HISTORY -->
+    <div id="watch-events-view" class="watches-view d-none">
+      <button type="button" class="btn btn-link btn-sm px-0 mb-2" data-watch-back><i
+          class="bi bi-arrow-left me-1"></i>Back</button>
+      <h6 class="fw-bold mb-3" id="watch-events-title">History</h6>
+      <div id="watch-events-empty" class="small text-body-secondary d-none">Nothing yet.</div>
+      <ul class="list-group small" id="watch-events-list"></ul>
+    </div>
+
+  </div>
+</div>

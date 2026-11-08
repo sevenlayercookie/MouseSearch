@@ -28,6 +28,7 @@ MouseSearch is a self-hosted web application that provides a clean, fast search 
 * **Freeleech Tools:** VIP Freeleech awareness in search results, a bonus-store wedge purchase button in the MAM status area, a personal Freeleech wedge button in the download confirmation dialog, and an optional setting to auto-spend an existing wedge on download.
 * **Enhanced Details UI:** Responsive cards, improved book details layout, a high-res cover lightbox, and a **MediaInfo Inspector** tree for viewing technical file metadata.
 * **Live Torrent Polling:** After adding a torrent, the UI polls your torrent client to show its download status (e.g., "Downloading 50%", "Seeding") in real-time in results and the book details modal. Designates previously downloaded torrents as "Downloaded".
+* **Send to Kindle:** Email finished e-books (EPUB/PDF/DOCX) to your Kindle's `@kindle.com` address over SMTP, like Calibre's "Email to Kindle" — via a button in the book details view, or automatically when an e-book download finishes (opt-in; each book is sent once and audiobooks are never sent). The connection test checks SMTP connectivity and authentication without sending email. Successful sending means the SMTP server accepted the message; Kindle delivery is not confirmed. Configure it under Settings → Kindle, and add the sender address to Amazon's Approved Personal Document E-mail List.
 * **Template-Based Organization Paths:** Define a default relative path template (e.g., `{Author}/{Title}` or `{Category}/{Genre}/{Author}/{Title}`) with token helpers and live preview in Settings.
 * **[BETA] Auto-Organization:** (See details below) Automatically organizes completed audiobooks from your download folder to a clean library structure (e.g., `Author/Title/file.m4b`) using either hardlinks (instant, no space used) or file copies, with a default destination path plus optional media-type-specific destination paths.
 
@@ -236,6 +237,7 @@ Which endpoint to use depends on how your setup exposes rTorrent:
 | Setup | `TORRENT_CLIENT_URL` |
 | :--- | :--- |
 | Self-hosted, XML-RPC proxied by Nginx/Apache (the usual `scgi_pass` / `mod_scgi` setup) | `http://<host>/RPC2` |
+| Local rTorrent SCGI socket (`network.scgi.open_local = /path/to/rpc.sock` in `.rtorrent.rc`) | `scgi+unix:///path/to/rpc.sock` |
 | Shared seedbox running ruTorrent, no direct XML-RPC exposed | `https://<seedbox address>/rutorrent/plugins/httprpc/action.php` |
 | Some providers give each user a named path | `https://<seedbox address>/<username>/rutorrent/plugins/httprpc/action.php` |
 
@@ -243,6 +245,20 @@ Most shared seedbox providers do **not** expose a direct XML-RPC interface, so t
 
 Notes:
 
+- With a `scgi+unix://` URL, MouseSearch talks to rTorrent's native SCGI listener directly — no webserver involved. Username/password and `RTORRENT_DIGEST_AUTH` do not apply, and the MouseSearch process needs permission to traverse the socket directory and connect to the socket.
+- When MouseSearch runs in Docker, mount the directory containing the socket into the container. Mounting the directory allows rTorrent to recreate the socket without leaving the container attached to a stale socket inode. For example:
+
+  ```yaml
+  services:
+    mousesearch:
+      volumes:
+        - /path/on/host/rtorrent:/run/rtorrent
+      environment:
+        - TORRENT_CLIENT_TYPE=rtorrent
+        - TORRENT_CLIENT_URL=scgi+unix:///run/rtorrent/rpc.sock
+  ```
+
+  Ensure the container user can traverse the mounted directory and connect to `rpc.sock`.
 - If your provider's panel challenges you with HTTP Digest auth rather than Basic (common on seedboxes), also set `RTORRENT_DIGEST_AUTH=true`.
 - The `httprpc` plugin must be enabled in ruTorrent. If it is not in your ruTorrent plugin list, ask your provider to enable it or check whether they document a dedicated XML-RPC URL.
 - To confirm an endpoint before configuring MouseSearch:
@@ -253,6 +269,19 @@ Notes:
     'https://<seedbox address>/rutorrent/plugins/httprpc/action.php'
   ```
   A working endpoint returns an XML `<methodResponse>` containing your rTorrent version. HTML back means you have the wrong URL; a `401` means the credentials or auth scheme (see `RTORRENT_DIGEST_AUTH`) are wrong.
+
+### Hardcover API permissions
+
+MouseSearch uses a server-side Hardcover Personal Access Token (PAT). For the complete integration, including book enrichment and reading-status controls, grant these scopes:
+
+* `read:catalog` — search and retrieve book, edition, author, and series metadata
+* `read:me:content` — identify the signed-in Hardcover account without exposing email or role data
+* `read:library` — display existing library and reading-status records
+* `write:library` — add, update, and remove reading statuses
+
+[Create a Hardcover PAT with the recommended MouseSearch scopes](https://hardcover.app/account/api/keys/new?scope=read%3Acatalog+read%3Ame%3Acontent+read%3Alibrary+write%3Alibrary).
+
+For book enrichment only, the minimum required scope is `read:catalog:search`. Library status display and changes will remain unavailable without the additional account and library scopes. MouseSearch does not require the unrestricted `all` scope.
 
 ### Additional Configuration
 
@@ -289,7 +318,7 @@ Notes:
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |
 | `AUTO_ORGANIZE_INTERVAL_HOURS` | No | Number of hours between scheduled organization scans (only applies if `AUTO_ORGANIZE_ON_SCHEDULE` is `true`). Defaults to `1`. |
 | `AUTO_ORGANIZE_USE_COPY` | No | Set to `true` to copy files instead of hardlinking. Useful if download/organize paths are on different filesystems. Defaults to `false`. |
-| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, `{SeriesNumber}`, `{Title}`, `{Category}`, `{Genre}`, and `{Format}` tokens. Defaults to `{Author}/{Title}`. |
+| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{AuthorLastFirst}`, `{FirstAuthor}`, `{FirstAuthorLastFirst}`, `{Narrator}`, `{Series}`, `{SeriesNumber}`, `{Title}`, `{Category}`, `{Genre}`, `{Format}`, and `{Year}` tokens, plus optional text such as `{ - Series}` (see [Path Customization](#path-customization)). Defaults to `{Author}/{Title}`. |
 | `ORGANIZED_PATH` | If auto-organization is enabled | The default *container* path for your organized library (e.g., `/downloads/organized/`). Additional destination paths can be configured from the Settings UI and assigned to media types. |
 | `LOCAL_TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The local path MouseSearch can access for completed torrent files (e.g., `/downloads/torrents/`). |
 | `REMOTE_TORRENT_DOWNLOAD_PATH` | No | Optional remote/client-side view of that same download directory. Recommended when your torrent client runs in a different filesystem namespace, such as Docker vs bare metal. |
@@ -301,7 +330,7 @@ Notes:
 | `HARDCOVER_API_TOKEN` | No | Hardcover GraphQL API token. Keep this server-side; it is never sent to browser code. Use the raw token; `Bearer ` is added automatically if omitted. |
 | `HARDCOVER_API_URL` | No | Hardcover GraphQL endpoint. Defaults to `https://api.hardcover.app/v1/graphql`. |
 | `HARDCOVER_USER_AGENT` | No | Descriptive User-Agent sent to Hardcover. Defaults to `MouseSearch Hardcover Enrichment`. |
-| `HARDCOVER_RATE_LIMIT` | No | Shared global rate cap for all server-side Hardcover API requests, in requests per minute. Defaults to `55` to stay under Hardcover's `60/min` limit. |
+| `HARDCOVER_RATE_LIMIT` | No | Shared global rate cap for all server-side Hardcover API requests, in requests per minute. Defaults to `60`; MouseSearch also honors the limits advertised in Hardcover's response headers. |
 | `HARDCOVER_MATCH_THRESHOLD` | No | Fuzzy validation threshold on a 0-100 scale. Defaults to `78`. |
 | `HARDCOVER_CONCURRENCY` | No | Maximum in-flight Hardcover enrichments. Defaults to `6`. |
 | `HARDCOVER_SEARCH_PER_PAGE` | No | Hardcover candidates checked per search path. Defaults to `5`. |
@@ -328,6 +357,7 @@ If `AUTO_TASK_WEBHOOK_URL` is set, MouseSearch sends webhook notifications for:
 * `auto_update_ip`
 * `auto_organize_on_download`
 * `auto_organize_on_schedule`
+* `watch_grabbed`
 
 Set `AUTO_TASK_WEBHOOK_EVENTS` if you only want a subset of those events.
 
@@ -435,14 +465,34 @@ MouseSearch supports configurable default organization templates via Settings ->
 | Token | Value | Example |
 | --- | --- | --- |
 | `{Author}` | Author name | `Frank Herbert` |
-| `{Series}` | Series name (blank if the torrent has no series) | `Dune` |
+| `{AuthorLastFirst}` | Every author as Last, First, joined with ` & ` | `Preston, Douglas & Child, Lincoln` |
+| `{FirstAuthor}` | Only the first listed author | `Frank Herbert` |
+| `{FirstAuthorLastFirst}` | Only the first listed author, as Last, First | `Herbert, Frank` |
+| `{Narrator}` | Narrator names, joined with commas (blank when unavailable) | `Stephen Fry` |
+| `{Series}` | Series name, with HTML entities decoded before filename sanitization (blank if the torrent has no series) | `Dune` |
 | `{SeriesNumber}` | Position within the series | `1` |
+| `{SeriesNumber:02}` | Series position with a minimum two-digit integer part (use `:03` for three digits; widths 1–10 supported) | `01`, `23`, `01.5` |
 | `{Title}` | Torrent title | `Dune` |
 | `{Category}` | Media type from the MAM category | `Audiobooks`, `Ebooks` |
 | `{Genre}` | MAM subcategory | `Science Fiction` |
 | `{Format}` | File format, uppercased | `M4B`, `EPUB MOBI` |
+| `{Year}` | Publication year from the torrent's Hardcover book match (blank when Hardcover enrichment is off or found no book) | `1965` |
 
   Tokens that have no value collapse out of the path rather than leaving an empty folder level, so `{Author}/{Series}/{Title}` yields `Frank Herbert/Dune` for a standalone book. To reproduce a `Audiobooks/Science Fiction/Frank Herbert/Dune` layout, use `{Category}/{Genre}/{Author}/{Title}`.
+
+  **Series-number padding:** `{SeriesNumber}` stays unpadded. Use `{SeriesNumber:02}` or an optional group like `{ #SeriesNumber:02}` to add leading zeros. Fractional positions keep their fraction (`1.5` → `01.5`), larger positions are never truncated, and absent numbers stay blank. Non-numeric positions are left unchanged. This changes new organization paths; existing folders are not renamed.
+
+  **Optional text:** put fixed text inside the braces, next to the token name, to include it only when that token has a value. `{prefix Token suffix}` renders as `prefix + value + suffix`, or nothing at all when the token is empty. For example, `{Author}/{Title}{ - Series}{ #SeriesNumber}{ (Year)}` yields:
+
+  | Book | Result |
+  | --- | --- |
+  | In a series, year known | `Brandon Sanderson/Oathbringer - The Stormlight Archive #3 (2017)` |
+  | Standalone, year known | `Andy Weir/Project Hail Mary (2021)` |
+  | Standalone, no year | `Andy Weir/Project Hail Mary` |
+
+  **Last, First names:** the surname is the last word of the name, with particles such as `van`, `de` or `Le` kept with it and suffixes kept at the end, so `Ursula K. Le Guin` becomes `Le Guin, Ursula K.` and `Kurt Vonnegut Jr.` becomes `Vonnegut, Kurt, Jr.`. Single-word names (`Plato`) are left as they are. Use `{FirstAuthor}` or `{FirstAuthorLastFirst}` to keep co-written books in the first author's folder.
+
+  The text may include `/`, so `{Author}/{Series/}{Title}` adds a series folder only for books in a series. Leading and trailing spaces are trimmed from each folder name.
 - **Environment Default**: Set `DEFAULT_RELATIVE_PATH_TEMPLATE` in `.env` to control the default template used by the app.
 - **Per-Download Tag Builder**: When `AUTO_ORGANIZE_ON_ADD` is enabled, the download confirmation modal shows the same tag builder as Settings, seeded with your configured template and this torrent's values:
   - **Path Template** — the template for this one download. Tag buttons add a token, or remove it if it is already present; a tag with no value for this torrent (no series, no genre) is greyed out. The reset button restores your configured default.
@@ -506,6 +556,24 @@ You may use different filesystems or Docker volumes, but be aware that this will
 If your torrent client reports a different path than MouseSearch can access locally, also set `REMOTE_TORRENT_DOWNLOAD_PATH`. Example: `REMOTE_TORRENT_DOWNLOAD_PATH=/data/torrents` and `LOCAL_TORRENT_DOWNLOAD_PATH=/downloads/torrents`.
 
 This setup guarantees that both paths point to the same underlying device, allowing hard links to be created.
+
+---
+
+## [BETA] Watches
+
+Watches are saved MAM searches (an author, a series, a keyword) that MouseSearch checks on a schedule, sending new matches to your torrent client. Turn them on in **Settings → Watches**, reload the page, then use the **Watches** button under the search box.
+
+Watches are built to protect your account first:
+
+- **A new watch never grabs the back-catalog.** Its first run only records what already exists; only releases uploaded after that are grabbed. Changing a watch's search re-baselines it. Tick *Also grab matches that already exist* to opt out.
+- **Each watch has a cost policy.** It can take only freeleech torrents (the default), freeleech or a wedge, or freeleech, a wedge or ratio.
+- **Limits apply across all watches:** a number of unsatisfied-torrent slots that are always kept free, a maximum number of grabs per 24 hours, and a ratio floor for grabs that cost ratio. These are checked against live MAM stats before each run. If the stats can't be read, nothing is grabbed.
+- **Wedges are opt-in.** Watches spend Freeleech wedges only when *Allow watches to spend Freeleech wedges* is on, and always keep the reserve you set. Wedges are never bought, and watches never spend bonus points. Your global *Auto-Use Freeleech Wedge on Download* setting does not apply to watch grabs.
+- **Nothing is grabbed twice.** Torrents you've already snatched on MAM, already have in your client, or that another watch grabbed are skipped.
+- **Retries happen automatically.** Matches that can't be grabbed yet (per-run cap, limits, not free) are retried on later runs. If MAM refuses a request (auth, blocked, rate limited), the whole run stops.
+- **Preview** shows what a run would do without grabbing anything, and **History** lists each watch's grabs and errors. Grabs send the `watch_grabbed` webhook event.
+
+Watch data is stored in `DATA_PATH/watches.db`. The settings can also be set as environment variables: `WATCHES_ENABLED`, `WATCHES_ALLOW_WEDGES`, `WATCHES_WEDGE_RESERVE` (default `5`), `WATCHES_UNSAT_RESERVE` (default `10`), `WATCHES_MIN_RATIO` (default `2.0`), `WATCHES_DAILY_GRAB_LIMIT` (default `10`).
 
 ---
 

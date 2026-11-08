@@ -14,39 +14,139 @@ import httpx
 
 
 logger = logging.getLogger(__name__)
-HARDCOVER_BATCH_QUERY_SIZE = 20
+_ISBN_PREFETCH_CHUNK_SIZE = 100
 _CACHE_TTL_USER_LIBRARY = 10 * 60.0
 _USER_LIBRARY_PAGE_SIZE = 500
 
 
 class HardcoverAPIError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+        scope: str | None = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = str(code or "").strip() or None
+        self.scope = str(scope or "").strip() or None
 
 
-class AsyncRequestPacer:
+def _parse_rate_limit_entries(value: str | None) -> list[tuple[str, dict[str, float]]]:
+    entries: list[tuple[str, dict[str, float]]] = []
+    for raw_entry in str(value or "").split(","):
+        parts = [part.strip() for part in raw_entry.split(";") if part.strip()]
+        if not parts:
+            continue
+        name = parts[0].strip('"').strip()
+        params: dict[str, float] = {}
+        for part in parts[1:]:
+            key, separator, raw_number = part.partition("=")
+            if not separator:
+                continue
+            try:
+                params[key.strip().lower()] = float(raw_number.strip())
+            except (TypeError, ValueError):
+                continue
+        entries.append((name, params))
+    return entries
+
+
+def parse_hardcover_rate_limit_headers(headers: Any) -> dict[str, float] | None:
+    policy_entries = _parse_rate_limit_entries(headers.get("RateLimit-Policy"))
+    policy = next((params for _, params in policy_entries if params.get("burst", 0) > 0), None)
+    if not policy or policy.get("q", 0) <= 0 or policy.get("w", 0) <= 0:
+        return None
+
+    policy_name = next(
+        (name for name, params in policy_entries if params is policy),
+        "",
+    )
+    standing_entries = _parse_rate_limit_entries(headers.get("RateLimit"))
+    standing = next(
+        (params for name, params in standing_entries if name.lower() == policy_name.lower()),
+        None,
+    )
+    if standing is None:
+        standing = next((params for _, params in standing_entries if "r" in params), None)
+
+    parsed = {
+        "quota": policy["q"],
+        "window_seconds": policy["w"],
+        "burst": policy["burst"],
+    }
+    if standing and standing.get("r") is not None:
+        parsed["remaining"] = max(0.0, standing["r"])
+    return parsed
+
+
+class AsyncTokenBucket:
     def __init__(self, limit: int, period_seconds: float):
-        self.limit = max(1, int(limit))
+        self.configured_limit = max(1, int(limit))
         self.period_seconds = float(period_seconds)
-        self.min_interval_seconds = self.period_seconds / float(self.limit)
-        self.next_available_at = time.monotonic()
-        self.lock = asyncio.Lock()
+        self.refill_rate = float(self.configured_limit) / self.period_seconds
+        # Bootstrap conservatively until Hardcover advertises this token's burst.
+        self.capacity = 1.0
+        self.tokens = 1.0
+        self.updated_at = time.monotonic()
+        self.policy_loaded = False
+        self.condition = asyncio.Condition()
+
+    def _refill(self, now: float) -> None:
+        elapsed = max(0.0, now - self.updated_at)
+        self.updated_at = now
+        self.tokens = min(self.capacity, self.tokens + (elapsed * self.refill_rate))
 
     async def acquire(self) -> float:
-        async with self.lock:
-            now = time.monotonic()
-            wait_for = max(0.0, self.next_available_at - now)
-            scheduled_at = now + wait_for
-            self.next_available_at = scheduled_at + self.min_interval_seconds
-        if wait_for > 0:
-            await asyncio.sleep(wait_for)
-        return wait_for
+        started_at = time.monotonic()
+        async with self.condition:
+            while True:
+                self._refill(time.monotonic())
+                if self.tokens >= 1.0:
+                    self.tokens -= 1.0
+                    return max(0.0, time.monotonic() - started_at)
+
+                wait_for = (1.0 - self.tokens) / max(self.refill_rate, 1e-9)
+                try:
+                    await asyncio.wait_for(self.condition.wait(), timeout=wait_for)
+                except asyncio.TimeoutError:
+                    pass
+
+    async def update_policy(
+        self,
+        *,
+        quota: float,
+        window_seconds: float,
+        burst: float,
+        remaining: float | None = None,
+    ) -> None:
+        if quota <= 0 or window_seconds <= 0 or burst <= 0:
+            return
+        async with self.condition:
+            self._refill(time.monotonic())
+            first_policy = not self.policy_loaded
+            configured_rate = float(self.configured_limit) / self.period_seconds
+            advertised_rate = float(quota) / float(window_seconds)
+            self.refill_rate = min(configured_rate, advertised_rate)
+            self.capacity = max(1.0, float(burst))
+            if remaining is not None:
+                reported_remaining = min(self.capacity, max(0.0, float(remaining)))
+                self.tokens = reported_remaining if first_policy else min(self.tokens, reported_remaining)
+            else:
+                # Do not mint burst tokens when the server did not report its
+                # current standing; newly available capacity fills naturally.
+                self.tokens = min(self.tokens, self.capacity)
+            self.policy_loaded = True
+            self.condition.notify_all()
 
 
 class HardcoverRateController:
     def __init__(self, limit: int, period_seconds: float):
         self.limit = max(1, int(limit))
         self.period_seconds = float(period_seconds)
-        self.pacer = AsyncRequestPacer(self.limit, self.period_seconds)
+        self.bucket = AsyncTokenBucket(self.limit, self.period_seconds)
         self.cooldown_until = 0.0
         self.cooldown_lock = asyncio.Lock()
         self.request_history: collections.deque[float] = collections.deque()
@@ -79,13 +179,24 @@ class HardcoverRateController:
                 await asyncio.sleep(wait_for)
                 continue
 
-            waited_total += await self.pacer.acquire()
+            waited_total += await self.bucket.acquire()
 
             async with self.cooldown_lock:
                 wait_for = self.cooldown_until - time.monotonic()
             if wait_for <= 0:
                 await self._record_request()
                 return waited_total
+
+    async def update_from_headers(self, headers: Any) -> None:
+        policy = parse_hardcover_rate_limit_headers(headers)
+        if not policy:
+            return
+        await self.bucket.update_policy(
+            quota=policy["quota"],
+            window_seconds=policy["window_seconds"],
+            burst=policy["burst"],
+            remaining=policy.get("remaining"),
+        )
 
     async def note_rate_limited(self, attempt: int, retry_after: str | None = None) -> float:
         delay_seconds = self._retry_delay_seconds(attempt, retry_after)
@@ -175,6 +286,63 @@ def graphql_inflight_key(query: str, variables: dict[str, Any], cache_key: str |
     return f"query:{digest}"
 
 
+def _consume_future_exception(future: asyncio.Future[Any]) -> None:
+    if not future.cancelled():
+        future.exception()
+
+
+def _hardcover_error_code(value: Any) -> str | None:
+    candidate = str(value or "").strip()
+    if re.fullmatch(r"[a-z][a-z0-9_]+", candidate):
+        return candidate
+    return None
+
+
+def hardcover_api_error_from_response(response: Any) -> HardcoverAPIError:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    first_error: Any = None
+    errors = payload.get("errors")
+    if isinstance(errors, list) and errors:
+        first_error = errors[0]
+
+    code = str(payload.get("error") or "").strip()
+    detail = str(payload.get("error_description") or payload.get("message") or "").strip()
+    scope = str(payload.get("scope") or "").strip()
+    if isinstance(first_error, dict):
+        extensions = first_error.get("extensions") or {}
+        if not code:
+            code = str(first_error.get("code") or (extensions.get("code") if isinstance(extensions, dict) else "") or "").strip()
+        if not detail:
+            detail = str(first_error.get("message") or "").strip()
+        if not scope and isinstance(extensions, dict):
+            scope = str(extensions.get("scope") or "").strip()
+    elif first_error is not None and not detail:
+        detail = str(first_error).strip()
+    if not code:
+        code = _hardcover_error_code(detail) or ""
+
+    status_code = int(response.status_code)
+    parts = [f"http_{status_code}"]
+    if code:
+        parts.append(code)
+    if detail and detail.lower() != code.lower():
+        parts.append(detail)
+    if scope:
+        parts.append(f"required_scope={scope}")
+    return HardcoverAPIError(
+        ": ".join(parts),
+        status_code=status_code,
+        code=code or None,
+        scope=scope or None,
+    )
+
+
 class HardcoverClient:
     USER_BOOK_CORE_FIELDS = """
         id
@@ -200,6 +368,8 @@ class HardcoverClient:
         per_page
     """
 
+    # Hardcover's roadmap mentions a future maximum query depth of three.
+    # These nested projections will need splitting if that policy is activated.
     BOOK_FIELDS = """
       id
       title
@@ -248,6 +418,55 @@ class HardcoverClient:
     query HardcoverSearch($query: String!, $query_type: String!, $per_page: Int!, $page: Int!) {
       search(query: $query, query_type: $query_type, per_page: $per_page, page: $page) {
 """ + SEARCH_FIELDS + """
+      }
+    }
+    """
+
+    VIEWER_QUERY = """
+    query HardcoverViewer {
+      me {
+        id
+        username
+      }
+    }
+    """
+
+    EDITIONS_BY_ISBNS_QUERY = """
+    query EditionsByISBNs($isbn_10s: [String!]!, $isbn_13s: [String!]!) {
+      editions(where: {
+        _or: [
+          {isbn_10: {_in: $isbn_10s}}
+          {isbn_13: {_in: $isbn_13s}}
+        ]
+      }) {
+        id
+        title
+        isbn_10
+        isbn_13
+        release_date
+        book {
+""" + BOOK_FIELDS + """
+        }
+      }
+    }
+    """
+
+    EDITIONS_BY_ISBNS_QUERY_WITH_USER = """
+    query EditionsByISBNs($isbn_10s: [String!]!, $isbn_13s: [String!]!, $user_id: Int!) {
+      editions(where: {
+        _or: [
+          {isbn_10: {_in: $isbn_10s}}
+          {isbn_13: {_in: $isbn_13s}}
+        ]
+      }) {
+        id
+        title
+        isbn_10
+        isbn_13
+        release_date
+        book {
+""" + BOOK_FIELDS + USER_BOOK_FIELDS + """
+        }
       }
     }
     """
@@ -483,6 +702,10 @@ class HardcoverClient:
         self.timeout_seconds = timeout_seconds
         self.rate_limit_per_minute = max(1, int(rate_limit))
         self.user_id = self._extract_user_id(token)
+        self.viewer_username: str | None = None
+        self.identity_state = "resolved" if self.user_id else "unresolved"
+        self.identity_error: str | None = None
+        self._identity_lock = asyncio.Lock()
         self.rate_controller = get_hardcover_rate_controller(
             self.endpoint,
             self.authorization_header(),
@@ -534,6 +757,54 @@ class HardcoverClient:
             if normalized > 0:
                 return normalized
         return None
+
+    @property
+    def user_features_available(self) -> bool:
+        return self.identity_state == "resolved" and bool(self.user_id)
+
+    async def resolve_identity(self) -> int | None:
+        if self.identity_state != "unresolved":
+            return self.user_id
+
+        async with self._identity_lock:
+            if self.identity_state != "unresolved":
+                return self.user_id
+            try:
+                data = await self.graphql(self.VIEWER_QUERY, {}, cache_key="viewer")
+            except HardcoverAPIError as exc:
+                self.identity_error = str(exc)
+                if exc.status_code in {401, 403}:
+                    self.identity_state = "unavailable"
+                return None
+
+            me = data.get("me") if isinstance(data, dict) else None
+            if isinstance(me, list):
+                me = me[0] if me else None
+            try:
+                resolved_user_id = int((me or {}).get("id")) if isinstance(me, dict) else 0
+            except (TypeError, ValueError):
+                resolved_user_id = 0
+
+            if resolved_user_id > 0:
+                self.user_id = resolved_user_id
+                self.viewer_username = str(me.get("username") or "").strip() or None
+                self.identity_state = "resolved"
+                self.identity_error = None
+                return self.user_id
+
+            self.identity_state = "unavailable"
+            self.identity_error = "Hardcover responded without a usable viewer ID."
+            return None
+
+    async def require_user_identity(self) -> int:
+        user_id = await self.resolve_identity()
+        if user_id:
+            return user_id
+        detail = self.identity_error or "The token cannot read the signed-in Hardcover account."
+        raise HardcoverAPIError(
+            f"identity_unavailable: {detail}",
+            code="identity_unavailable",
+        )
 
     async def __aenter__(self):
         await self.open()
@@ -620,8 +891,7 @@ class HardcoverClient:
             self._set_user_book_map(current)
 
     async def user_book_map(self, *, force_refresh: bool = False) -> dict[int, dict[str, Any]]:
-        if not self.user_id:
-            return {}
+        await self.require_user_identity()
 
         if not force_refresh:
             cached = self._user_book_map_snapshot()
@@ -683,6 +953,7 @@ class HardcoverClient:
                     inflight_future = existing_future
                 else:
                     inflight_future = asyncio.get_running_loop().create_future()
+                    inflight_future.add_done_callback(_consume_future_exception)
                     self._inflight[inflight_key] = inflight_future
                     owns_inflight = True
             if not owns_inflight and inflight_future is not None:
@@ -711,6 +982,8 @@ class HardcoverClient:
                 except httpx.RequestError as exc:
                     raise HardcoverAPIError(f"request_error: {exc}") from exc
 
+                await self.rate_controller.update_from_headers(response.headers)
+
                 if response.status_code == 429 and attempt < retry_429:
                     retry_after = response.headers.get("Retry-After")
                     cooldown_seconds = await self.rate_controller.note_rate_limited(attempt, retry_after)
@@ -731,13 +1004,21 @@ class HardcoverClient:
                     continue
 
                 if response.status_code >= 400:
-                    raise HardcoverAPIError(f"http_{response.status_code}")
+                    raise hardcover_api_error_from_response(response)
 
-                payload = response.json()
+                try:
+                    payload = response.json()
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise HardcoverAPIError("invalid_json_response") from exc
+                if not isinstance(payload, dict):
+                    raise HardcoverAPIError("invalid_graphql_response")
                 if payload.get("errors"):
                     first = payload["errors"][0]
                     message = first.get("message") if isinstance(first, dict) else str(first)
-                    raise HardcoverAPIError(f"graphql_error: {message}")
+                    extensions = first.get("extensions") if isinstance(first, dict) else {}
+                    code = extensions.get("code") if isinstance(extensions, dict) else None
+                    code = code or _hardcover_error_code(message)
+                    raise HardcoverAPIError(f"graphql_error: {message}", code=code)
 
                 data = payload.get("data") or {}
                 if cache_key:
@@ -776,7 +1057,7 @@ class HardcoverClient:
         return normalize_search_results(search_data.get("results") or [])
 
     async def prefetch_searches(self, searches: list[tuple[str, str, int]]) -> None:
-        pending: list[tuple[str, str, int, str]] = []
+        pending: list[tuple[str, str, int]] = []
         seen: set[str] = set()
 
         for raw_query, raw_query_type, raw_per_page in searches:
@@ -792,47 +1073,22 @@ class HardcoverClient:
             if cache_key in self._cache or cache_key in seen:
                 continue
             seen.add(cache_key)
-            pending.append((normalized_query, normalized_type, normalized_per_page, cache_key))
+            pending.append((normalized_query, normalized_type, normalized_per_page))
 
-        for start in range(0, len(pending), HARDCOVER_BATCH_QUERY_SIZE):
-            chunk = pending[start:start + HARDCOVER_BATCH_QUERY_SIZE]
-            if not chunk:
-                continue
+        if not pending:
+            return
 
-            variable_defs: list[str] = []
-            selections: list[str] = []
-            variables: dict[str, Any] = {}
-
-            for index, (query, query_type, per_page, _) in enumerate(chunk):
-                alias = f"s{index}"
-                query_var = f"query_{index}"
-                type_var = f"type_{index}"
-                per_page_var = f"per_page_{index}"
-                variable_defs.extend([
-                    f"${query_var}: String!",
-                    f"${type_var}: String!",
-                    f"${per_page_var}: Int!",
-                ])
-                variables[query_var] = query
-                variables[type_var] = query_type
-                variables[per_page_var] = per_page
-                selections.append(
-                    f"""
-      {alias}: search(
-        query: ${query_var}
-        query_type: ${type_var}
-        per_page: ${per_page_var}
-        page: 1
-      ) {{
-{self.SEARCH_FIELDS}
-      }}""".rstrip()
-                )
-
-            query = f"query BatchHardcoverSearch({', '.join(variable_defs)}) {{\n" + "\n".join(selections) + "\n}"
-            data = await self.graphql(query, variables, cache_key=None)
-
-            for index, (_, _, _, cache_key) in enumerate(chunk):
-                self._cache[cache_key] = copy.deepcopy({"search": data.get(f"s{index}") or {}})
+        # Hardcover permits only one top-level `search` field per request. Run
+        # the first request alone so its response can bootstrap the token's
+        # advertised burst policy, then let the shared rate controller pace the
+        # remaining legal requests.
+        first_query, first_type, first_per_page = pending[0]
+        await self.search(first_query, first_type, first_per_page)
+        if len(pending) > 1:
+            await asyncio.gather(*(
+                self.search(query, query_type, per_page)
+                for query, query_type, per_page in pending[1:]
+            ))
 
     async def edition_by_isbn(self, isbn: str) -> dict[str, Any] | None:
         isbn = str(isbn or "").strip().upper()
@@ -855,6 +1111,16 @@ class HardcoverClient:
             return editions[0]
         return None
 
+    def cached_edition_by_isbn(self, isbn: str) -> tuple[bool, dict[str, Any] | None]:
+        normalized_isbn = str(isbn or "").strip().upper()
+        cache_key = f"edition:isbn:{normalized_isbn}"
+        if not normalized_isbn or cache_key not in self._cache:
+            return False, None
+        editions = (self._cache.get(cache_key) or {}).get("editions") or []
+        if isinstance(editions, list) and editions and isinstance(editions[0], dict):
+            return True, copy.deepcopy(editions[0])
+        return True, None
+
     async def prefetch_editions_by_isbns(self, isbns: list[str]) -> None:
         pending: list[tuple[str, str]] = []
         seen: set[str] = set()
@@ -869,44 +1135,35 @@ class HardcoverClient:
             seen.add(cache_key)
             pending.append((isbn, cache_key))
 
-        for start in range(0, len(pending), HARDCOVER_BATCH_QUERY_SIZE):
-            chunk = pending[start:start + HARDCOVER_BATCH_QUERY_SIZE]
+        for start in range(0, len(pending), _ISBN_PREFETCH_CHUNK_SIZE):
+            chunk = pending[start:start + _ISBN_PREFETCH_CHUNK_SIZE]
             if not chunk:
                 continue
 
-            variable_defs: list[str] = []
-            selections: list[str] = []
-            variables: dict[str, Any] = {}
+            requested = {isbn for isbn, _ in chunk}
+            variables: dict[str, Any] = {
+                "isbn_10s": [isbn for isbn in requested if len(isbn) == 10],
+                "isbn_13s": [isbn for isbn in requested if len(isbn) == 13],
+            }
             if self.user_id:
-                variable_defs.append("$user_id: Int!")
                 variables["user_id"] = self.user_id
-
-            for index, (isbn, _) in enumerate(chunk):
-                alias = f"e{index}"
-                isbn_var = f"isbn_{index}"
-                variable_defs.append(f"${isbn_var}: String!")
-                variables[isbn_var] = isbn
-                isbn_filter = "isbn_13" if len(isbn) == 13 else "isbn_10"
-                book_fields = self.BOOK_FIELDS + (self.USER_BOOK_FIELDS if self.user_id else "")
-                selections.append(
-                    f"""
-      {alias}: editions(where: {{{isbn_filter}: {{_eq: ${isbn_var}}}}}, limit: 1) {{
-        id
-        title
-        isbn_10
-        isbn_13
-        release_date
-        book {{
-{book_fields}
-        }}
-      }}""".rstrip()
-                )
-
-            query = f"query BatchEditionByISBN({', '.join(variable_defs)}) {{\n" + "\n".join(selections) + "\n}"
+            query = self.EDITIONS_BY_ISBNS_QUERY_WITH_USER if self.user_id else self.EDITIONS_BY_ISBNS_QUERY
             data = await self.graphql(query, variables, cache_key=None)
+            editions = data.get("editions") or []
 
-            for index, (_, cache_key) in enumerate(chunk):
-                self._cache[cache_key] = copy.deepcopy({"editions": data.get(f"e{index}") or []})
+            matches: dict[str, dict[str, Any]] = {}
+            if isinstance(editions, list):
+                for edition in editions:
+                    if not isinstance(edition, dict):
+                        continue
+                    for field in ("isbn_10", "isbn_13"):
+                        edition_isbn = str(edition.get(field) or "").strip().upper()
+                        if edition_isbn in requested and edition_isbn not in matches:
+                            matches[edition_isbn] = edition
+
+            for isbn, cache_key in chunk:
+                match = matches.get(isbn)
+                self._cache[cache_key] = copy.deepcopy({"editions": [match] if match else []})
 
     async def book_details(self, book_id: int, *, use_cache: bool = True) -> dict[str, Any] | None:
         try:
@@ -931,8 +1188,7 @@ class HardcoverClient:
         return None
 
     async def user_book_for_book(self, book_id: int) -> dict[str, Any] | None:
-        if not self.user_id:
-            return None
+        await self.require_user_identity()
         try:
             normalized_id = int(book_id)
         except (TypeError, ValueError):
@@ -968,8 +1224,7 @@ class HardcoverClient:
         return None
 
     async def user_books_for_books(self, book_ids: list[int]) -> dict[int, dict[str, Any]]:
-        if not self.user_id:
-            return {}
+        await self.require_user_identity()
 
         normalized_ids: list[int] = []
         seen_ids: set[int] = set()
@@ -1021,6 +1276,7 @@ class HardcoverClient:
         rating: float | int | None = None,
         user_date: str | None = None,
     ) -> dict[str, Any] | None:
+        await self.require_user_identity()
         try:
             normalized_user_book_id = int(user_book_id)
             normalized_status_id = int(status_id)
@@ -1055,6 +1311,7 @@ class HardcoverClient:
         return None
 
     async def delete_user_book(self, user_book_id: int) -> dict[str, Any] | None:
+        await self.require_user_identity()
         try:
             normalized_user_book_id = int(user_book_id)
         except (TypeError, ValueError):
@@ -1083,6 +1340,7 @@ class HardcoverClient:
         rating: float | int | None = None,
         user_date: str | None = None,
     ) -> dict[str, Any] | None:
+        await self.require_user_identity()
         try:
             normalized_book_id = int(book_id)
         except (TypeError, ValueError):

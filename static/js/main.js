@@ -558,12 +558,14 @@ function renderHardcoverStatusIcon(statusDef, extraClass = '') {
 function renderHardcoverStatusPicker(metadata, { torrentId = '', variant = 'compact' } = {}) {
     const userBook = normalizeHardcoverUserBook(metadata?.user_book);
     const userBookKnown = metadata?.user_book_known === true || metadata?.user_book_known === 'true' || !!userBook;
+    const userActionsAvailable = metadata?.user_actions_available !== false
+        && metadata?.user_actions_available !== 'false';
     const objectType = String(metadata?.object_type || '').trim().toLowerCase();
     const bookId = Number(metadata?.book_id);
     const currentStatusId = Number(userBook?.status_id || 0);
     const statusDef = hardcoverStatusDefinition(currentStatusId) || HARDCOVER_STATUS_PLACEHOLDER;
     const isPending = hardcoverPendingStatusBookIds.has(bookId);
-    if (objectType !== 'book' || !Number.isFinite(bookId) || bookId <= 0) return '';
+    if (!userActionsAvailable || objectType !== 'book' || !Number.isFinite(bookId) || bookId <= 0) return '';
 
     const safeTorrentId = String(torrentId || '').trim();
     const safeTitle = String(metadata?.title || 'this book').trim() || 'this book';
@@ -626,6 +628,23 @@ function getResultItemHardcoverData(resultItem) {
     } catch (_) {
         return null;
     }
+}
+
+/**
+ * Publication year for the {Year} path token, taken from the torrent's Hardcover
+ * book match. Series/author matches don't describe this book, so they're ignored.
+ */
+function getHardcoverReleaseYearForTorrent(torrentId, resultItem = null) {
+    let item = resultItem;
+    if (!item && torrentId) {
+        const escapedId = window.CSS && CSS.escape ? CSS.escape(String(torrentId)) : String(torrentId).replace(/["\\]/g, '\\$&');
+        item = document.querySelector(`.result-item[data-torrent-id="${escapedId}"]`);
+    }
+    const metadata = getResultItemHardcoverData(item)?.hardcover_enrichment?.hardcover;
+    if (!metadata) return '';
+    const objectType = String(metadata.object_type || '').trim().toLowerCase();
+    if (objectType && objectType !== 'book') return '';
+    return normalizeReleaseYear(metadata.release_year || metadata.release_date);
 }
 
 function updateHardcoverUserBookStateForResultItem(resultItem, userBook, { userBookKnown = true } = {}) {
@@ -1839,7 +1858,9 @@ function localizeDates(scope = document) {
 
 function sanitizeFilename(name) {
     if (!name) return "Unknown";
-    return name.replace(/[<>:"/\\|?*]/g, '').trim();
+    // Strip leading/trailing dots and spaces like sanitize_filename() in app.py:
+    // Windows (and SMB shares) cannot hold a folder name ending in ".".
+    return name.replace(/[<>:"/\\|?*]/g, '').trim().replace(/^[. ]+|[. ]+$/g, '');
 }
 
 const DEFAULT_REL_PATH_TEMPLATE = "{Author}/{Title}";
@@ -1891,22 +1912,160 @@ function formatFileTypeToken(filetype) {
         .join(' ');
 }
 
+/** Return a plausible four-digit year from a year/date value, or "". Mirrors normalize_release_year() in app.py. */
+function normalizeReleaseYear(value) {
+    const match = String(value ?? '').match(/^\s*(\d{4})/);
+    if (!match) return '';
+    const year = Number(match[1]);
+    return year >= 1000 && year <= 2999 ? String(year) : '';
+}
+
+// Words that end a name rather than start a surname ("Kurt Vonnegut Jr.").
+const NAME_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'phd', 'md']);
+// Surname particles kept with the last name ("Ursula K. Le Guin" -> "Le Guin").
+const NAME_PARTICLES = new Set(['van', 'von', 'de', 'der', 'den', 'del', 'della', 'des', 'di', 'da', 'du', 'la', 'le', 'ter', 'ten', 'dos', 'das', 'st', 'st.']);
+
+function nameKey(word) {
+    return word.toLowerCase().replace(/[.,]+$/, '');
+}
+
+/**
+ * Split a joined author string ("Frank Herbert, Kevin J. Anderson") into names.
+ * Authors are stored joined with ", ", so a bare suffix after a comma
+ * ("Kurt Vonnegut, Jr.") is reattached to the name before it.
+ * Mirrors split_author_names() in app.py.
+ */
+function splitAuthorNames(author) {
+    const names = [];
+    for (const rawPart of String(author || '').split(/\s*(?:,|;|\s&\s)\s*/)) {
+        const part = rawPart.split(/\s+/).filter(Boolean).join(' ');
+        if (!part) continue;
+        if (names.length && NAME_SUFFIXES.has(nameKey(part))) {
+            names[names.length - 1] += ` ${part}`;
+        } else {
+            names.push(part);
+        }
+    }
+    return names;
+}
+
+/**
+ * Turn "First Last" into "Last, First", keeping particles with the surname and
+ * suffixes at the end: "Kurt Vonnegut Jr." -> "Vonnegut, Kurt, Jr.".
+ * Single-word names are returned unchanged. Mirrors invert_author_name() in app.py.
+ */
+function invertAuthorName(name) {
+    const words = String(name || '').split(/\s+/).map(word => word.replace(/^,+|,+$/g, '')).filter(Boolean);
+    const suffixes = [];
+    while (words.length > 1 && NAME_SUFFIXES.has(nameKey(words[words.length - 1]))) {
+        suffixes.unshift(words.pop());
+    }
+    if (words.length < 2) return [...words, ...suffixes].join(' ');
+
+    let surnameStart = words.length - 1;
+    while (surnameStart > 1 && NAME_PARTICLES.has(nameKey(words[surnameStart - 1]))) {
+        surnameStart -= 1;
+    }
+
+    const given = words.slice(0, surnameStart).join(' ');
+    const inverted = `${words.slice(surnameStart).join(' ')}, ${given}`;
+    return [inverted, ...suffixes].join(', ');
+}
+
+/**
+ * Raw (unsanitized) values for the author tokens of a joined author string,
+ * keyed like buildRelativePathFromTemplate() values. Mirrors author_token_values() in app.py.
+ */
+function authorTokenValues(author) {
+    const names = splitAuthorNames(author);
+    return {
+        author: String(author || '').trim(),
+        authorLastFirst: names.map(invertAuthorName).join(' & '),
+        firstAuthor: names[0] || '',
+        firstAuthorLastFirst: names.length ? invertAuthorName(names[0]) : ''
+    };
+}
+
+// Longest names first so "SeriesNumber" is never read as "Series" + "Number".
+const REL_PATH_TOKEN_NAME_RE = /(^|[^A-Za-z])(FirstAuthorLastFirst|AuthorLastFirst|SeriesNumber|FirstAuthor|Category|Author|Narrator|Series|Format|Genre|Title|Year)(?![A-Za-z])/;
+
+/**
+ * Find every brace group in a template. A group is either a bare token ("{Series}")
+ * or optional text wrapped around a token name ("{ - Series}", "{ (Year)}").
+ * Groups with no known token name come back with token = null.
+ */
+function parseRelPathTemplateGroups(template) {
+    const groups = [];
+    const groupRe = /\{([^{}]*)\}/g;
+    let match;
+    while ((match = groupRe.exec(template)) !== null) {
+        const content = match[1];
+        const nameMatch = REL_PATH_TOKEN_NAME_RE.exec(content);
+        const group = { start: match.index, end: match.index + match[0].length, raw: match[0], token: null };
+        if (nameMatch) {
+            const nameStart = nameMatch.index + nameMatch[1].length;
+            const name = nameMatch[2];
+            group.token = `{${name}}`;
+            group.prefix = content.slice(0, nameStart);
+            group.suffix = content.slice(nameStart + name.length);
+            if (name === 'SeriesNumber') {
+                const padding = /^:0(10|[1-9])(?![0-9])/.exec(group.suffix);
+                if (padding) {
+                    group.paddingWidth = Number(padding[1]);
+                    group.suffix = group.suffix.slice(padding[0].length);
+                }
+            }
+        }
+        groups.push(group);
+    }
+    return groups;
+}
+
 function buildRelativePathFromTemplate(template, values) {
-    let output = normalizeRelPathTemplate(template);
+    const text = normalizeRelPathTemplate(template);
     const replacements = {
         '{Author}': values.author || '',
+        '{AuthorLastFirst}': values.authorLastFirst || '',
+        '{FirstAuthor}': values.firstAuthor || '',
+        '{FirstAuthorLastFirst}': values.firstAuthorLastFirst || '',
+        '{Narrator}': values.narrator || '',
         '{Series}': values.series || '',
         '{SeriesNumber}': values.seriesNumber || '',
         '{Title}': values.title || '',
         '{Genre}': values.genre || '',
         '{Format}': values.format || '',
-        '{Category}': values.category || ''
+        '{Category}': values.category || '',
+        '{Year}': values.year || ''
     };
-    for (const [token, value] of Object.entries(replacements)) {
-        output = output.split(token).join(value);
+
+    let output = '';
+    let cursor = 0;
+    for (const group of parseRelPathTemplateGroups(text)) {
+        output += text.slice(cursor, group.start);
+        cursor = group.end;
+        if (!group.token || !(group.token in replacements)) {
+            output += group.raw;
+            continue;
+        }
+        let value = String(replacements[group.token] || '');
+        if (group.paddingWidth && /^[0-9]+(?:\.[0-9]+)?$/.test(value)) {
+            const [integer, fraction] = value.split('.');
+            value = integer.padStart(group.paddingWidth, '0') + (fraction === undefined ? '' : `.${fraction}`);
+        }
+        if (value) output += `${group.prefix}${value}${group.suffix}`;
     }
-    output = output.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
-    return output;
+    output += text.slice(cursor);
+
+    return output
+        .split('/')
+        .map(segment => segment.trim())
+        .filter(Boolean)
+        .join('/');
+}
+
+/** True when the template uses a token, either bare or inside an optional group. */
+function templateHasToken(template, token) {
+    return parseRelPathTemplateGroups(normalizeRelPathTemplate(template)).some(group => group.token === token);
 }
 
 function getRelPathTemplateValue() {
@@ -1919,12 +2078,17 @@ function getRelPathTemplateValue() {
  */
 const REL_PATH_TOKENS = [
     { token: '{Author}', key: 'author', label: 'Author' },
+    { token: '{AuthorLastFirst}', key: 'authorLastFirst', label: 'Author (Last, First)' },
+    { token: '{FirstAuthor}', key: 'firstAuthor', label: 'First Author' },
+    { token: '{FirstAuthorLastFirst}', key: 'firstAuthorLastFirst', label: 'First Author (Last, First)' },
+    { token: '{Narrator}', key: 'narrator', label: 'Narrator' },
     { token: '{Series}', key: 'series', label: 'Series' },
     { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series Number' },
     { token: '{Title}', key: 'title', label: 'Title' },
     { token: '{Category}', key: 'category', label: 'Category' },
     { token: '{Genre}', key: 'genre', label: 'Genre' },
-    { token: '{Format}', key: 'format', label: 'Format' }
+    { token: '{Format}', key: 'format', label: 'Format' },
+    { token: '{Year}', key: 'year', label: 'Year' }
 ];
 
 /** The tokens the editor renders as pills; anything else in braces stays plain text. */
@@ -2536,11 +2700,21 @@ function normalizeSeriesNumber(seriesNumber) {
     if (!numberText) return '';
 
     const parsed = Number(numberText);
+    if (Number.isFinite(parsed) && parsed < 0) return '';
     if (!Number.isNaN(parsed) && Number.isFinite(parsed) && parsed >= 0) {
         return Number.isInteger(parsed) ? String(parsed) : String(parsed).replace(/\.?0+$/, '');
     }
 
     return numberText;
+}
+
+// Decode entity references only, never interpret metadata as HTML markup.
+function decodeMamSeriesName(value) {
+    const decoder = document.createElement('textarea');
+    return String(value || '').replace(/&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]+);/gi, entity => {
+        decoder.innerHTML = entity;
+        return decoder.value;
+    });
 }
 
 function getPrimarySeriesInfo(seriesInfo) {
@@ -2550,7 +2724,7 @@ function getPrimarySeriesInfo(seriesInfo) {
         const values = Object.values(data);
         if (values.length > 0 && Array.isArray(values[0])) {
             const [seriesName, seriesNumber] = values[0];
-            const name = String(seriesName || '').trim();
+            const name = decodeMamSeriesName(seriesName).trim();
             if (!name) return null;
             return {
                 name,
@@ -3467,60 +3641,71 @@ function updateMamProxyStatusPanel(proxyStatus) {
 }
 
 async function fetchPublicIP() {
-    Promise.allSettled([
-        fetch(`${APP_BASE}/system/public_ip?route=direct`).then(r => r.json()),
-        fetch(`${APP_BASE}/system/public_ip?route=mam`).then(r => r.json()),
-    ])
-        .then(([directResult, proxyResult]) => {
-            const directData = directResult.status === 'fulfilled' ? directResult.value : null;
-            const proxyData = proxyResult.status === 'fulfilled' ? proxyResult.value : null;
+    const fetchIpRoute = async (route) => {
+        try {
+            const response = await fetch(`${APP_BASE}/system/public_ip?route=${route}`);
+            return await response.json();
+        } catch (err) {
+            console.error(`[Network] ${route} IP request failed:`, err);
+            return null;
+        }
+    };
 
-            if (directData?.ip) {
-                window.mousesearchPublicIp = directData.ip;
-                document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = directData.ip);
-                document.querySelectorAll('.backend-ip-display-badge').forEach(el => el.style.display = 'inline-block');
-                document.querySelectorAll('.copy-ip-btn').forEach(btn => {
-                    if (navigator.clipboard) {
-                        btn.onclick = () => {
-                            copyTextWithFeedback(btn, directData.ip);
-                        };
-                    } else {
-                        btn.style.display = 'none';
-                    }
-                });
-            } else {
-                window.mousesearchPublicIp = '';
-                document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
-            }
+    try {
+        const directData = await fetchIpRoute('direct');
 
-            if (proxyData?.ip && String(proxyData?.route || '') === 'mam') {
-                window.mousesearchProxyIp = proxyData.ip;
-            } else {
-                window.mousesearchProxyIp = '';
-            }
+        // The direct response carries the authoritative proxy_status, so use it to decide
+        // whether the MAM route is worth probing. With the proxy disabled that probe can
+        // only fail (force_proxy with no proxy URL) and the Proxy IP row stays hidden.
+        const proxyEnabled = directData?.proxy_status?.enabled === true;
+        const proxyData = proxyEnabled ? await fetchIpRoute('mam') : null;
 
-            if (proxyData?.error) {
-                const resolverErrors = Array.isArray(proxyData.resolver_errors) ? proxyData.resolver_errors : [];
-                console.error('[Network] Proxy IP lookup failed:', proxyData.error, resolverErrors);
-            }
-
-            if (directData?.error) {
-                const resolverErrors = Array.isArray(directData.resolver_errors) ? directData.resolver_errors : [];
-                console.error('[Network] Direct IP lookup failed:', directData.error, resolverErrors);
-            }
-
-            if (proxyData?.proxy_status) {
-                updateMamProxyStatusPanel(proxyData.proxy_status);
-            }
-            updateNetworkSection();
-        })
-        .catch(err => {
-            console.error("Failed to fetch IP", err);
-            document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
+        if (directData?.ip) {
+            window.mousesearchPublicIp = directData.ip;
+            document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = directData.ip);
+            document.querySelectorAll('.backend-ip-display-badge').forEach(el => el.style.display = 'inline-block');
+            document.querySelectorAll('.copy-ip-btn').forEach(btn => {
+                if (navigator.clipboard) {
+                    btn.onclick = () => {
+                        copyTextWithFeedback(btn, directData.ip);
+                    };
+                } else {
+                    btn.style.display = 'none';
+                }
+            });
+        } else {
             window.mousesearchPublicIp = '';
+            document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
+        }
+
+        if (proxyData?.ip && String(proxyData?.route || '') === 'mam') {
+            window.mousesearchProxyIp = proxyData.ip;
+        } else {
             window.mousesearchProxyIp = '';
-            updateNetworkSection();
-        });
+        }
+
+        if (proxyData?.error) {
+            const resolverErrors = Array.isArray(proxyData.resolver_errors) ? proxyData.resolver_errors : [];
+            console.error('[Network] Proxy IP lookup failed:', proxyData.error, resolverErrors);
+        }
+
+        if (directData?.error) {
+            const resolverErrors = Array.isArray(directData.resolver_errors) ? directData.resolver_errors : [];
+            console.error('[Network] Direct IP lookup failed:', directData.error, resolverErrors);
+        }
+
+        const proxyStatus = proxyData?.proxy_status || directData?.proxy_status;
+        if (proxyStatus) {
+            updateMamProxyStatusPanel(proxyStatus);
+        }
+        updateNetworkSection();
+    } catch (err) {
+        console.error("Failed to fetch IP", err);
+        document.querySelectorAll('.backend-ip-display').forEach(el => el.textContent = "Unavailable");
+        window.mousesearchPublicIp = '';
+        window.mousesearchProxyIp = '';
+        updateNetworkSection();
+    }
 }
 
 // ============================================================
@@ -4158,13 +4343,15 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     if (relTemplateInput && previewOutput) {
         const previewData = {
-            author: 'J.K. Rowling',
+            ...authorTokenValues('J.K. Rowling'),
+            narrator: 'Stephen Fry',
             series: 'Harry Potter',
             seriesNumber: '1',
             title: "Harry Potter and the Sorcerer's Stone",
             genre: 'Fantasy',
             format: 'M4B',
-            category: 'Audiobooks'
+            category: 'Audiobooks',
+            year: '1997'
         };
 
         // Built the same way the real path is, so stray separators preview honestly.
@@ -4292,6 +4479,41 @@ document.addEventListener("DOMContentLoaded", async function () {
                 }
             })
             .catch(() => showToast("Error saving settings.", 'danger'));
+    });
+
+    document.getElementById('kindle-test-btn')?.addEventListener('click', async function () {
+        const button = this;
+        const status = {
+            alertId: 'settings-kindle-status',
+            iconId: 'settings-kindle-status-icon',
+            messageId: 'settings-kindle-status-message',
+        };
+        const payload = {};
+        ['KINDLE_EMAIL', 'KINDLE_FROM_EMAIL', 'KINDLE_SMTP_HOST', 'KINDLE_SMTP_PORT',
+            'KINDLE_SMTP_SECURITY', 'KINDLE_SMTP_USERNAME', 'KINDLE_SMTP_PASSWORD'].forEach(key => {
+            const el = document.getElementById(key);
+            if (el) payload[key] = el.value;
+        });
+        button.disabled = true;
+        setInlineConnectionStatus({ ...status, state: 'idle', message: 'Testing SMTP connection...' });
+        try {
+            const response = await fetch(`${APP_BASE}/api/settings/test-kindle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            const ok = response.ok && data.status === 'success';
+            setInlineConnectionStatus({
+                ...status,
+                state: ok ? 'success' : 'error',
+                message: data.message || `Test failed (HTTP ${response.status}).`,
+            });
+        } catch (error) {
+            setInlineConnectionStatus({ ...status, state: 'error', message: error?.message || 'Test failed.' });
+        } finally {
+            button.disabled = false;
+        }
     });
 
     document.getElementById('organize-now-button')?.addEventListener('click', async function () {
@@ -5323,8 +5545,18 @@ document.addEventListener("DOMContentLoaded", async function () {
     ];
 
     const DEFAULT_RESULTS_SORT = 'quality_desc';
+    // Other modes have no MAM equivalent and are sorted client-side only.
+    const MAM_SORTED_RESULT_MODES = new Set(window.mamSortedResultModes || []);
     let currentResultsSort = DEFAULT_RESULTS_SORT;
+    let lastSearchMamSort = null;
+    let latestSearchQuery = null;
+    let requestedMamSort = null;
+    let searchAbortController = null;
     const resultJsonCache = new WeakMap();
+
+    function mamSortFor(sortMode) {
+        return MAM_SORTED_RESULT_MODES.has(sortMode) ? sortMode : 'default';
+    }
 
     function updateSortMenuUI() {
         if (resultsSortCurrent) {
@@ -6125,8 +6357,18 @@ document.addEventListener("DOMContentLoaded", async function () {
             option.addEventListener('click', () => {
                 currentResultsSort = option.dataset.sortMode || DEFAULT_RESULTS_SORT;
                 updateSortMenuUI();
-                applyCurrentResultsSort(resultsContainer);
-                applyHideDownloadedResultsFilter();
+                const queryToSort = latestSearchQuery ?? lastPerformedQuery;
+                const upstreamSort = searchAbortController ? requestedMamSort : lastSearchMamSort;
+                if (queryToSort !== null && mamSortFor(currentResultsSort) !== upstreamSort) {
+                    // MAM only returns the first page in its own order, so a new sort needs a new search.
+                    performSearch(queryToSort, false, {
+                        showResultsHeaderLoading: true,
+                        skipPostSearchScroll: true
+                    });
+                } else {
+                    applyCurrentResultsSort(resultsContainer);
+                    applyHideDownloadedResultsFilter();
+                }
                 fetch(`${APP_BASE}/update_results_sort_mode`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -7193,15 +7435,44 @@ document.addEventListener("DOMContentLoaded", async function () {
         return { isFreeleech: false, reason: null };
     }
 
+    // Mirrors parse_size_to_gb in app.py (MB and MiB both binary) so the threshold
+    // check matches the server. Returns null when the size can't be parsed.
+    function parseSizeToMiB(sizeValue) {
+        const text = String(sizeValue ?? '').trim().replace(/,/g, '');
+        const match = text.match(/^([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*([KMGT]?i?B)?$/i);
+        if (!match) return null;
+        const value = Number.parseFloat(match[1]);
+        if (!Number.isFinite(value)) return null;
+        const unit = (match[2] || 'GB').toUpperCase().replace('I', '');
+        const factors = { TB: 1024 * 1024, GB: 1024, MB: 1, KB: 1 / 1024, B: 1 / (1024 * 1024) };
+        return value * (factors[unit] ?? 1024);
+    }
+
+    // Whether the server will spend a wedge on its own for this download
+    // (AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD). Reads saved settings, not unsaved edits.
+    function getAutoWedgeState(data) {
+        const saved = settingsSnapshot || {};
+        if (!saved.AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD || !data?.id) return { applies: false, belowMinimum: false };
+        if (computeTorrentFreeleechState(data).isFreeleech) return { applies: false, belowMinimum: false };
+
+        if (saved.AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_ENABLED) {
+            const minMb = Number.parseFloat(saved.AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_MB) || 0;
+            const sizeMib = parseSizeToMiB(data.size);
+            if (sizeMib === null || sizeMib <= minMb) return { applies: false, belowMinimum: true, minMb };
+        }
+        return { applies: true, belowMinimum: false };
+    }
+
     function updateConfirmModalFreeleechUI() {
         if (!confirmModalEl) return;
 
         const state = computeTorrentFreeleechState(pendingDownloadData);
+        const autoWedge = getAutoWedgeState(pendingDownloadData);
         const downloadBtn = document.getElementById('confirm-download-btn');
 
         // 1. Handle Start Download Button Tooltip
         if (downloadBtn) {
-            if (state.isFreeleech) {
+            if (state.isFreeleech || autoWedge.applies) {
                 // Set the tooltip text and refresh
                 downloadBtn.setAttribute('title', 'This download will be Freeleech');
                 // We ensure the data-bs-toggle is present
@@ -7251,8 +7522,21 @@ document.addEventListener("DOMContentLoaded", async function () {
                 disabledReason = 'Checking torrent status…';
             }
 
+            // Auto-Use will spend a wedge anyway: show the button as filled/on (left
+            // enabled so it isn't faded; the click handler ignores it).
+            const autoActive = !disabledReason && autoWedge.applies;
+            personalFlBtn.classList.toggle('btn-warning', autoActive);
+            personalFlBtn.classList.toggle('btn-outline-warning', !autoActive);
+            personalFlBtn.dataset.autoWedge = autoActive ? '1' : '';
+            personalFlBtn.setAttribute('aria-pressed', autoActive ? 'true' : 'false');
+
             personalFlBtn.disabled = !!disabledReason;
-            const tooltip = disabledReason || 'Use one Freeleech Wedge when this download starts';
+            let tooltip = disabledReason || 'Use one Freeleech Wedge when this download starts';
+            if (autoActive) {
+                tooltip = 'A Freeleech Wedge will be used automatically (Auto-Use is on)';
+            } else if (!disabledReason && autoWedge.belowMinimum) {
+                tooltip = `Below the Auto-Use minimum (${autoWedge.minMb} MB) — click to use a Freeleech Wedge anyway`;
+            }
             tooltipTarget.setAttribute('title', tooltip);
             tooltipTarget.setAttribute('data-bs-original-title', tooltip);
             tooltipTarget.setAttribute('data-bs-toggle', 'tooltip');
@@ -7262,6 +7546,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     personalFlBtn?.addEventListener('click', function () {
         if (!pendingDownloadData?.id) return;
+        if (personalFlBtn.dataset.autoWedge === '1') return;
 
         reopenDownloadModalAfterWedge = true;
         if (confirmModalEl?.classList.contains('show')) {
@@ -7278,12 +7563,20 @@ document.addEventListener("DOMContentLoaded", async function () {
         confirmInput.addEventListener('input', updateConfirmPathPreview);
     }
 
+    let latestSearchRequestId = 0;
+
     function performSearch(queryString, isHistoryNavigation = false, options = {}) {
         const {
             preScrollToResults = false,
             showResultsHeaderLoading = false,
             skipPostSearchScroll = false
         } = options;
+        const searchRequestId = ++latestSearchRequestId;
+        latestSearchQuery = queryString;
+        requestedMamSort = mamSortFor(currentResultsSort);
+        searchAbortController?.abort();
+        const controller = new AbortController();
+        searchAbortController = controller;
 
         activeSearchRequests += 1;
         refreshAppLogoState();
@@ -7298,20 +7591,38 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
         hashToElementMap.clear();
         stopHardcoverEnrichmentPolling();
-        const searchUrl = queryString ? `${APP_BASE}/mam/search?${queryString}` : `${APP_BASE}/mam/search`;
+        const searchParams = new URLSearchParams(queryString || '');
+        searchParams.set('sort_mode', currentResultsSort);
+        const searchUrl = `${APP_BASE}/mam/search?${searchParams.toString()}`;
+        const searchMamSort = mamSortFor(currentResultsSort);
 
         if (preScrollToResults && wrapper) {
             wrapper.style.display = 'block';
             scrollToResultsWrapper();
         }
 
-        return fetch(searchUrl)
+        return fetch(searchUrl, { signal: controller.signal })
             .then(response => response.text())
             .then(html => {
+                if (searchRequestId !== latestSearchRequestId) return;
                 wrapper.style.display = 'block';
+                // Keep download category choices for surviving rows when only sorting.
+                const categoriesById = new Map();
+                if (lastPerformedQuery === queryString) {
+                    resultsContainer.querySelectorAll('select.category-dropdown').forEach(select => {
+                        categoriesById.set(select.id, select.value);
+                    });
+                }
                 resultsContainer.innerHTML = html;
+                resultsContainer.querySelectorAll('select.category-dropdown').forEach(select => {
+                    const value = categoriesById.get(select.id);
+                    if (value !== undefined && [...select.options].some(option => option.value === value)) {
+                        select.value = value;
+                    }
+                });
                 applyCurrentResultsSort(resultsContainer);
                 lastPerformedQuery = queryString;
+                lastSearchMamSort = searchMamSort;
                 localizeDates(resultsContainer);
                 applyResultDisplayFields(window.resultDisplayFields || getSelectedResultFields(), resultsContainer);
 
@@ -7339,6 +7650,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 startHardcoverEnrichmentLoading(resultsContainer);
             })
             .catch(error => {
+                if (searchRequestId !== latestSearchRequestId) return;
                 const errorText = error?.message ? `Search failed: ${error.message}` : 'Search failed.';
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = `<div class="alert alert-danger">${errorText}</div>`;
@@ -7346,6 +7658,8 @@ document.addEventListener("DOMContentLoaded", async function () {
             .finally(() => {
                 activeSearchRequests = Math.max(0, activeSearchRequests - 1);
                 refreshAppLogoState();
+                if (searchRequestId !== latestSearchRequestId) return;
+                searchAbortController = null;
                 searchButton.disabled = false;
                 searchButton.innerHTML = SEARCH_BUTTON_DEFAULT_HTML;
             });
@@ -7730,6 +8044,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             category: resultItem ? (resultItem.querySelector('.category-dropdown')?.value || '') : (document.getElementById('detail-cat-select')?.value || ''),
             id: button.dataset.id,
             author: button.dataset.author || "Unknown",
+            narrator: button.dataset.narrator || "",
             title: button.dataset.title || "Unknown",
             size: button.dataset.size || '0 GiB',
             main_cat: button.dataset.mainCat || '',
@@ -7738,6 +8053,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             // server so it can render the template itself on the schedule-only path.
             catname: button.dataset.catname || '',
             filetype: button.dataset.filetype || '',
+            year: getHardcoverReleaseYearForTorrent(button.dataset.id, resultItem),
 
             // Freeleech flags (used by confirm modal UI)
             free: button.dataset.free ?? 0,
@@ -7769,7 +8085,10 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             if (autoOrganizeEnabled) {
                 // --- Auto-Organize Logic (Populate Confirm Modal) ---
-                const cleanAuthor = sanitizeFilename(downloadData.author);
+                const authorValues = Object.fromEntries(
+                    Object.entries(authorTokenValues(downloadData.author))
+                        .map(([key, value]) => [key, value ? sanitizeFilename(value) : ''])
+                );
                 const cleanTitle = sanitizeFilename(downloadData.title);
                 const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
                 const cleanSeriesNumber = seriesNumber ? sanitizeFilename(seriesNumber) : "";
@@ -7784,13 +8103,15 @@ document.addEventListener("DOMContentLoaded", async function () {
                 // Seed the tag builder with this torrent's values, then apply the
                 // configured template. Editing either field from here is up to the user.
                 confirmTokenValues = {
-                    author: cleanAuthor,
+                    ...authorValues,
+                    narrator: downloadData.narrator ? sanitizeFilename(downloadData.narrator) : "",
                     series: cleanSeries,
                     seriesNumber: cleanSeriesNumber,
                     title: cleanTitle,
                     genre: cleanGenre,
                     format: cleanFormat,
-                    category: cleanCategory
+                    category: cleanCategory,
+                    year: downloadData.year
                 };
                 // Category override template beats the global default.
                 confirmDefaultTemplate = normalizeRelPathTemplate(
@@ -8051,6 +8372,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         dlBtn.dataset.torrentUrl = data.download_link;
         dlBtn.dataset.id = data.id;
         dlBtn.dataset.author = authors;
+        dlBtn.dataset.narrator = parseMamJson(data.narrator_info) || "";
         dlBtn.dataset.title = data.title;
         dlBtn.dataset.size = data.size;
         dlBtn.dataset.mainCat = data.main_cat;
@@ -8077,6 +8399,18 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         document.getElementById('detail-torrent-link').href = data.download_link;
+
+        const kindleBtn = document.getElementById('detail-kindle-btn');
+        if (kindleBtn) {
+            const kindleEnabled = document.getElementById('KINDLE_ENABLED')?.checked;
+            const isEbook = String(data.main_cat || '') === '14';
+            kindleBtn.classList.toggle('d-none', !(kindleEnabled && isEbook));
+            kindleBtn.disabled = false;
+            kindleBtn.dataset.id = String(data.id || '');
+            kindleBtn.dataset.title = data.title || '';
+            kindleBtn.dataset.author = authors || '';
+            kindleBtn.dataset.mainCat = String(data.main_cat || '');
+        }
 
         // ============================================================
         // NEW: SYNC PROGRESS BAR ON OPEN
@@ -8111,6 +8445,36 @@ document.addEventListener("DOMContentLoaded", async function () {
         renderBookDetailsHardcover(data.hardcover_enrichment);
         scheduleBookDetailsColumnBalance();
     }
+
+    document.getElementById('detail-kindle-btn')?.addEventListener('click', async function () {
+        const button = this;
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Sending...';
+        try {
+            const mid = button.dataset.id;
+            const hash = torrentHashMap[mid] || '';
+            const response = await fetch(`${APP_BASE}/kindle/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    hash,
+                    mid,
+                    title: button.dataset.title,
+                    author: button.dataset.author,
+                    main_cat: button.dataset.mainCat,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            const ok = response.ok && data.status === 'success';
+            showToast(data.message || (ok ? 'SMTP server accepted the email; Kindle delivery is not confirmed.' : `Send to Kindle failed (HTTP ${response.status}).`), ok ? 'success' : 'danger');
+        } catch (error) {
+            showToast(error?.message || 'Send to Kindle failed.', 'danger');
+        } finally {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        }
+    });
 
     // Confirm Download Modal Action
     document.getElementById('confirm-download-btn')?.addEventListener('click', function () {

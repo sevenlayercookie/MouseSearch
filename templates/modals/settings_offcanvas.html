@@ -37,6 +37,18 @@
               Hardcover
             </button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="watches-tab" data-bs-toggle="tab" data-bs-target="#watches-pane"
+              type="button" role="tab" aria-controls="watches-pane" aria-selected="false">
+              <i class="bi bi-binoculars me-1"></i>Watches
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="kindle-tab" data-bs-toggle="tab" data-bs-target="#kindle-pane"
+              type="button" role="tab" aria-controls="kindle-pane" aria-selected="false">
+              <i class="bi bi-tablet me-1"></i>Kindle
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -69,6 +81,7 @@
               <div class="form-text small mb-3 d-none" id="rtorrent-url-hint">
                 rTorrent needs an <strong>XML-RPC endpoint</strong>, not the ruTorrent WebUI URL.
                 Self-hosted behind Nginx/Apache: <code>http://&lt;host&gt;/RPC2</code>.
+                Local rTorrent SCGI socket: <code>scgi+unix:///path/to/rpc.sock</code>.
                 Shared seedbox running ruTorrent:
                 <code>https://&lt;seedbox&gt;/rutorrent/plugins/httprpc/action.php</code>.
                 Some providers also require Digest auth (<code>RTORRENT_DIGEST_AUTH=true</code>).
@@ -535,10 +548,204 @@
                     value="{{ HARDCOVER_API_TOKEN }}" placeholder="Hardcover API key" autocomplete="off">
                   <label for="HARDCOVER_API_TOKEN" class="small">Hardcover API key</label>
                 </div>
+                <div class="form-text small mt-2">
+                  <a href="https://hardcover.app/account/api/keys/new?scope=read%3Acatalog+read%3Ame%3Acontent+read%3Alibrary+write%3Alibrary"
+                    target="_blank" rel="noopener noreferrer">
+                    Create a Hardcover API key with the recommended permissions
+                    <i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i>
+                  </a>
+                  <span class="d-block mt-1">
+                    Book enrichment alone requires <code>read:catalog:search</code>.
+                  </span>
+                </div>
                 <div id="settings-hardcover-status" class="alert alert-secondary small mt-3 mb-0" role="status">
                   <div class="d-flex align-items-center gap-2">
                     <span id="settings-hardcover-status-icon" aria-hidden="true"></span>
                     <span id="settings-hardcover-status-message">Change the API key field to test Hardcover.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div class="tab-pane fade" id="watches-pane" role="tabpanel" aria-labelledby="watches-tab" tabindex="0">
+          <h6 class="text-uppercase section-title mb-3">Watches</h6>
+
+          <div class="card mb-3 border-secondary-subtle toggle-card">
+            <div
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              onclick="toggleCardSwitch('WATCHES_ENABLED')">
+              <span class="small fw-bold d-flex align-items-center"><i class="bi bi-binoculars me-2"></i> Watches
+                <span class="badge text-bg-warning ms-2">Beta</span></span>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" id="WATCHES_ENABLED" name="WATCHES_ENABLED"
+                  {% if WATCHES_ENABLED %}checked{% endif %} data-collapse-target="#collapse-watches"
+                  onclick="event.stopPropagation()">
+              </div>
+            </div>
+            <div id="collapse-watches" class="collapse {% if WATCHES_ENABLED %}show{% endif %}">
+              <div class="card-body border-top pt-2 pb-2">
+                <div class="small text-body-secondary mb-2">
+                  Saved searches that run every few minutes and send new matches to your client. A new watch never
+                  grabs what already exists. Watches never spend bonus points. Reload the page after saving to show
+                  the Watches button.
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <label class="small text-body-secondary" for="WATCHES_UNSAT_RESERVE">Keep free unsat slots</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="WATCHES_UNSAT_RESERVE"
+                      name="WATCHES_UNSAT_RESERVE" value="{{ WATCHES_UNSAT_RESERVE }}">
+                  </div>
+                  <div class="col-6">
+                    <label class="small text-body-secondary" for="WATCHES_DAILY_GRAB_LIMIT">Max grabs per 24h</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="WATCHES_DAILY_GRAB_LIMIT"
+                      name="WATCHES_DAILY_GRAB_LIMIT" value="{{ WATCHES_DAILY_GRAB_LIMIT }}">
+                  </div>
+                  <div class="col-6">
+                    <label class="small text-body-secondary" for="WATCHES_MIN_RATIO">Never drop ratio below</label>
+                    <input type="number" min="1" step="0.1" class="form-control form-control-sm" id="WATCHES_MIN_RATIO"
+                      name="WATCHES_MIN_RATIO" value="{{ WATCHES_MIN_RATIO }}">
+                  </div>
+                </div>
+                <div class="border rounded p-2 bg-body">
+                  <div class="d-flex justify-content-between align-items-center cursor-pointer noselect"
+                    onclick="toggleCardSwitch('WATCHES_ALLOW_WEDGES')">
+                    <span class="small fw-semibold">Allow watches to spend Freeleech wedges</span>
+                    <div class="form-check form-switch m-0">
+                      <input class="form-check-input" type="checkbox" id="WATCHES_ALLOW_WEDGES"
+                        name="WATCHES_ALLOW_WEDGES" {% if WATCHES_ALLOW_WEDGES %}checked{% endif %}
+                        data-collapse-target="#collapse-watches-wedges" onclick="event.stopPropagation()">
+                    </div>
+                  </div>
+                  <div id="collapse-watches-wedges" class="collapse {% if WATCHES_ALLOW_WEDGES %}show{% endif %}">
+                    <div class="input-group input-group-sm mt-2">
+                      <span class="input-group-text">Always keep</span>
+                      <input type="number" min="0" step="1" class="form-control" id="WATCHES_WEDGE_RESERVE"
+                        name="WATCHES_WEDGE_RESERVE" value="{{ WATCHES_WEDGE_RESERVE }}">
+                      <span class="input-group-text">wedges</span>
+                    </div>
+                    <div class="form-text small">
+                      Only wedges you already own are used, and only by watches set to allow them. Wedges are never
+                      bought.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div class="tab-pane fade" id="kindle-pane" role="tabpanel" aria-labelledby="kindle-tab" tabindex="0">
+          <h6 class="text-uppercase section-title mb-3">Send to Kindle</h6>
+
+          <div class="card mb-3 border-secondary-subtle toggle-card">
+            <div
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              onclick="toggleCardSwitch('KINDLE_ENABLED')">
+              <span class="small fw-bold d-flex align-items-center">
+                <i class="bi bi-envelope-paper me-2"></i> Enable Send to Kindle by Email
+              </span>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" id="KINDLE_ENABLED" name="KINDLE_ENABLED"
+                  {% if KINDLE_ENABLED %}checked{% endif %} data-collapse-target="#collapse-kindle"
+                  onclick="event.stopPropagation()">
+              </div>
+            </div>
+            <div id="collapse-kindle" class="collapse {% if KINDLE_ENABLED %}show{% endif %}">
+              <div class="card-body border-top pt-2 pb-2">
+                <div class="form-text small mb-3">
+                  Emails finished e-books to your Kindle's <code>@kindle.com</code> address, like Calibre's
+                  "Email to Kindle". Add the sender address below to Amazon's
+                  <a href="https://www.amazon.com/hz/mycd/myx#/home/settings/payment" target="_blank"
+                    rel="noopener noreferrer">Approved Personal Document E-mail List</a>.
+                  EPUB, PDF and DOCX are supported (max 50&nbsp;MB); MOBI/AZW3 are no longer accepted by Amazon.
+                </div>
+
+                <div class="form-floating mb-3">
+                  <input type="text" class="form-control" id="KINDLE_EMAIL" name="KINDLE_EMAIL"
+                    value="{{ KINDLE_EMAIL }}" placeholder="name@kindle.com">
+                  <label for="KINDLE_EMAIL" class="small">Kindle email address(es), comma separated</label>
+                </div>
+
+                <div class="form-floating mb-3">
+                  <input type="email" class="form-control" id="KINDLE_FROM_EMAIL" name="KINDLE_FROM_EMAIL"
+                    value="{{ KINDLE_FROM_EMAIL }}" placeholder="you@example.com">
+                  <label for="KINDLE_FROM_EMAIL" class="small">Sender address (defaults to SMTP username)</label>
+                </div>
+
+                <div class="row">
+                  <div class="col-12 mb-3">
+                    <div class="form-floating">
+                      <input type="text" class="form-control" id="KINDLE_SMTP_HOST" name="KINDLE_SMTP_HOST"
+                        value="{{ KINDLE_SMTP_HOST }}" placeholder="smtp.gmail.com">
+                      <label for="KINDLE_SMTP_HOST" class="small">SMTP server</label>
+                    </div>
+                  </div>
+                  <div class="col-5 mb-3">
+                    <div class="form-floating">
+                      <input type="number" class="form-control" id="KINDLE_SMTP_PORT" name="KINDLE_SMTP_PORT"
+                        min="1" max="65535" value="{{ KINDLE_SMTP_PORT }}" placeholder="587">
+                      <label for="KINDLE_SMTP_PORT" class="small">Port</label>
+                    </div>
+                  </div>
+                  <div class="col-7 mb-3">
+                    <div class="form-floating">
+                      <select class="form-select" id="KINDLE_SMTP_SECURITY" name="KINDLE_SMTP_SECURITY">
+                        <option value="starttls" {% if KINDLE_SMTP_SECURITY == 'starttls' %}selected{% endif %}>STARTTLS</option>
+                        <option value="ssl" {% if KINDLE_SMTP_SECURITY == 'ssl' %}selected{% endif %}>SSL/TLS</option>
+                        <option value="none" {% if KINDLE_SMTP_SECURITY == 'none' %}selected{% endif %}>None</option>
+                      </select>
+                      <label for="KINDLE_SMTP_SECURITY" class="small">Encryption</label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row">
+                  <div class="col-6 mb-3">
+                    <div class="form-floating">
+                      <input type="text" class="form-control" id="KINDLE_SMTP_USERNAME" name="KINDLE_SMTP_USERNAME"
+                        value="{{ KINDLE_SMTP_USERNAME }}" placeholder="Username" autocomplete="off">
+                      <label for="KINDLE_SMTP_USERNAME" class="small">SMTP username</label>
+                    </div>
+                  </div>
+                  <div class="col-6 mb-3">
+                    <div class="form-floating">
+                      <input type="password" class="form-control" id="KINDLE_SMTP_PASSWORD" name="KINDLE_SMTP_PASSWORD"
+                        value="{{ KINDLE_SMTP_PASSWORD }}" placeholder="Password" autocomplete="off">
+                      <label for="KINDLE_SMTP_PASSWORD" class="small">SMTP password</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-text small mb-3">
+                  Gmail: <code>smtp.gmail.com</code>, port 587, STARTTLS, with an
+                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">app password</a>.
+                </div>
+
+                <button type="button" class="btn btn-sm btn-outline-primary" id="kindle-test-btn">
+                  <i class="bi bi-send me-1"></i>Test SMTP connection
+                </button>
+                <div id="settings-kindle-status" class="alert alert-secondary small mt-3 mb-0 d-none" role="status">
+                  <div class="d-flex align-items-center gap-2">
+                    <span id="settings-kindle-status-icon" aria-hidden="true"></span>
+                    <span id="settings-kindle-status-message"></span>
+                  </div>
+                </div>
+
+                <div class="border rounded p-2 bg-body mt-3">
+                  <div class="d-flex justify-content-between align-items-center cursor-pointer noselect"
+                    onclick="toggleCardSwitch('KINDLE_AUTO_SEND')">
+                    <span class="small fw-semibold">Automatically send finished e-books</span>
+                    <div class="form-check form-switch m-0">
+                      <input class="form-check-input" type="checkbox" id="KINDLE_AUTO_SEND" name="KINDLE_AUTO_SEND"
+                        {% if KINDLE_AUTO_SEND %}checked{% endif %} onclick="event.stopPropagation()">
+                    </div>
+                  </div>
+                  <div class="form-text small">
+                    When an e-book you downloaded through MouseSearch (including Watches) finishes, it is emailed to
+                    your Kindle once. Audiobooks are never sent.
                   </div>
                 </div>
               </div>

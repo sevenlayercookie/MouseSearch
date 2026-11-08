@@ -43,7 +43,10 @@ RAPIDFUZZ_AVAILABLE = fuzz is not None
 from clients import get_torrent_client, get_client_display_name, get_available_clients
 from hashing import calculate_torrent_hash_from_url, calculate_torrent_hash_from_bytes
 from hardcover.client import HardcoverAPIError, HardcoverClient
+import kindle
 from hardcover.resolver import HardcoverBatchRunner, HardcoverEnrichmentConfig, HardcoverResolver
+from watches import runner as watch_runner, store as watch_store
+from watches.routes import watches_bp
 
 # --- SCHEDULER AND STATE SETUP ---
 app = Quart(__name__)
@@ -142,6 +145,19 @@ RESULTS_SORT_MODES = {
     "size_asc",
 }
 DEFAULT_RESULTS_SORT_MODE = "quality_desc"
+# Modes missing here (quality, author) have no MAM equivalent and are only sorted client-side.
+MAM_SORT_TYPES_BY_RESULTS_SORT_MODE = {
+    "date_uploaded_desc": "dateDesc",
+    "date_uploaded_asc": "dateAsc",
+    "title_asc": "titleAsc",
+    "title_desc": "titleDesc",
+    "seeders_desc": "seedersDesc",
+    "seeders_asc": "seedersAsc",
+    "snatches_desc": "snatchedDesc",
+    "snatches_asc": "snatchedAsc",
+    "size_desc": "sizeDesc",
+    "size_asc": "sizeAsc",
+}
 LANGUAGE_BY_ID = {str(value): name for name, value in language_dict.items()}
 DEFAULT_SEARCH_FILTER_DEFAULTS = {
     "searchType": "all",
@@ -192,6 +208,10 @@ def normalize_results_sort_mode(value):
     if normalized in RESULTS_SORT_MODES:
         return normalized
     return DEFAULT_RESULTS_SORT_MODE
+
+
+def mam_sort_type_for_results_sort_mode(value):
+    return MAM_SORT_TYPES_BY_RESULTS_SORT_MODE.get(normalize_results_sort_mode(value), "default")
 
 
 def coerce_bool(val, default: bool) -> bool:
@@ -771,6 +791,34 @@ def apply_default_destination_path(default_path, destination_paths):
     return default_root, combined
 
 
+def get_organized_destination_root(torrent_meta: dict, config: dict | None = None) -> str:
+    """Choose a per-book destination: explicit, category override, type-specific, then default."""
+    active_config = config or app.config
+    explicit_destination = str(torrent_meta.get("custom_destination_path") or "").strip()
+    if explicit_destination:
+        return explicit_destination
+
+    main_cat = str(torrent_meta.get("main_cat") or "").strip()
+    if main_cat:
+        override = get_category_override(main_cat, active_config.get("CATEGORY_OVERRIDES") or [])
+        override_root = str((override or {}).get("root_path") or "").strip()
+        if override_root:
+            return override_root
+
+        destination_paths = normalize_destination_paths(
+            active_config.get("DESTINATION_PATHS"),
+            active_config.get("ORGANIZED_PATH") or FALLBACK_CONFIG["ORGANIZED_PATH"],
+        )
+        for destination in destination_paths:
+            if str(destination.get("default_main_cat") or "").strip() == main_cat:
+                mapped_path = str(destination.get("path") or "").strip()
+                if mapped_path:
+                    return mapped_path
+
+    default_root = str(active_config.get("ORGANIZED_PATH") or "").strip()
+    return default_root or FALLBACK_CONFIG["ORGANIZED_PATH"]
+
+
 @app.before_serving
 async def startup():
     # 1. Load the configuration FIRST
@@ -851,7 +899,9 @@ async def startup():
         )
         scheduler.add_job(auto_buy_vip, 'date', run_date=datetime.now() + timedelta(seconds=10), id='initial_vip_buy_job')
         app.logger.info("AUTO_BUY_VIP started")
-    
+
+    sync_watches_scheduler_job()
+
     if not scheduler.running:
         scheduler.start()
         app.logger.debug("AsyncIOScheduler started")
@@ -879,6 +929,7 @@ async def shutdown():
     if scheduler.running:
         scheduler.shutdown()
         app.logger.info("AsyncIOScheduler shutdown")
+    watch_store.close()
 
     global HARDCOVER_CLIENT
     if HARDCOVER_CLIENT is not None:
@@ -1062,10 +1113,22 @@ def get_app_version():
         app.logger.warning(f"Could not read version.txt: {e}")
     return "dev" # Default fallback
 
+def compute_static_asset_version() -> str:
+    """Content hash of the app's own JS/CSS, appended to their URLs so browsers refetch them after an update."""
+    digest = hashlib.sha1()
+    for rel_path in ("js/main.js", "js/watches.js", "style.css"):
+        try:
+            digest.update((Path(app.static_folder) / rel_path).read_bytes())
+        except OSError:
+            pass
+    return digest.hexdigest()[:12]
+
+STATIC_ASSET_VERSION = compute_static_asset_version()
+
 # Inject APP_VERSION into all templates
 @app.context_processor
 def inject_version():
-    return dict(APP_VERSION=get_app_version())
+    return dict(APP_VERSION=get_app_version(), STATIC_ASSET_VERSION=STATIC_ASSET_VERSION)
     
 # Define fallback values
 FALLBACK_CONFIG = {
@@ -1122,6 +1185,12 @@ FALLBACK_CONFIG = {
     "THUMBNAIL_CACHE_MAX_SIZE_MB": 500,
     "MAX_SEARCH_RESULTS": 50,
     "MAX_AUTOCOMPLETE_RESULTS": 20,
+    "WATCHES_ENABLED": False,
+    "WATCHES_ALLOW_WEDGES": False,
+    "WATCHES_WEDGE_RESERVE": 5,
+    "WATCHES_UNSAT_RESERVE": 10,
+    "WATCHES_MIN_RATIO": 2.0,
+    "WATCHES_DAILY_GRAB_LIMIT": 10,
     "HARDCOVER_ENRICHMENT_ENABLED": True,
     "HARDCOVER_API_TOKEN": "",
     "HARDCOVER_API_URL": "https://api.hardcover.app/v1/graphql",
@@ -1133,6 +1202,15 @@ FALLBACK_CONFIG = {
     "RESULTS_DISPLAY_FIELDS": ["narrator", "series", "file_size", "file_type", "seeders"],
     "RESULTS_SORT_MODE": DEFAULT_RESULTS_SORT_MODE,
     "SEARCH_FILTER_DEFAULTS": copy.deepcopy(DEFAULT_SEARCH_FILTER_DEFAULTS),
+    "KINDLE_ENABLED": False,
+    "KINDLE_AUTO_SEND": False,
+    "KINDLE_EMAIL": "",
+    "KINDLE_FROM_EMAIL": "",
+    "KINDLE_SMTP_HOST": "",
+    "KINDLE_SMTP_PORT": 587,
+    "KINDLE_SMTP_SECURITY": "starttls",
+    "KINDLE_SMTP_USERNAME": "",
+    "KINDLE_SMTP_PASSWORD": "",
 }
 ENV_ONLY_CONFIG_KEYS = {"QBITTORRENT_VERIFY_WEBUI_CERTIFICATE"}
 
@@ -1152,6 +1230,8 @@ VALID_VIP_DURATIONS = {"4", "8", "12", "max"}
 CONFIG_FILE = DATA_PATH / "config.json"
 DATABASE_FILE = DATA_PATH / "database.json"
 IP_STATE_FILE = DATA_PATH / "ip_state.json"
+watch_store.configure(DATA_PATH / "watches.db")
+app.register_blueprint(watches_bp)
 ENV_FILE = Path(".env")
 
 
@@ -1704,6 +1784,10 @@ def load_config():
         "HARDCOVER_RATE_LIMIT",
         "HARDCOVER_CONCURRENCY",
         "HARDCOVER_SEARCH_PER_PAGE",
+        "WATCHES_WEDGE_RESERVE",
+        "WATCHES_UNSAT_RESERVE",
+        "WATCHES_DAILY_GRAB_LIMIT",
+        "KINDLE_SMTP_PORT",
     ]:
         try:
             config[key] = int(config[key])
@@ -1738,6 +1822,9 @@ def load_config():
         config["HARDCOVER_CONCURRENCY"] = FALLBACK_CONFIG["HARDCOVER_CONCURRENCY"]
     if config["HARDCOVER_SEARCH_PER_PAGE"] <= 0:
         config["HARDCOVER_SEARCH_PER_PAGE"] = FALLBACK_CONFIG["HARDCOVER_SEARCH_PER_PAGE"]
+    for key in ("WATCHES_WEDGE_RESERVE", "WATCHES_UNSAT_RESERVE", "WATCHES_DAILY_GRAB_LIMIT"):
+        if config[key] < 0:
+            config[key] = FALLBACK_CONFIG[key]
 
     # Floats
     for key in [
@@ -1748,7 +1835,8 @@ def load_config():
         "AUTO_BUY_UPLOAD_BONUS_THRESHOLD",
         "AUTO_BUY_UPLOAD_BONUS_AMOUNT",
         "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_MB",
-        "HARDCOVER_MATCH_THRESHOLD"
+        "HARDCOVER_MATCH_THRESHOLD",
+        "WATCHES_MIN_RATIO",
     ]:
         try:
             config[key] = float(config[key])
@@ -1760,6 +1848,8 @@ def load_config():
         or config["AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_MB"] < 0
     ):
         config["AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_MB"] = FALLBACK_CONFIG["AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_MB"]
+    if not math.isfinite(config["WATCHES_MIN_RATIO"]) or config["WATCHES_MIN_RATIO"] < 1:
+        config["WATCHES_MIN_RATIO"] = FALLBACK_CONFIG["WATCHES_MIN_RATIO"]
 
     for key in [
         "AUTO_BUY_UPLOAD_RATIO_AMOUNT",
@@ -1792,6 +1882,10 @@ def load_config():
         "RTORRENT_DIGEST_AUTH",
         "HARDCOVER_ENRICHMENT_ENABLED",
         "QBITTORRENT_VERIFY_WEBUI_CERTIFICATE",
+        "WATCHES_ENABLED",
+        "WATCHES_ALLOW_WEDGES",
+        "KINDLE_ENABLED",
+        "KINDLE_AUTO_SEND",
     ]:
         config[key] = coerce_bool(config.get(key), FALLBACK_CONFIG[key])
         val = config[key]
@@ -1800,6 +1894,7 @@ def load_config():
             config[key] = str(val).lower() in ('true', '1', 't', 'yes', 'on')
 
     config["MAM_PROXY_URL"] = normalize_proxy_url(config.get("MAM_PROXY_URL"))
+    config["KINDLE_SMTP_SECURITY"] = kindle.normalize_smtp_security(config.get("KINDLE_SMTP_SECURITY"))
 
     config["RESULTS_DISPLAY_FIELDS"] = normalize_result_display_fields(
         config.get("RESULTS_DISPLAY_FIELDS"),
@@ -2187,7 +2282,24 @@ async def send_auto_task_webhook_notification(event, success, **details):
     except Exception as e:
         app.logger.warning(f"[AUTO-WEBHOOK] Failed to send {event} {status} notification: {e}")
     
+def hardcover_client_config_signature(config) -> tuple:
+    try:
+        rate_limit = int(config.get("HARDCOVER_RATE_LIMIT", FALLBACK_CONFIG["HARDCOVER_RATE_LIMIT"]))
+    except (TypeError, ValueError):
+        rate_limit = FALLBACK_CONFIG["HARDCOVER_RATE_LIMIT"]
+    return (
+        bool(config.get("HARDCOVER_ENRICHMENT_ENABLED", True)),
+        str(config.get("HARDCOVER_API_TOKEN") or "").strip(),
+        str(config.get("HARDCOVER_API_URL") or FALLBACK_CONFIG["HARDCOVER_API_URL"]).strip(),
+        str(config.get("HARDCOVER_USER_AGENT") or FALLBACK_CONFIG["HARDCOVER_USER_AGENT"]).strip(),
+        rate_limit,
+    )
+
+
 async def load_new_app_config():
+    global HARDCOVER_CLIENT
+
+    old_hardcover_signature = hardcover_client_config_signature(app.config)
     new_config = load_config()
 
     raw_destination_paths = new_config.get("DESTINATION_PATHS")
@@ -2209,6 +2321,13 @@ async def load_new_app_config():
     app.secret_key = new_config["QUART_SECRET_KEY"]
     app.config.update(new_config)
     reset_mam_proxy_route_state()
+
+    if (
+        HARDCOVER_CLIENT is not None
+        and old_hardcover_signature != hardcover_client_config_signature(app.config)
+    ):
+        await HARDCOVER_CLIENT.aclose()
+        HARDCOVER_CLIENT = None
     
     # Update path globals
     global ORGANIZED_PATH, LOCAL_TORRENT_DOWNLOAD_PATH, REMOTE_TORRENT_DOWNLOAD_PATH
@@ -2272,7 +2391,8 @@ async def monitor_downloads_loop():
                                 
                                 # Add to monitoring state
                                 monitoring_state[torrent_hash] = {
-                                    "added_at": pending_data["added_at"]
+                                    "added_at": pending_data["added_at"],
+                                    "book": kindle_book_info(pending_data["metadata"]),
                                 }
                                 
                                 mids_to_remove.append(mid)
@@ -2468,6 +2588,8 @@ async def monitor_downloads_loop():
                             error=str(e),
                             **_get_torrent_metadata_summary(h),
                         )
+                if kindle_auto_send_enabled():
+                    schedule_kindle_auto_send(h, monitoring_state.get(h, {}).get("book"))
                 if h in monitoring_state:
                     del monitoring_state[h]
                 
@@ -3683,9 +3805,15 @@ def parse_mam_metadata(json_str, is_series=False):
         return ""
     try:
         data = json.loads(json_str)
+        # Ranking may already have flattened author/narrator names. A name
+        # such as "123" is valid JSON too, but is not a metadata mapping.
+        if not isinstance(data, dict):
+            if is_series and not data:
+                return ""
+            return html.unescape(str(json_str))
         if not data:
             return ""
-        
+
         items = []
         # Series format: {"id": ["Series Name", "Book Number", Total]}
         if is_series:
@@ -4017,21 +4145,22 @@ async def test_torrent_client_settings():
     return jsonify(status)
 
 
-HARDCOVER_SETTINGS_PROBE_QUERY = """
-query {
-  me {
-    id
-    username
-  }
-}
-"""
-
-
 def format_hardcover_probe_error(exc: Exception) -> tuple[str, int | None]:
     raw_message = str(exc or "").strip()
+    if isinstance(exc, HardcoverAPIError):
+        status_code = exc.status_code
+        if status_code is not None:
+            details = []
+            if exc.code:
+                details.append(exc.code)
+            if exc.scope:
+                details.append(f"required scope: {exc.scope}")
+            suffix = f": {', '.join(details)}" if details else ""
+            return f"HTTP {status_code}{suffix}", status_code
+
     if raw_message.startswith("http_"):
         try:
-            status_code = int(raw_message.split("_", 1)[1])
+            status_code = int(raw_message.split("_", 1)[1].split(":", 1)[0])
         except (IndexError, ValueError):
             return raw_message or "Hardcover request failed.", None
         return f"HTTP {status_code}", status_code
@@ -4081,7 +4210,11 @@ async def test_hardcover_settings():
     )
     try:
         async with client:
-            data = await client.graphql(HARDCOVER_SETTINGS_PROBE_QUERY, {}, cache_key=None, retry_5xx=0)
+            # A single search validates the catalog scope and the operation that
+            # enrichment depends on. Account identity is a separate optional
+            # capability for library/status features.
+            await client.search("MouseSearch connection test", "Book", 1)
+            await client.resolve_identity()
     except HardcoverAPIError as exc:
         message, http_status = format_hardcover_probe_error(exc)
         return jsonify({
@@ -4096,33 +4229,28 @@ async def test_hardcover_settings():
             "http_status": None,
         })
 
-    me = data.get("me") if isinstance(data, dict) else None
-    if isinstance(me, list):
-        me = me[0] if me else None
-
-    if not isinstance(me, dict):
-        return jsonify({
-            "status": "error",
-            "message": "Hardcover responded without account details.",
-            "http_status": 200,
-        })
-
-    username = str(me.get("username") or "").strip()
-    account_id = me.get("id")
-    account_label = username or "unknown user"
-    if account_id not in (None, ""):
+    username = client.viewer_username or ""
+    account_id = client.user_id
+    if client.user_features_available:
+        account_label = username or "Hardcover user"
         message = f"HTTP 200: Connected as {account_label} (ID {account_id})."
+    elif client.identity_state == "unavailable":
+        message = (
+            "HTTP 200: Catalog access is working. This token cannot read the signed-in "
+            "account, so library status display and changes will be disabled."
+        )
     else:
-        message = f"HTTP 200: Connected as {account_label}."
+        message = (
+            "HTTP 200: Catalog access is working, but the account capability check "
+            "could not be completed. Library status features will remain disabled."
+        )
 
     return jsonify({
         "status": "success",
         "message": message,
         "http_status": 200,
-        "me": {
-            "id": account_id,
-            "username": username,
-        },
+        "user_actions_available": client.user_features_available,
+        "me": ({"id": account_id, "username": username} if client.user_features_available else None),
     })
 
 @app.route('/client/categories', methods=['GET'])
@@ -4136,28 +4264,26 @@ async def client_categories():
         categories = await torrent_client.get_categories()
     return jsonify(categories) if categories else (jsonify({'error': 'Failed'}), 500)
 
-@app.route('/client/add', methods=['POST'])
-async def client_add_torrent():
+async def add_torrent_to_client(
+    incoming_data: dict,
+    *,
+    allow_auto_personal_freeleech: bool = True,
+) -> tuple[dict, int]:
     """
-    Handles the addition of a new torrent to the torrent client, with support for buffer checks, custom download paths, and auto-organization.
-    Workflow:
-    - Ensures the torrent client is initialized and logs in.
-    - Parses incoming JSON data for torrent details, including optional custom_relative_path.
-    - Checks if the user's buffer is sufficient to download the torrent; if not, returns a response with recommended upload credit.
-    - If a MID (metadata ID) is present and auto-organization is enabled, adds the torrent immediately and stores metadata for later hash resolution.
-    - If no MID or auto-organization is disabled, calculates the torrent hash and stores metadata for auto-organization.
-    - Adds the torrent to the client and, if successful, starts monitoring for completion if auto-organization is enabled.
-    Args:
-        None (expects JSON data in the request body with keys such as 'torrent_url', 'author', 'title', 'id', 'category', 'size', 'series_info', 'main_cat', 'download_link', and optionally 'custom_relative_path').
-    Returns:
-        Flask Response: JSON response indicating success, error, or insufficient buffer, with appropriate HTTP status codes.
+    Add a torrent to the configured client and return ``(payload, http_status)``.
+
+    Shared by the ``/client/add`` route and the Watches runner. Handles the
+    buffer check, freeleech flags, fetching the ``.torrent`` bytes, storing
+    organize metadata and starting completion monitoring.
+
+    ``allow_auto_personal_freeleech=False`` ignores AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD
+    so callers (Watches) decide on wedge use themselves via ``use_personal_freeleech``.
     """
 
     if not torrent_client:
-        return jsonify({'error': 'Client not initialized'}), 500
-    
+        return {'error': 'Client not initialized'}, 500
+
     await torrent_client.login()
-    incoming_data = await request.get_json()
     
     # --- NEW: Extract custom path ---
     custom_relative_path = incoming_data.get('custom_relative_path')
@@ -4167,9 +4293,12 @@ async def client_add_torrent():
     torrent_url = incoming_data.get('torrent_url') or incoming_data.get('url')
     author = incoming_data.get('author', 'Unknown')
     title = incoming_data.get('title', 'Unknown')
+    narrator = parse_mam_metadata(incoming_data.get("narrator", ""))
     # Kept for {Genre}/{Format}/{Category} when the path template is rendered server-side.
     catname = incoming_data.get('catname', '')
     filetype = incoming_data.get('filetype', '')
+    # Publication year (from Hardcover enrichment) for the {Year} token.
+    year = normalize_release_year(incoming_data.get('year'))
     id = incoming_data.get('id', '0')
     category = incoming_data.get('category', app.config.get("TORRENT_CLIENT_CATEGORY", ""))
     torrent_size_str = incoming_data.get('size', '0 GiB')  # e.g., "1.5 GiB"
@@ -4195,7 +4324,7 @@ async def client_add_torrent():
     elif use_personal_freeleech_requested:
         should_use_personal_freeleech = True
         app.logger.info(f"[DOWNLOAD] Personal Freeleech will be requested via download URL for torrent {id}")
-    elif app.config.get("AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD", False):
+    elif allow_auto_personal_freeleech and app.config.get("AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD", False):
         torrent_id_for_fl = None
         try:
             if id not in (None, '', '0', 0):
@@ -4248,7 +4377,7 @@ async def client_add_torrent():
                     math.ceil(needed_gb)
                 )
                 
-                return jsonify({
+                return {
                     'status': 'insufficient_buffer',
                     'buffer_gb': round(buffer_gb, 2),
                     'torrent_size_gb': round(torrent_size_gb, 2),
@@ -4257,7 +4386,7 @@ async def client_add_torrent():
                     'recommended_cost': int(recommended_amount * cost_per_gb),
                     'seedbonus': stats['seedbonus'],
                     'message': f'Insufficient buffer: {round(buffer_gb, 2)} GB available, {round(torrent_size_gb, 2)} GB needed'
-                }), 400
+                }, 400
     
     auto_organize_warning = None
     hash_val = None
@@ -4268,7 +4397,7 @@ async def client_add_torrent():
     if client_type in supports_binary_add and torrent_url and torrent_url.lower().startswith(("http://", "https://")):
         torrent_file_data, torrent_filename = await fetch_torrent_file_from_mam(torrent_url)
         if torrent_file_data is None:
-            return jsonify({'error': f'Failed to download torrent file from MAM before sending to {client_type}'}), 400
+            return {'error': f'Failed to download torrent file from MAM before sending to {client_type}'}, 400
         client_add_kwargs = {
             "torrent_data": torrent_file_data,
             "torrent_filename": torrent_filename
@@ -4296,11 +4425,13 @@ async def client_add_torrent():
                 "added_on": datetime.now().isoformat(),
                 "status": "pending",
                 "retry_count": 0,
+                "narrator": narrator,
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
                 "main_cat": main_cat,
                 "catname": catname,
                 "filetype": filetype,
+                "year": year,
                 "download_link": download_link,
                 "custom_relative_path": custom_relative_path,
                 "custom_destination_path": custom_destination_path,
@@ -4314,7 +4445,8 @@ async def client_add_torrent():
                     app.logger.info(f"Saved metadata for torrent hash: {resolved_hash}")
 
                 monitoring_state[normalize_info_hash(resolved_hash)] = {
-                    "added_at": time.time()
+                    "added_at": time.time(),
+                    "book": kindle_book_info(metadata_payload),
                 }
                 start_monitoring_loop()
 
@@ -4325,7 +4457,7 @@ async def client_add_torrent():
                 }
                 if auto_organize_warning:
                     response_data['warning'] = auto_organize_warning
-                return jsonify(response_data)
+                return response_data, 200
             
             # Store in pending_mid_resolutions for later hash resolution
             pending_mid_resolutions[id] = {
@@ -4335,12 +4467,12 @@ async def client_add_torrent():
             app.logger.info(f"Added MID {id} to pending_mid_resolutions for hash resolution")
             start_monitoring_loop()
             
-            return jsonify({
+            return {
                 'message': result['message'],
                 'personal_freeleech_applied': should_use_personal_freeleech,
-            })
+            }, 200
         else:
-            return jsonify({'error': result.get('message', 'Unknown error')}), 400
+            return {'error': result.get('message', 'Unknown error')}, 400
     
     # Fallback: No MID or auto-organize disabled - use old hash-based approach
     if not hash_val:
@@ -4362,11 +4494,13 @@ async def client_add_torrent():
                 "mid": id, "author": author, "title": title,
                 "added_on": datetime.now().isoformat(),
                 "status": "pending", "retry_count": 0,
+                "narrator": narrator,
                 "series_info": series_info,
                 "category": get_category_name(main_cat),
                 "main_cat": main_cat,
                 "catname": catname,
                 "filetype": filetype,
+                "year": year,
                 "download_link": download_link,
                 "custom_relative_path": custom_relative_path,
                 "custom_destination_path": custom_destination_path,
@@ -4381,7 +4515,8 @@ async def client_add_torrent():
         # Start progress monitoring regardless of auto-organize setting.
         if resolved_hash:
             monitoring_state[normalize_info_hash(resolved_hash)] = {
-                "added_at": time.time()
+                "added_at": time.time(),
+                "book": kindle_book_info({"author": author, "title": title, "main_cat": incoming_data.get('main_cat', '')}),
             }
             start_monitoring_loop()
             app.logger.info(f"Registered {resolved_hash} for active monitoring.")
@@ -4393,9 +4528,24 @@ async def client_add_torrent():
         if resolved_hash:
             response_data['hash'] = resolved_hash
         if auto_organize_warning: response_data['warning'] = auto_organize_warning
-        return jsonify(response_data)
+        return response_data, 200
     else:
-        return jsonify({'error': result.get('message', 'Unknown error')}), 400
+        return {'error': result.get('message', 'Unknown error')}, 400
+
+
+@app.route('/client/add', methods=['POST'])
+async def client_add_torrent():
+    """
+    Handles the addition of a new torrent to the torrent client, with support for buffer checks, custom download paths, and auto-organization.
+    Thin wrapper around ``add_torrent_to_client``; see it for the workflow.
+    Args:
+        None (expects JSON data in the request body with keys such as 'torrent_url', 'author', 'title', 'id', 'category', 'size', 'series_info', 'main_cat', 'download_link', and optionally 'custom_relative_path').
+    Returns:
+        Flask Response: JSON response indicating success, error, or insufficient buffer, with appropriate HTTP status codes.
+    """
+    incoming_data = await request.get_json()
+    payload, status_code = await add_torrent_to_client(incoming_data or {})
+    return jsonify(payload), status_code
 
 @app.route('/client/resolve_mid', methods=['POST'])
 async def client_resolve_mid():
@@ -4612,19 +4762,128 @@ def format_filetype_token(filetype):
     return " ".join(p.upper() for p in parts)
 
 
+def normalize_release_year(value):
+    """Return a plausible four-digit year from a year/date value, or "". Mirrors normalizeReleaseYear() in main.js."""
+    match = re.match(r"\s*(\d{4})", str(value if value is not None else ""))
+    if not match:
+        return ""
+    year = int(match.group(1))
+    return str(year) if 1000 <= year <= 2999 else ""
+
+
+# Words that end a name rather than start a surname ("Kurt Vonnegut Jr.").
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "phd", "md"}
+# Surname particles kept with the last name ("Ursula K. Le Guin" -> "Le Guin").
+_NAME_PARTICLES = {"van", "von", "de", "der", "den", "del", "della", "des", "di", "da", "du", "la", "le", "ter", "ten", "dos", "das", "st", "st."}
+
+
+def _name_key(word):
+    return word.lower().rstrip(".,")
+
+
+def split_author_names(author):
+    """
+    Split a joined author string ("Frank Herbert, Kevin J. Anderson") into names.
+
+    Authors are stored joined with ", ", so a bare suffix after a comma
+    ("Kurt Vonnegut, Jr.") is reattached to the name before it.
+    Mirrors splitAuthorNames() in main.js.
+    """
+    names = []
+    for part in re.split(r"\s*(?:,|;|\s&\s)\s*", str(author or "")):
+        part = " ".join(part.split())
+        if not part:
+            continue
+        if names and _name_key(part) in _NAME_SUFFIXES:
+            names[-1] = f"{names[-1]} {part}"
+        else:
+            names.append(part)
+    return names
+
+
+def invert_author_name(name):
+    """
+    Turn "First Last" into "Last, First", keeping particles with the surname and
+    suffixes at the end: "Kurt Vonnegut Jr." -> "Vonnegut, Kurt, Jr.".
+    Single-word names are returned unchanged. Mirrors invertAuthorName() in main.js.
+    """
+    words = [word for word in (w.strip(",") for w in str(name or "").split()) if word]
+    suffixes = []
+    while len(words) > 1 and _name_key(words[-1]) in _NAME_SUFFIXES:
+        suffixes.insert(0, words.pop())
+    if len(words) < 2:
+        return " ".join(words + suffixes)
+
+    surname_start = len(words) - 1
+    while surname_start > 1 and _name_key(words[surname_start - 1]) in _NAME_PARTICLES:
+        surname_start -= 1
+
+    given = " ".join(words[:surname_start])
+    inverted = f"{' '.join(words[surname_start:])}, {given}"
+    return ", ".join([inverted] + suffixes)
+
+
+def author_token_values(author):
+    """
+    Raw (unsanitized) values for the author tokens of a joined author string.
+    Mirrors authorTokenValues() in main.js.
+    """
+    names = split_author_names(author)
+    return {
+        "{Author}": str(author or "").strip(),
+        "{AuthorLastFirst}": " & ".join(invert_author_name(name) for name in names),
+        "{FirstAuthor}": names[0] if names else "",
+        "{FirstAuthorLastFirst}": invert_author_name(names[0]) if names else "",
+    }
+
+
+# Longest names first so "SeriesNumber" is never read as "Series" + "Number".
+RELATIVE_PATH_TOKEN_NAMES = (
+    "FirstAuthorLastFirst", "AuthorLastFirst", "SeriesNumber", "FirstAuthor",
+    "Category", "Author", "Narrator", "Series", "Format", "Genre", "Title", "Year",
+)
+_REL_PATH_GROUP_RE = re.compile(r"\{([^{}]*)\}")
+_REL_PATH_TOKEN_NAME_RE = re.compile(
+    r"(?<![A-Za-z])(" + "|".join(RELATIVE_PATH_TOKEN_NAMES) + r")(?![A-Za-z])"
+)
+
+
 def build_relative_path_from_template(template, values):
     """
     Render a relative path template ("{Author}/{Genre}/{Title}") from token values.
 
-    Values are expected to be pre-sanitized. Tokens that resolve to an empty
-    string collapse away, so an unmatched {Series} does not leave an empty
-    directory level behind. Mirrors buildRelativePathFromTemplate() in main.js.
+    Values are expected to be pre-sanitized. A brace group may wrap literal text
+    around a token name ("{ - Series}", "{ (Year)}"); the whole group renders only
+    when that token has a value. SeriesNumber supports :02 through :010 padding
+    of its integer part. Tokens that resolve to an empty string collapse
+    away, so an unmatched {Series} does not leave an empty directory level behind.
+    Mirrors buildRelativePathFromTemplate() in main.js.
     """
-    output = str(template or "").replace("\\", "/")
-    for token, value in values.items():
-        output = output.replace(token, str(value or ""))
-    output = re.sub(r"/+", "/", output).strip("/")
-    return output
+    text = str(template or "").replace("\\", "/")
+
+    def render_group(match):
+        content = match.group(1)
+        token_match = _REL_PATH_TOKEN_NAME_RE.search(content)
+        token = "{" + token_match.group(1) + "}" if token_match else None
+        if token is None or token not in values:
+            return match.group(0)
+        value = str(values.get(token) or "")
+        if not value:
+            return ""
+        suffix = content[token_match.end():]
+        # Optional zero-padding applies only to the integer part of series numbers.
+        # Bound the width so a mistyped template cannot allocate a huge filename.
+        padding = re.match(r":0(10|[1-9])(?![0-9])", suffix) if token == "{SeriesNumber}" else None
+        if padding:
+            suffix = suffix[padding.end():]
+            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
+                integer, dot, fraction = value.partition(".")
+                value = integer.zfill(int(padding.group(1))) + dot + fraction
+        return content[:token_match.start()] + value + suffix
+
+    output = _REL_PATH_GROUP_RE.sub(render_group, text)
+    segments = (segment.strip() for segment in output.split("/"))
+    return "/".join(segment for segment in segments if segment)
 
 
 def relative_path_tokens_from_metadata(torrent_meta):
@@ -4646,21 +4905,24 @@ def relative_path_tokens_from_metadata(torrent_meta):
     series_entries = list(raw_series.values())
     if series_entries and isinstance(series_entries[0], (list, tuple)) and series_entries[0]:
         first = series_entries[0]
-        series_name = str(first[0] or "").strip()
+        series_name = html.unescape(str(first[0] or "")).strip()
         series_number = normalize_series_number(first[1]) if len(first) > 1 else ""
 
     def clean(value):
         text = str(value or "").strip()
         return sanitize_filename(text) if text else ""
 
+    author_values = author_token_values(torrent_meta.get("author"))
     return {
-        "{Author}": clean(torrent_meta.get("author")),
+        **{token: clean(value) for token, value in author_values.items()},
+        "{Narrator}": clean(parse_mam_metadata(torrent_meta.get("narrator", ""))),
         "{Series}": clean(series_name),
         "{SeriesNumber}": clean(series_number),
         "{Title}": clean(torrent_meta.get("title")),
         "{Genre}": clean(genre),
         "{Format}": clean(format_filetype_token(torrent_meta.get("filetype"))),
         "{Category}": clean(category),
+        "{Year}": normalize_release_year(torrent_meta.get("year")),
     }
 
 async def broadcast_payload(payload: dict):
@@ -4768,7 +5030,10 @@ async def preload_hardcover_user_book_cache() -> None:
     global HARDCOVER_USER_BOOK_PRELOAD_ACTIVE
 
     client = create_hardcover_client()
-    if client is None or not client.user_id or HARDCOVER_USER_BOOK_PRELOAD_ACTIVE:
+    if client is None or HARDCOVER_USER_BOOK_PRELOAD_ACTIVE:
+        return
+    await client.resolve_identity()
+    if not client.user_features_available:
         return
 
     HARDCOVER_USER_BOOK_PRELOAD_ACTIVE = True
@@ -5153,6 +5418,13 @@ async def hardcover_get_user_book(book_id):
             "message": "A valid Hardcover book_id is required.",
         }), 400
 
+    await client.resolve_identity()
+    if not client.user_features_available:
+        return jsonify({
+            "status": "error",
+            "message": "This Hardcover token cannot read the signed-in account, so library status actions are unavailable.",
+        }), 403
+
     try:
         user_book = await client.user_book_for_book(book_id)
     except Exception as exc:
@@ -5177,6 +5449,13 @@ async def hardcover_update_user_book_status():
             "status": "error",
             "message": "Hardcover integration is not configured.",
         }), 503
+
+    await client.resolve_identity()
+    if not client.user_features_available:
+        return jsonify({
+            "status": "error",
+            "message": "This Hardcover token cannot read the signed-in account, so status changes are disabled.",
+        }), 403
 
     payload = await request.get_json(silent=True) or {}
     action = str(payload.get("action") or "").strip().lower()
@@ -5346,8 +5625,9 @@ async def mam_search():
         else:
             lang_ids = [str(language_dict.get(lang_value, 1))]
 
+    results_sort_mode = request.args.get("sort_mode") or app.config.get("RESULTS_SORT_MODE")
     params = {
-        "tor[sortType]": "default",
+        "tor[sortType]": mam_sort_type_for_results_sort_mode(results_sort_mode),
         "perpage": app.config.get("MAX_SEARCH_RESULTS", FALLBACK_CONFIG["MAX_SEARCH_RESULTS"]),
         "thumbnail": "true",
         "dlLink": "true",
@@ -5421,6 +5701,9 @@ async def mam_search():
             f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php",
             params=params,
             headers=headers,
+            # Sorting large result sets upstream can exceed the shared 15s
+            # read timeout. Keep the longer wait limited to search requests.
+            timeout=Timeout(connect=5.0, read=60.0, write=15.0, pool=None),
         )
         response.raise_for_status()
         json_data = response.json()
@@ -5518,6 +5801,7 @@ async def mam_search():
                         "added_on": datetime.now().isoformat(),
                         "status": "unknown",
                         "retry_count": 0,
+                        "narrator": item.get("narrator_info", ""),
                         "series_info": item.get('series_display', ''),
                         "category": get_category_name(item.get('main_cat', '')),
                         "download_link": item.get('download_link', '')
@@ -5614,6 +5898,7 @@ async def index():
         LANGUAGE_CHOICES=language_choices,
         LANGUAGE_MAP=language_dict,
         DEFAULT_LANGUAGE_ID=language_dict.get("English", 1),
+        MAM_SORTED_RESULT_MODES=sorted(MAM_SORT_TYPES_BY_RESULTS_SORT_MODE),
         **app.config
     )
     
@@ -5916,6 +6201,10 @@ async def update_settings():
         "BLOCK_DOWNLOAD_ON_LOW_BUFFER",
         "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD",
         "AUTO_BUY_PERSONAL_FL_ON_DOWNLOAD_MIN_SIZE_ENABLED",
+        "WATCHES_ENABLED",
+        "WATCHES_ALLOW_WEDGES",
+        "KINDLE_ENABLED",
+        "KINDLE_AUTO_SEND",
     }
     for key in FALLBACK_CONFIG.keys():
         if key in boolean_fields: config_to_update[key] = key in form
@@ -6073,6 +6362,8 @@ async def update_settings():
             app.logger.info("Auto-organize safety net disabled.")
         except:
             pass
+
+    sync_watches_scheduler_job()
 
     # Get the new display name from the source of truth
     new_type = config_to_update.get("TORRENT_CLIENT_TYPE")
@@ -6236,14 +6527,8 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
     # Optional per-media-type overrides of the global root / template / {Category} behaviour.
     override = get_category_override(torrent_meta.get('main_cat'))
 
-    # Precedence: explicit per-download choice > category override > global default.
-    destination_root = str(torrent_meta.get('custom_destination_path') or "").strip()
-    if not destination_root and override:
-        destination_root = str(override.get('root_path') or "").strip()
-    if not destination_root:
-        destination_root = str(ORGANIZED_PATH or "").strip()
-    if not destination_root:
-        destination_root = str(FALLBACK_CONFIG["ORGANIZED_PATH"])
+    # Precedence: explicit per-download choice > category override > type path > global default.
+    destination_root = get_organized_destination_root(torrent_meta)
     organized_path = Path(destination_root)
 
     # --- CHANGED LOGIC START ---
@@ -6387,6 +6672,187 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
     app.logger.info(f"[ORGANIZE] {details}")
     return True, details
 
+# --- SEND TO KINDLE ---
+
+KINDLE_CONFIG_KEYS = (
+    "KINDLE_EMAIL",
+    "KINDLE_FROM_EMAIL",
+    "KINDLE_SMTP_HOST",
+    "KINDLE_SMTP_PORT",
+    "KINDLE_SMTP_SECURITY",
+    "KINDLE_SMTP_USERNAME",
+    "KINDLE_SMTP_PASSWORD",
+)
+
+
+def kindle_book_info(torrent_meta: dict | None) -> dict:
+    """Extract book information for a manual Kindle send."""
+    torrent_meta = torrent_meta or {}
+    return {
+        "author": torrent_meta.get("author", ""),
+        "title": torrent_meta.get("title", ""),
+        "main_cat": str(torrent_meta.get("main_cat", "") or ""),
+    }
+
+
+async def send_torrent_to_kindle(
+    hash_val: str,
+    *,
+    book_info: dict | None = None,
+    wait_for_stable_source: bool = False,
+) -> tuple[bool, str]:
+    """
+    Email the best Kindle-compatible file from a finished torrent to the configured Kindle address.
+
+    The caller reports SMTP acceptance; Kindle delivery is not confirmed here.
+    """
+    hash_val = normalize_info_hash(hash_val)
+    if not app.config.get("KINDLE_ENABLED"):
+        return False, "Send to Kindle is disabled."
+    problem = kindle.kindle_config_problem(app.config)
+    if problem:
+        return False, f"Send to Kindle is not configured: {problem}"
+    if not torrent_client:
+        return False, "Client not initialized."
+
+    try:
+        info = await torrent_client.get_torrent_info(hash_val)
+    except Exception:
+        await torrent_client.login()
+        info = await torrent_client.get_torrent_info(hash_val)
+    if not info:
+        return False, f"Torrent {hash_val} not found in client."
+    if float(info.get("progress", 0) or 0) < 1:
+        return False, "Download has not finished yet."
+
+    metadata = load_database()
+    torrent_meta = metadata.get(hash_val) or {}
+    book_info = book_info or kindle_book_info(torrent_meta)
+    title = str(book_info.get("title") or info.get("name") or "").strip()
+    author = str(book_info.get("author") or "").strip()
+
+    content_path = resolve_local_content_path(app.config, info)
+    if content_path is None:
+        return False, f"Unable to resolve download path for torrent {hash_val}."
+    if wait_for_stable_source:
+        await wait_for_stable_source_tree(content_path, poll_interval_seconds=2, max_wait_seconds=30)
+    if not content_path.exists():
+        return False, f"Download path not found: {content_path}"
+
+    book_file = await asyncio.to_thread(kindle.find_kindle_file, content_path)
+    if book_file is None:
+        message = (
+            f"No Kindle-compatible file (EPUB, PDF, DOCX, ...) in '{title or hash_val}'. "
+            "MOBI/AZW3 are no longer accepted by Send to Kindle."
+        )
+        return False, message
+
+    subject = f"{title} - {author}" if title and author else (title or book_file.stem)
+    try:
+        message = await asyncio.to_thread(kindle.send_file_to_kindle, app.config, book_file, title=subject)
+    except kindle.KindleSendError as e:
+        app.logger.warning(f"[KINDLE] Send failed for {hash_val}: {e}")
+        return False, str(e)
+
+    app.logger.info(f"[KINDLE] {message}")
+    return True, message
+
+
+KINDLE_EBOOK_MAIN_CAT = "14"
+_kindle_auto_send_tasks: set[asyncio.Task] = set()
+
+
+def kindle_auto_send_enabled() -> bool:
+    return bool(app.config.get("KINDLE_ENABLED") and app.config.get("KINDLE_AUTO_SEND"))
+
+
+def schedule_kindle_auto_send(hash_val: str, book_info: dict | None) -> None:
+    """Send in the background so SMTP never holds up the download monitor."""
+    task = asyncio.create_task(auto_send_to_kindle(hash_val, book_info))
+    _kindle_auto_send_tasks.add(task)
+    task.add_done_callback(_kindle_auto_send_tasks.discard)
+
+
+async def auto_send_to_kindle(hash_val: str, book_info: dict | None = None) -> bool:
+    """Email a finished e-book download to Kindle once. Audiobooks and other media are skipped."""
+    hash_val = normalize_info_hash(hash_val)
+    torrent_meta = load_database().get(hash_val) or {}
+    book_info = book_info or kindle_book_info(torrent_meta)
+    if str(book_info.get("main_cat") or "").strip() != KINDLE_EBOOK_MAIN_CAT:
+        return False
+    if torrent_meta.get("kindle_sent_at"):
+        app.logger.info(f"[KINDLE] Auto-send skipped for {hash_val}: already sent.")
+        return False
+
+    label = book_info.get("title") or hash_val
+    try:
+        success, message = await send_torrent_to_kindle(hash_val, book_info=book_info, wait_for_stable_source=True)
+    except Exception as e:
+        app.logger.error(f"[KINDLE] Exception during auto-send for {hash_val}: {e}", exc_info=True)
+        success, message = False, str(e)
+
+    if success:
+        # Remember the send so a restart re-checking this download cannot email it twice.
+        metadata = load_database()
+        if hash_val in metadata:
+            metadata[hash_val]["kindle_sent_at"] = datetime.now().isoformat()
+            save_database(metadata)
+        await broadcast_toast(f"Sent '{label}' to Kindle.", "success")
+    else:
+        await broadcast_toast(f"Auto Send to Kindle failed for '{label}': {message}", "warning")
+    return success
+
+
+@app.route('/kindle/send', methods=['POST'])
+async def kindle_send():
+    payload = await request.get_json(silent=True) or {}
+    hash_val = normalize_info_hash(payload.get("hash") or "")
+    mid = str(payload.get("mid") or "").strip()
+
+    if not hash_val and mid:
+        metadata = load_database()
+        for hash_key, entry in metadata.items():
+            if str(entry.get("mid", "")) == mid:
+                hash_val = normalize_info_hash(hash_key)
+                break
+        if not hash_val and torrent_client:
+            try:
+                for torrent in await torrent_client.get_torrents_with_metadata():
+                    mid_match = re.search(r'MID=(\d+)', torrent.get('comment', '') or '')
+                    if mid_match and mid_match.group(1) == mid:
+                        hash_val = normalize_info_hash(torrent.get('hash', ''))
+                        break
+            except Exception as e:
+                app.logger.warning(f"[KINDLE] Failed to resolve MID {mid}: {e}")
+
+    if not hash_val:
+        return jsonify({"status": "error", "message": "This book was not found in your torrent client."}), 404
+
+    book_info = None
+    if payload.get("title"):
+        book_info = kindle_book_info(payload)
+    try:
+        success, message = await send_torrent_to_kindle(hash_val, book_info=book_info)
+    except Exception as e:
+        app.logger.error(f"[KINDLE] Exception sending {hash_val}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Internal error: {e}"}), 500
+    return jsonify({"status": "success" if success else "error", "message": message}), 200 if success else 400
+
+
+@app.route('/api/settings/test-kindle', methods=['POST'])
+async def test_kindle_settings():
+    payload = await request.get_json(silent=True) or {}
+    probe_config = dict(app.config)
+    for key in KINDLE_CONFIG_KEYS:
+        if key in payload and (key != "KINDLE_SMTP_PASSWORD" or payload[key]):
+            probe_config[key] = payload[key]
+    try:
+        message = await asyncio.to_thread(kindle.test_connection, probe_config)
+    except kindle.KindleSendError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    return jsonify({"status": "success", "message": message})
+
+
 @app.route('/events')
 async def events():
     """Server-Sent Events endpoint with heartbeat to prevent timeouts."""
@@ -6504,6 +6970,147 @@ async def check_for_unorganized_torrents():
                 error=last_error,
             )
 
+
+# --- WATCHES (beta) ---
+# The runner lives in watches/; these adapters hand it the app's MAM, account
+# and client plumbing without the runner importing app.py.
+WATCHES_TICK_MINUTES = 5
+
+
+def sync_watches_scheduler_job():
+    """Register or remove the watches tick so it matches WATCHES_ENABLED."""
+    if app.config.get("WATCHES_ENABLED"):
+        scheduler.add_job(
+            watch_runner.run_all_watches,
+            'interval',
+            minutes=WATCHES_TICK_MINUTES,
+            id='watches_tick_job',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=WATCHES_TICK_MINUTES * 60,
+        )
+        app.logger.info(f"[WATCH] Watches (beta) enabled; checking every {WATCHES_TICK_MINUTES} min.")
+    else:
+        try:
+            scheduler.remove_job('watches_tick_job')
+        except Exception:
+            pass
+
+
+async def watch_mam_search(params: dict) -> list[dict]:
+    if not await login_mam():
+        raise RuntimeError("MAM login failed (check the mam_id cookie in Settings)")
+    headers = {"Cookie": "; ".join([f"{k}={v}" for k, v in mam_session_cookies.items()])}
+    response = await request_mam(
+        "GET",
+        f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php",
+        params=params,
+        headers=headers,
+        timeout=Timeout(connect=5.0, read=60.0, write=15.0, pool=None),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if isinstance(payload, dict) and payload.get("error") and not payload.get("data"):
+        # MAM answers "Nothing returned, out of 0" as an error for empty searches.
+        if "nothing returned" in str(payload["error"]).lower():
+            return []
+        raise RuntimeError(str(payload["error"]))
+    base_dl_url = f"{app.config['MAM_API_URL']}/tor/download.php/"
+    items = []
+    for item in (payload or {}).get("data", []) or []:
+        item["title"] = html.unescape(str(item.get("title") or ""))
+        item["download_link"] = build_mam_download_link(base_dl_url, item.get("dl"), item.get("id"))
+        item["author_info"] = parse_mam_metadata(item.get("author_info", ""))
+        item["size_gb"] = parse_size_to_gb(item.get("size"), default=0.0)
+        items.append(item)
+    return items
+
+
+async def watch_account_snapshot() -> dict | None:
+    """Live MAM stats the watch guards need, or None if they cannot be read."""
+    if not await login_mam():
+        return None
+    response = await request_mam(
+        "GET",
+        f"{app.config['MAM_API_URL']}/jsonLoad.php",
+        params={"snatch_summary": "true"},
+        cookies=mam_session_cookies,
+        timeout=10,
+    )
+    response.raise_for_status()
+    data = response.json() or {}
+    unsat = (data.get("snatch_summary") or {}).get("unsat") or {}
+    if "count" not in unsat or "limit" not in unsat:
+        return None
+    vip_active = False
+    try:
+        vip_until = data.get("vip_until")
+        if vip_until:
+            vip_active = datetime.fromisoformat(str(vip_until).strip().replace(' ', 'T')) > datetime.utcnow()
+    except Exception:
+        vip_active = False
+    gib = 1024 ** 3
+    uploaded_gb = float(data["uploaded_bytes"]) / gib if data.get("uploaded_bytes") is not None else parse_size_to_gb(data.get("uploaded"))
+    downloaded_gb = float(data["downloaded_bytes"]) / gib if data.get("downloaded_bytes") is not None else parse_size_to_gb(data.get("downloaded"))
+    return {
+        "unsat_count": unsat["count"],
+        "unsat_limit": unsat["limit"],
+        "wedges": data.get("wedges") or 0,
+        "uploaded_gb": uploaded_gb,
+        "downloaded_gb": downloaded_gb,
+        "vip_active": vip_active,
+    }
+
+
+async def watch_client_mids() -> set[str] | None:
+    """MAM ids of torrents already in the client (from the MID= comment MouseSearch sets)."""
+    if not torrent_client:
+        return None
+    status = await torrent_client.get_status()
+    if status.get("status") != "success":
+        return None
+    mids = set()
+    for torrent in await torrent_client.get_torrents_with_metadata():
+        match = re.search(r'MID=(\d+)', torrent.get('comment', '') or '')
+        if match:
+            mids.add(match.group(1))
+    return mids
+
+
+async def watch_add_torrent(item: dict, *, category: str, use_wedge: bool) -> dict:
+    payload = {
+        'torrent_url': item.get('download_link', ''),
+        'download_link': item.get('download_link', ''),
+        'category': category or app.config.get("TORRENT_CLIENT_CATEGORY", ""),
+        'id': str(item.get('id') or '0'),
+        'author': item.get('author_info') or "Unknown",
+        'title': item.get('title') or "Unknown",
+        'size': item.get('size') or '0 GiB',
+        'main_cat': str(item.get('main_cat') or ''),
+        'narrator': parse_mam_metadata(item.get('narrator_info', '')),
+        'series_info': item.get('series_info', ''),
+        'catname': item.get('catname', '') or '',
+        'filetype': item.get('filetype', '') or '',
+        'free': item.get('free', 0) or 0,
+        'vip_freeleech': item.get('vip_freeleech', 0) or 0,
+        'personal_freeleech': item.get('personal_freeleech', 0) or 0,
+        'use_personal_freeleech': bool(use_wedge),
+    }
+    result, _status = await add_torrent_to_client(payload, allow_auto_personal_freeleech=False)
+    return result
+
+
+watch_runner.configure(
+    search=watch_mam_search,
+    account=watch_account_snapshot,
+    client_mids=watch_client_mids,
+    add=watch_add_torrent,
+    notify=send_auto_task_webhook_notification,
+    toast=broadcast_toast,
+    logger=app.logger,
+    config=lambda key, default=None: app.config.get(key, default),
+)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

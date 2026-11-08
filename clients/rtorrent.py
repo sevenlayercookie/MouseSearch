@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit, urlunsplit
@@ -41,6 +42,14 @@ class RTorrentClient(TorrentClient):
         self.username = config.get("TORRENT_CLIENT_USERNAME", "")
         self.password = config.get("TORRENT_CLIENT_PASSWORD", "")
         self.digest_auth = config.get("RTORRENT_DIGEST_AUTH", False)
+
+        # scgi+unix:///path/to/socket talks to rTorrent's native SCGI
+        # listener (network.scgi.open_local) directly over a unix socket
+        self.socket_path = None
+        if self.url.startswith("scgi+unix://"):
+            self.socket_path = unquote(self.url[len("scgi+unix://"):])
+            if not self.socket_path:
+                raise ValueError("scgi+unix:// TORRENT_CLIENT_URL is missing a socket path")
         
         # Standard ruTorrent label field is usually d.custom1
         self.label_attr = "d.custom1" 
@@ -74,6 +83,9 @@ class RTorrentClient(TorrentClient):
 <methodName>{method}</methodName>
 <params>{xml_params}</params>
 </methodCall>"""
+
+        if self.socket_path:
+            return await self._scgi_request(method, payload, sanitized_url)
 
         headers = {"Content-Type": "text/xml"}
         if self.digest_auth:
@@ -118,6 +130,47 @@ class RTorrentClient(TorrentClient):
                 str(e),
             )
             raise Exception(f"rTorrent connection failed: {e}")
+
+    async def _scgi_request(self, method: str, payload: str, sanitized_url: str):
+        """Speaks native SCGI to rTorrent's unix-socket listener."""
+        body = payload.encode("utf-8")
+        scgi_headers = b"CONTENT_LENGTH\x00" + str(len(body)).encode("ascii") + b"\x00SCGI\x001\x00"
+        request = str(len(scgi_headers)).encode("ascii") + b":" + scgi_headers + b"," + body
+
+        writer = None
+        try:
+            async def _exchange():
+                nonlocal writer
+                reader, writer = await asyncio.open_unix_connection(self.socket_path)
+                writer.write(request)
+                await writer.drain()
+                # rTorrent closes the SCGI connection after answering
+                return await reader.read()
+
+            data = await asyncio.wait_for(_exchange(), timeout=10.0)
+            text = data.decode("utf-8", errors="replace")
+            # Tolerate responders that prepend Status:/HTTP-style headers
+            xml_start = text.find("<?xml")
+            if xml_start > 0:
+                text = text[xml_start:]
+            return self._parse_xml_response(text)
+        except Exception as e:
+            logger.error(
+                "rTorrent XML-RPC request error: url=%s method=%s status=%s digest_auth=%s error=%s",
+                sanitized_url,
+                method,
+                "n/a",
+                bool(self.digest_auth),
+                str(e),
+            )
+            raise Exception(f"rTorrent connection failed: {e}")
+        finally:
+            if writer is not None:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
 
     def _parse_xml_response(self, xml_str):
         """Parses the XML-RPC response."""

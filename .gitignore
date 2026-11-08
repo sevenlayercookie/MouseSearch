@@ -1,5 +1,7 @@
 # agents
 .claude/
+nocommit-docs/
+docs-dontcommit/
 
 # mac os
 .DS_Store
