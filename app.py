@@ -550,6 +550,103 @@ AUTO_ORGANIZE_MEDIA_TYPES = [
 ALLOWED_AUTO_ORGANIZE_MAIN_CATS = {item["id"] for item in AUTO_ORGANIZE_MEDIA_TYPES}
 
 
+def normalize_category_overrides(value):
+    """
+    Per-main-category overrides of the global auto-organize settings.
+
+    A category only appears here if the user explicitly added a block for it, and
+    every option inside a block is independently optional:
+
+      root_path                      blank -> inherit the global organized path
+      rel_path_template              blank -> inherit the global template
+      link_mode                      "" -> inherit AUTO_ORGANIZE_USE_COPY,
+                                     otherwise "hardlink" or "copy". Useful when one
+                                     library lives on a different filesystem, where
+                                     hard links cannot work.
+    """
+    entries = []
+    seen = set()
+
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        main_cat = str(item.get("main_cat") or "").strip()
+        if main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS or main_cat in seen:
+            continue
+        seen.add(main_cat)
+        link_mode = str(item.get("link_mode") or "").strip().lower()
+        if link_mode not in ("hardlink", "copy"):
+            link_mode = ""
+        entries.append({
+            "main_cat": main_cat,
+            "root_path": str(item.get("root_path") or "").strip(),
+            "rel_path_template": str(item.get("rel_path_template") or "").strip(),
+            "link_mode": link_mode,
+        })
+
+    # Keep a stable order matching the media-type list rather than insertion order.
+    order = [item["id"] for item in AUTO_ORGANIZE_MEDIA_TYPES]
+    entries.sort(key=lambda entry: order.index(entry["main_cat"]))
+    return entries
+
+
+def migrate_type_specific_paths_to_overrides(config):
+    """
+    Fold legacy Type-Specific Paths into category overrides.
+
+    Category overrides replace that section, so a DESTINATION_PATHS entry that was
+    assigned to a media type becomes that media type's root_path override. Only
+    fills gaps: an existing override for the same media type always wins, and the
+    destination list itself is left untouched so nothing else breaks.
+    """
+    overrides = normalize_category_overrides(config.get("CATEGORY_OVERRIDES"))
+    have_root = {e["main_cat"] for e in overrides if e["root_path"]}
+    by_main_cat = {e["main_cat"]: e for e in overrides}
+    migrated = 0
+
+    for entry in config.get("DESTINATION_PATHS") or []:
+        if not isinstance(entry, dict):
+            continue
+        main_cat = str(entry.get("default_main_cat") or "").strip()
+        path = str(entry.get("path") or "").strip()
+        if main_cat not in ALLOWED_AUTO_ORGANIZE_MAIN_CATS or not path or main_cat in have_root:
+            continue
+
+        existing = by_main_cat.get(main_cat)
+        if existing:
+            existing["root_path"] = path
+        else:
+            new_entry = {
+                "main_cat": main_cat,
+                "root_path": path,
+                "rel_path_template": "",
+                "link_mode": "",
+            }
+            overrides.append(new_entry)
+            by_main_cat[main_cat] = new_entry
+        have_root.add(main_cat)
+        migrated += 1
+
+    if migrated:
+        logging.getLogger(__name__).info(
+            f"Migrated {migrated} type-specific path(s) into category overrides."
+        )
+    return normalize_category_overrides(overrides)
+
+
+def get_category_override(main_cat, overrides=None):
+    """Return the override block for a main category, or None."""
+    target = str(main_cat or "").strip()
+    if not target:
+        return None
+    if overrides is None:
+        overrides = app.config.get("CATEGORY_OVERRIDES") or []
+    for entry in overrides:
+        if entry.get("main_cat") == target:
+            return entry
+    return None
+
+
 def normalize_destination_paths(value, fallback_path):
     fallback_root = str(fallback_path or "").strip()
     if not fallback_root:
@@ -695,7 +792,7 @@ def apply_default_destination_path(default_path, destination_paths):
 
 
 def get_organized_destination_root(torrent_meta: dict, config: dict | None = None) -> str:
-    """Choose a per-book destination using explicit, type-specific, then default precedence."""
+    """Choose a per-book destination: explicit, category override, type-specific, then default."""
     active_config = config or app.config
     explicit_destination = str(torrent_meta.get("custom_destination_path") or "").strip()
     if explicit_destination:
@@ -703,6 +800,11 @@ def get_organized_destination_root(torrent_meta: dict, config: dict | None = Non
 
     main_cat = str(torrent_meta.get("main_cat") or "").strip()
     if main_cat:
+        override = get_category_override(main_cat, active_config.get("CATEGORY_OVERRIDES") or [])
+        override_root = str((override or {}).get("root_path") or "").strip()
+        if override_root:
+            return override_root
+
         destination_paths = normalize_destination_paths(
             active_config.get("DESTINATION_PATHS"),
             active_config.get("ORGANIZED_PATH") or FALLBACK_CONFIG["ORGANIZED_PATH"],
@@ -1050,6 +1152,7 @@ FALLBACK_CONFIG = {
         {"path": "/downloads/organized", "default_main_cat": "", "default_torrent_category": ""}
     ],
     "TYPE_SPECIFIC_TORRENT_CATEGORIES": [],
+    "CATEGORY_OVERRIDES": [],
     "LOCAL_TORRENT_DOWNLOAD_PATH": "/downloads/torrents",
     "REMOTE_TORRENT_DOWNLOAD_PATH": "",
     "REL_PATH_TEMPLATE": DEFAULT_RELATIVE_PATH_TEMPLATE,
@@ -1813,6 +1916,7 @@ def load_config():
         config.get("TYPE_SPECIFIC_TORRENT_CATEGORIES"),
         raw_destination_paths,
     )
+    config["CATEGORY_OVERRIDES"] = migrate_type_specific_paths_to_overrides(config)
     config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(config)
     config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(config)
     config["TORRENT_DOWNLOAD_PATH"] = config["LOCAL_TORRENT_DOWNLOAD_PATH"]
@@ -2209,6 +2313,7 @@ async def load_new_app_config():
         new_config.get("TYPE_SPECIFIC_TORRENT_CATEGORIES"),
         raw_destination_paths,
     )
+    new_config["CATEGORY_OVERRIDES"] = migrate_type_specific_paths_to_overrides(new_config)
     new_config["LOCAL_TORRENT_DOWNLOAD_PATH"] = get_local_torrent_download_path(new_config)
     new_config["REMOTE_TORRENT_DOWNLOAD_PATH"] = get_remote_torrent_download_path(new_config)
     new_config["TORRENT_DOWNLOAD_PATH"] = new_config["LOCAL_TORRENT_DOWNLOAD_PATH"]
@@ -6147,6 +6252,20 @@ async def update_settings():
         normalized_destinations,
     )
 
+    # One JSON blob per category block. A block has optional fields and a checkbox,
+    # and unchecked checkboxes are simply absent from a form post -- parallel arrays
+    # would silently misalign, so each block submits as a single value instead.
+    category_override_rows = []
+    for raw_block in form.getlist("category_override_blocks[]"):
+        try:
+            parsed = json.loads(raw_block)
+        except (json.JSONDecodeError, TypeError):
+            app.logger.warning("Ignoring malformed category override block in settings post.")
+            continue
+        if isinstance(parsed, dict):
+            category_override_rows.append(parsed)
+    config_to_update["CATEGORY_OVERRIDES"] = normalize_category_overrides(category_override_rows)
+
     if form.get("TORRENT_CLIENT_PASSWORD"): config_to_update["TORRENT_CLIENT_PASSWORD"] = form.get("TORRENT_CLIENT_PASSWORD")
     next_mam_id = normalize_mam_cookie_value(config_to_update.get("MAM_ID"))
     if next_mam_id != previous_mam_id:
@@ -6405,9 +6524,13 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         return False, f"Unable to resolve source path for torrent {hash_val}."
     torrent_meta = metadata[hash_val]
 
+    # Optional per-media-type overrides of the global root / template / {Category} behaviour.
+    override = get_category_override(torrent_meta.get('main_cat'))
+
+    # Precedence: explicit per-download choice > category override > type path > global default.
     destination_root = get_organized_destination_root(torrent_meta)
     organized_path = Path(destination_root)
-    
+
     # --- CHANGED LOGIC START ---
     if torrent_meta.get('custom_relative_path'):
         # Use user-defined path (strip leading slashes to ensure it stays relative)
@@ -6416,8 +6539,12 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
     else:
         # No per-download path was chosen (the confirm modal only builds one when
         # AUTO_ORGANIZE_ON_ADD is on), so render the configured template here.
-        template = str(app.config.get("REL_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
-        rel_path = build_relative_path_from_template(template, relative_path_tokens_from_metadata(torrent_meta))
+        template = str((override or {}).get('rel_path_template') or "").strip()
+        if not template:
+            template = str(app.config.get("REL_PATH_TEMPLATE") or FALLBACK_CONFIG["REL_PATH_TEMPLATE"])
+        rel_path = build_relative_path_from_template(
+            template, relative_path_tokens_from_metadata(torrent_meta)
+        )
         if not rel_path:
             rel_path = str(Path(sanitize_filename(torrent_meta.get('author') or '')) / sanitize_filename(torrent_meta.get('title') or ''))
         dest_path = organized_path / rel_path
@@ -6459,6 +6586,16 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
         app.logger.error(f"[ORGANIZE] Failed to create destination path {dest_path}: {e}")
         return False, f"Dest create failed: {e}"
     
+    # A category override may force copy or hardlink, e.g. when its root lives on a
+    # different filesystem where os.link cannot work.
+    link_mode = str((override or {}).get('link_mode') or "").strip()
+    if link_mode == "copy":
+        use_copy = True
+    elif link_mode == "hardlink":
+        use_copy = False
+    else:
+        use_copy = bool(app.config.get("AUTO_ORGANIZE_USE_COPY", False))
+
     files_linked, files_exist = 0, 0
     failed_files = []
     source_base_path = content_path.parent if content_path.is_file() else content_path
@@ -6478,7 +6615,7 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
             continue
 
         try:
-            if app.config.get("AUTO_ORGANIZE_USE_COPY", False):
+            if use_copy:
                 # Run copy in a separate thread to prevent blocking
                 await asyncio.to_thread(shutil.copy2, source_file, dest_file)
                 files_linked += 1
@@ -6488,7 +6625,7 @@ async def _perform_organization(hash_val: str, *, require_stable_source: bool = 
                 files_linked += 1
                 app.logger.debug(f"[ORGANIZE] Linked: {source_file} -> {dest_file}")
         except Exception as e:
-            operation = "Copy" if app.config.get("AUTO_ORGANIZE_USE_COPY", False) else "Link"
+            operation = "Copy" if use_copy else "Link"
             app.logger.error(f"[ORGANIZE] {operation} error {source_file}: {e}")
             failed_files.append((rel_path_str, str(e)))
 

@@ -410,187 +410,144 @@
 
             <hr class="settings-divider my-4">
 
-            <h6 class="text-uppercase section-title mb-3">Directory Structure</h6>
-
-            <div class="card mb-3 border-secondary-subtle">
-              <div class="card-body">
-                <div class="mb-3">
-                  <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold">Default Relative Path</label>
-                  <div class="input-group mb-2">
-                    <input type="text" class="form-control font-monospace" id="REL_PATH_TEMPLATE"
-                      name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
-                      placeholder="e.g. {Author}/{Series}/{Title}">
-                    <button class="btn btn-outline-secondary" type="button" id="reset-template-btn"
-                      title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
-                  </div>
-
-                  <div class="d-flex gap-2 mb-3 flex-wrap">
-                    <span class="small text-muted align-self-center me-1">Insert:</span>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Author}">
-                      <i class="bi bi-person-fill"></i> Author
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{AuthorLastFirst}" title="Every author as Last, First, joined with &amp;, e.g. Herbert, Frank">
-                      <i class="bi bi-person-lines-fill"></i> Author (Last, First)
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{FirstAuthor}" title="Only the first listed author, e.g. Frank Herbert">
-                      <i class="bi bi-person"></i> First Author
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{FirstAuthorLastFirst}" title="Only the first listed author as Last, First, e.g. Herbert, Frank">
-                      <i class="bi bi-person-badge"></i> First Author (Last, First)
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Narrator}">
-                      <i class="bi bi-mic-fill"></i> Narrator
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Series}">
-                      <i class="bi bi-collection-fill"></i> Series
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{SeriesNumber}">
-                      <i class="bi bi-hash"></i> Series Number
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Title}">
-                      <i class="bi bi-book-fill"></i> Title
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Category}" title="Media type, e.g. Audiobooks or Ebooks">
-                      <i class="bi bi-collection"></i> Category
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Genre}" title="MAM subcategory, e.g. Science Fiction">
-                      <i class="bi bi-tag-fill"></i> Genre
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Format}" title="File format, e.g. M4B or EPUB">
-                      <i class="bi bi-file-earmark-fill"></i> Format
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
-                      data-token="{Year}" title="Publication year from Hardcover enrichment, e.g. 1997">
-                      <i class="bi bi-calendar3"></i> Year
-                    </button>
-                    <!--
-                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill insert-token-btn"
-                    data-token="/">
-                    / (Folder)
-                  </button>
-                  -->
-                  </div>
-
-                  <p class="form-text small mt-0 mb-3">
-                    Put text inside the braces to show it only when the tag has a value, e.g.
-                    <code>{Author}/{Title}{ - Series}{ #SeriesNumber}{ (Year)}</code>.
-                    For leading zeros, use <code>{SeriesNumber:02}</code> (1 → 01, 1.5 → 01.5);
-                    <code>{SeriesNumber:03}</code> uses three digits.
-                  </p>
-
-                  <div class="alert alert-light border small m-0">
-                    <div class="d-flex justify-content-between">
-                      <span class="text-muted text-uppercase"
-                        style="font-size: 0.7rem; letter-spacing: 1px;">Preview</span>
-                    </div>
-                    <div class="text-primary fw-bold text-break font-monospace mt-1" id="structure-preview-output">
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <hr class="settings-divider my-4">
-
             <div id="path-configuration-container">
-              <h6 class="text-uppercase section-title mb-3">Path Configuration</h6>
-              {% set configured_destinations = DESTINATION_PATHS[1:] if DESTINATION_PATHS and
-              DESTINATION_PATHS|length > 1 else [] %}
+              <section id="global-default-paths-section">
+                <h6 class="text-uppercase section-title mb-3">Global Default Paths</h6>
 
-              <div class="card card-body border-secondary-subtle mb-4">
-                <div class="mb-3">
-                  <label for="LOCAL_TORRENT_DOWNLOAD_PATH" class="form-label small">Local Download Source Path</label>
-                  <input type="text" class="form-control" id="LOCAL_TORRENT_DOWNLOAD_PATH"
-                    name="LOCAL_TORRENT_DOWNLOAD_PATH" value="{{ LOCAL_TORRENT_DOWNLOAD_PATH }}">
-                  <div class="form-text small">
-                    The path MouseSearch can access locally for completed torrent files.
-                  </div>
-                </div>
-
-                <div class="mb-3">
-                  <label for="REMOTE_TORRENT_DOWNLOAD_PATH" class="form-label small">Remote Download Source Path</label>
-                  <input type="text" class="form-control" id="REMOTE_TORRENT_DOWNLOAD_PATH"
-                    name="REMOTE_TORRENT_DOWNLOAD_PATH" value="{{ REMOTE_TORRENT_DOWNLOAD_PATH }}">
-                  <div class="form-text small">
-                    Optional but recommended when your torrent client reports a different filesystem path, such as bare
-                    metal vs Docker.
-                  </div>
-                </div>
-
-                <div class="mb-0">
-                  <label for="ORGANIZED_PATH" class="form-label small">Default Organized Destination Path</label>
-                  <input type="text" class="form-control" id="ORGANIZED_PATH" name="ORGANIZED_PATH"
-                    value="{{ ORGANIZED_PATH }}" required>
-                </div>
-              </div>
-
-              <div class="card mb-3 border-secondary-subtle">
-                <div
-                  class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect collapsed settings-collapse-toggle"
-                  data-bs-toggle="collapse" data-bs-target="#type-paths-container" aria-expanded="false"
-                  aria-controls="type-paths-container">
-                  <span class="d-flex small fw-bold align-items-center">
-                    <i class="bi bi-folder-symlink me-2"></i> Type-Specific Paths
-                  </span>
-                  <span class="d-flex align-items-center gap-2">
-                    <span class="badge bg-secondary-subtle text-secondary border rounded-pill {% if configured_destinations|length < 1 %}d-none{% endif %}"
-                      id="type-paths-count">{{ configured_destinations|length }}</span>
-                    <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
-                  </span>
-                </div>
-
-                <div id="type-paths-container" class="collapse">
-                  <div class="card-body border-top pt-2 pb-2">
-                    <div class="d-flex justify-content-between align-items-center mb-2 mt-1">
-                      <div class="form-text small m-0">
-                        Assign a main category type to a destination path for auto-organize placement.
-                      </div>
-                      <button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap ms-3"
-                        id="add-destination-path-btn">
-                        <i class="bi bi-plus-lg"></i> Add Path
-                      </button>
+                <div class="card card-body border-secondary-subtle mb-3">
+                  <div class="mb-3">
+                    <label for="LOCAL_TORRENT_DOWNLOAD_PATH" class="form-label small">Local Download Source Path</label>
+                    <input type="text" class="form-control" id="LOCAL_TORRENT_DOWNLOAD_PATH"
+                      name="LOCAL_TORRENT_DOWNLOAD_PATH" value="{{ LOCAL_TORRENT_DOWNLOAD_PATH }}">
+                    <div class="form-text small">
+                      The path MouseSearch can access locally for completed torrent files.
                     </div>
+                  </div>
 
-                    <div id="destination-paths-list">
-                      {% for dest in configured_destinations %}
-                      <div class="destination-path-row mb-2">
-                        <div class="form-floating destination-path-row-main-type">
-                          <select class="form-select destination-default-select" name="extra_dest_defaults[]">
-                            <option value="">None (Global)</option>
-                            {% for media in AUTO_ORGANIZE_MEDIA_TYPES %}
-                            <option value="{{ media.id }}" {% if dest.default_main_cat==media.id %}selected{% endif %}>
-                              {{ media.label }}
-                            </option>
-                            {% endfor %}
-                          </select>
-                          <label>Main Type</label>
+                  <div class="mb-3">
+                    <label for="REMOTE_TORRENT_DOWNLOAD_PATH" class="form-label small">Remote Download Source Path</label>
+                    <input type="text" class="form-control" id="REMOTE_TORRENT_DOWNLOAD_PATH"
+                      name="REMOTE_TORRENT_DOWNLOAD_PATH" value="{{ REMOTE_TORRENT_DOWNLOAD_PATH }}">
+                    <div class="form-text small">
+                      Optional but recommended when your torrent client reports a different filesystem path, such as
+                      bare metal vs Docker.
+                    </div>
+                  </div>
+
+                  <div class="mb-0">
+                    <label for="ORGANIZED_PATH" class="form-label small">Default Organized Destination Path</label>
+                    <input type="text" class="form-control" id="ORGANIZED_PATH" name="ORGANIZED_PATH"
+                      value="{{ ORGANIZED_PATH }}" required>
+                  </div>
+                </div>
+
+                {# Extra roots offered in the download confirm modal's Destination list.
+                   Per-media-type roots live in Category Overrides below; rows are built by main.js. #}
+                <div class="card mb-3 border-secondary-subtle">
+                  <div
+                    class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect collapsed settings-collapse-toggle"
+                    data-bs-toggle="collapse" data-bs-target="#type-paths-container" aria-expanded="false"
+                    aria-controls="type-paths-container">
+                    <span class="d-flex small fw-bold align-items-center">
+                      <i class="bi bi-folder-plus me-2"></i> Additional Destinations
+                    </span>
+                    <span class="d-flex align-items-center gap-2">
+                      <span class="badge bg-secondary-subtle text-secondary border rounded-pill d-none"
+                        id="type-paths-count">0</span>
+                      <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
+                    </span>
+                  </div>
+
+                  <div id="type-paths-container" class="collapse">
+                    <div class="card-body border-top pt-2 pb-2">
+                      <div class="d-flex justify-content-between align-items-center mb-2 mt-1">
+                        <div class="form-text small m-0">
+                          Other library roots you can pick when confirming a download.
                         </div>
-                        <div class="form-floating">
-                          <input type="text" class="form-control destination-path-input" name="extra_dest_paths[]"
-                            value="{{ dest.path }}" placeholder="/data/media" required>
-                          <label>Destination Path</label>
-                        </div>
-                        <button type="button" class="btn btn-outline-danger remove-path-btn" title="Remove Path"
-                          aria-label="Remove Path">
-                          <i class="bi bi-trash"></i>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap ms-3"
+                          id="add-destination-path-btn">
+                          <i class="bi bi-plus-lg"></i> Add Path
                         </button>
                       </div>
-                      {% endfor %}
+                      <div id="destination-paths-list"></div>
                     </div>
                   </div>
                 </div>
-              </div>
+
+                <div class="card mb-3 border-secondary-subtle">
+                  <div class="card-body">
+                    <div class="mb-3">
+                      {# The token editor is mounted around #REL_PATH_TEMPLATE by main.js. #}
+                      <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label for="REL_PATH_TEMPLATE" class="form-label small fw-bold m-0">Default Relative Path</label>
+                        <button class="btn btn-sm btn-outline-secondary py-0" type="button" id="reset-template-btn"
+                          title="Reset to default"><i class="bi bi-arrow-counterclockwise"></i></button>
+                      </div>
+                      <input type="text" class="form-control form-control-sm font-monospace mt-2"
+                        id="REL_PATH_TEMPLATE" name="REL_PATH_TEMPLATE" value="{{ REL_PATH_TEMPLATE }}"
+                        placeholder="e.g. {Author}/{Series}/{Title}">
+
+                      <div class="alert alert-light border small m-0 mt-3">
+                        <div class="d-flex justify-content-between">
+                          <span class="text-muted text-uppercase"
+                            style="font-size: 0.7rem; letter-spacing: 1px;">Preview</span>
+                        </div>
+                        <div class="text-primary fw-bold text-break font-monospace mt-1"
+                          id="structure-preview-output"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <hr class="settings-divider my-4">
+
+              <section id="category-override-paths-section">
+                <h6 class="text-uppercase section-title mb-3">Category Override Paths</h6>
+
+                {# Replaces the old Type-Specific Paths list. Legacy entries are migrated
+                   into overrides on config load, see migrate_type_specific_paths_to_overrides. #}
+                <div class="card mb-3 border-secondary-subtle">
+                  <div
+                    class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect collapsed settings-collapse-toggle"
+                    data-bs-toggle="collapse" data-bs-target="#category-overrides-container" aria-expanded="false"
+                    aria-controls="category-overrides-container">
+                    <span class="d-flex small fw-bold align-items-center">
+                      <i class="bi bi-sliders me-2"></i> Category Overrides
+                    </span>
+                    <span class="d-flex align-items-center gap-2">
+                      <span
+                        class="badge bg-secondary-subtle text-secondary border rounded-pill {% if CATEGORY_OVERRIDES|length < 1 %}d-none{% endif %}"
+                        id="category-overrides-count">{{ CATEGORY_OVERRIDES|length }}</span>
+                      <i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>
+                    </span>
+                  </div>
+
+                  <div id="category-overrides-container" class="collapse">
+                    <div class="card-body border-top pt-2 pb-2">
+                      <div class="d-flex justify-content-between align-items-center mb-2 mt-1">
+                        <div class="form-text small m-0">
+                          Everything above is the global default. Add a category to override it for one media type.
+                          Each option is optional &mdash; leave it off to inherit.
+                        </div>
+                        <div class="dropdown ms-3">
+                          <button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap dropdown-toggle"
+                            id="add-category-override-btn" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-plus-lg"></i> Add Category
+                          </button>
+                          <ul class="dropdown-menu dropdown-menu-end" id="add-category-override-menu"></ul>
+                        </div>
+                      </div>
+
+                      <div id="category-overrides-list"></div>
+
+                      <div class="form-text small fst-italic m-0 d-none" id="category-overrides-empty">
+                        No overrides. Every media type uses the global settings above.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         </div>

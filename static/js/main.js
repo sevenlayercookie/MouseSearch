@@ -2077,69 +2077,890 @@ function getRelPathTemplateValue() {
  * tag builders. `key` maps a token to its buildRelativePathFromTemplate() value.
  */
 const REL_PATH_TOKENS = [
-    { token: '{Author}', key: 'author', label: 'Author' },
-    { token: '{AuthorLastFirst}', key: 'authorLastFirst', label: 'Author (Last, First)' },
-    { token: '{FirstAuthor}', key: 'firstAuthor', label: 'First Author' },
-    { token: '{FirstAuthorLastFirst}', key: 'firstAuthorLastFirst', label: 'First Author (Last, First)' },
-    { token: '{Narrator}', key: 'narrator', label: 'Narrator' },
-    { token: '{Series}', key: 'series', label: 'Series' },
-    { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series Number' },
-    { token: '{Title}', key: 'title', label: 'Title' },
-    { token: '{Category}', key: 'category', label: 'Category' },
-    { token: '{Genre}', key: 'genre', label: 'Genre' },
-    { token: '{Format}', key: 'format', label: 'Format' },
-    { token: '{Year}', key: 'year', label: 'Year' }
+    { token: '{Author}', key: 'author', label: 'Author', hint: 'Every author, e.g. Frank Herbert, Kevin J. Anderson' },
+    { token: '{AuthorLastFirst}', key: 'authorLastFirst', label: 'Author (Last, First)', hint: 'Every author as Last, First, joined with &' },
+    { token: '{FirstAuthor}', key: 'firstAuthor', label: 'First Author', hint: 'Only the first listed author' },
+    { token: '{FirstAuthorLastFirst}', key: 'firstAuthorLastFirst', label: 'First Author (Last, First)', hint: 'Only the first author, as Last, First' },
+    { token: '{Narrator}', key: 'narrator', label: 'Narrator', hint: 'Audiobook narrator' },
+    { token: '{Series}', key: 'series', label: 'Series', hint: 'Series name' },
+    { token: '{SeriesNumber}', key: 'seriesNumber', label: 'Series #', hint: 'Position in the series; can be zero-padded' },
+    { token: '{Title}', key: 'title', label: 'Title', hint: 'Book title' },
+    { token: '{Category}', key: 'category', label: 'Category', hint: 'Media type, e.g. Audiobooks or Ebooks' },
+    { token: '{Genre}', key: 'genre', label: 'Genre', hint: 'MAM subcategory, e.g. Science Fiction' },
+    { token: '{Format}', key: 'format', label: 'Format', hint: 'File format, e.g. M4B or EPUB' },
+    { token: '{Year}', key: 'year', label: 'Year', hint: 'Publication year (from Hardcover)' }
 ];
 
+const REL_PATH_TOKEN_SPECS = new Map(REL_PATH_TOKENS.map(spec => [spec.token, spec]));
+/** Zero-width space: never inserted, but stripped out of anything pasted in. */
+const TEMPLATE_ZWSP = '\u200b';
+
 /**
- * Remove every group that uses a token (including optional text around it, such
- * as "{ (Year)}"), collapsing the folder level it leaves behind.
+ * Split template text into literal runs and recognised token groups, the way the
+ * path builder will read it. Unknown brace groups stay literal text.
  */
-function removeTokenFromTemplate(template, token) {
-    const text = normalizeRelPathTemplate(template);
-    let output = '';
+function splitRelPathTemplate(text) {
+    const parts = [];
     let cursor = 0;
     for (const group of parseRelPathTemplateGroups(text)) {
-        if (group.token !== token) continue;
-        output += text.slice(cursor, group.start);
+        if (!group.token || !REL_PATH_TOKEN_SPECS.has(group.token)) continue;
+        if (group.start > cursor) parts.push({ text: text.slice(cursor, group.start) });
+        parts.push({ group });
         cursor = group.end;
     }
-    output += text.slice(cursor);
-    return output
-        .replace(/\/+/g, '/')
-        .replace(/^\/+|\/+$/g, '');
+    if (cursor < text.length) parts.push({ text: text.slice(cursor) });
+    return parts;
 }
 
 /**
- * Insert a token into a template input at the last known caret position, falling
- * back to appending it as a new path segment. Returns the updated caret range so
- * the caller can keep tracking it. Shared by the Settings and confirm-modal builders.
+ * The one template editor used everywhere path templates are edited: Settings,
+ * the download confirm modal, and each category override block.
+ *
+ * It behaves like an ordinary text box. Tokens are inline pills the caret steps
+ * over as a unit; everything between them - separators, literal text - is typed
+ * and edited normally. Pills can be dragged to another spot in the text, the
+ * [+] menu inserts a token at the caret, and tapping a pill opens its text for
+ * editing, with its result and any token-specific options (zero-padding for
+ * Series #). A pill stands for a whole brace group, so "{ (Year)}" is one pill.
+ *
+ * `input` is the real form field and stays the source of truth, so names, ids and
+ * form submission are left to the caller. The editor mounts around it.
+ *
+ * options:
+ *   input        the text input holding the template (required)
+ *   fallback     template to show when the input is empty (e.g. the global default)
+ *   tokenValues  optional {token: resolvedValue} used for tooltips, and to mark
+ *                menu entries for tokens the current item has no value for
+ *   onChange     called with the new template after any edit
  */
-function insertTokenIntoTemplateInput(input, token, caretRange) {
-    const currentVal = input.value || '';
-    const hasCaretRange = caretRange
-        && typeof caretRange.start === 'number'
-        && typeof caretRange.end === 'number';
+function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TEMPLATE, tokenValues = null, onChange = () => {} }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'template-token-editor-wrap';
 
-    // With no tracked caret, append to the end.
-    const start = hasCaretRange ? Math.max(0, Math.min(caretRange.start, currentVal.length)) : currentVal.length;
-    const end = hasCaretRange ? Math.max(start, Math.min(caretRange.end, currentVal.length)) : currentVal.length;
-    const before = currentVal.slice(0, start);
-    const after = currentVal.slice(end);
+    const editor = document.createElement('div');
+    editor.className = 'form-control template-token-editor';
+    editor.setAttribute('contenteditable', 'true');
+    editor.setAttribute('role', 'textbox');
+    editor.setAttribute('aria-multiline', 'false');
+    editor.setAttribute('aria-label', 'Path template');
+    editor.setAttribute('spellcheck', 'false');
 
-    // Keep each token on its own path segment, adding a separator only where one
-    // is missing. Without this, clicking two tags in a row ran them together:
-    // the first insert focuses the input, so the second landed at the caret with
-    // no separator and produced "{Genre}{Title}".
-    const prefix = token !== '/' && before && !before.endsWith('/') ? '/' : '';
-    const suffix = token !== '/' && after && !after.startsWith('/') ? '/' : '';
+    const toolbar = document.createElement('div');
+    toolbar.className = 'd-flex align-items-center flex-wrap gap-2 mt-1 template-token-toolbar';
 
-    input.value = `${before}${prefix}${token}${suffix}${after}`;
-    const nextCaretPos = before.length + prefix.length + token.length;
+    const addWrap = document.createElement('span');
+    addWrap.className = 'dropdown d-inline-flex';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-2 template-token-add-btn';
+    addBtn.title = 'Insert a token at the cursor';
+    addBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Token';
+    addBtn.setAttribute('data-bs-toggle', 'dropdown');
+    addBtn.setAttribute('data-bs-auto-close', 'true');
+    addBtn.setAttribute('aria-expanded', 'false');
+    const addMenu = document.createElement('ul');
+    addMenu.className = 'dropdown-menu template-token-add-menu';
+    addWrap.append(addBtn, addMenu);
 
-    input.focus();
-    input.setSelectionRange(nextCaretPos, nextCaretPos);
-    return { start: nextCaretPos, end: nextCaretPos };
+    const hint = document.createElement('span');
+    hint.className = 'form-text small m-0 me-auto template-token-hint';
+    hint.textContent = 'Tap a token to edit it';
+
+    const textToggle = document.createElement('button');
+    textToggle.type = 'button';
+    textToggle.className = 'btn btn-link btn-sm p-0 text-decoration-none template-token-text-toggle';
+    textToggle.textContent = 'Edit as text';
+
+    toolbar.append(addWrap, hint, textToggle);
+
+    const optionsPanel = document.createElement('div');
+    optionsPanel.className = 'template-token-options d-none';
+
+    wrap.append(editor, toolbar, optionsPanel);
+
+    /** Caret to insert at, remembered because opening the [+] menu takes focus away. */
+    let savedRange = null;
+    let dropCaret = null;
+    /** The pill whose options panel is open. */
+    let optionsPill = null;
+
+    const currentTemplate = () => input.value || fallback() || '';
+
+    // --- reading the field back out ---------------------------------------
+
+    /** Read a run of the field back as template text, pills included as their group. */
+    function serializeNodes(nodes) {
+        let out = '';
+        nodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) { out += node.textContent; return; }
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            if (node.dataset.token) { out += node.dataset.token; return; }
+            if (node.classList.contains('template-token-drop-caret')) return;
+            if (node.tagName === 'BR') return;
+            out += node.textContent;   // stray markup from a paste
+        });
+        return out.split(TEMPLATE_ZWSP).join('').replace(/[\r\n]+/g, '');
+    }
+
+    const serialize = () => serializeNodes(Array.from(editor.childNodes));
+
+    /** Push the field's contents back onto the real input and tell the caller. */
+    function sync() {
+        // Chrome parks a <br> in the field as it empties; it is not part of the template.
+        editor.querySelectorAll('br').forEach(br => br.remove());
+        ensureCaretAnchors();
+        decoratePills();
+        renderMenu();
+        if (optionsPill && !editor.contains(optionsPill)) closeOptions();
+        const value = serialize();
+        // A class rather than emptying the field: the leftover anchors are invisible
+        // anyway, and clearing them by hand would cost the user their undo history.
+        editor.classList.toggle('template-token-editor-empty', !value);
+        if (input.value === value) return;
+        input.value = value;
+        onChange(value);
+    }
+
+    // --- building the field ------------------------------------------------
+
+    const pillGroup = pill => parseRelPathTemplateGroups(pill.dataset.token)[0] || { token: pill.dataset.base };
+
+    /** Optional text is shown with its spaces made visible, since they matter. */
+    const visibleSpaces = text => text.replace(/ /g, '·');
+
+    /** (Re)draw a pill's contents from its group text. */
+    function paintPill(pill) {
+        const group = pillGroup(pill);
+        const spec = REL_PATH_TOKEN_SPECS.get(group.token);
+        pill.dataset.base = group.token;
+        pill.textContent = '';
+
+        const grip = document.createElement('i');
+        grip.className = 'bi bi-grip-vertical template-token-grip';
+        pill.appendChild(grip);
+
+        if (group.prefix) {
+            const prefix = document.createElement('span');
+            prefix.className = 'template-token-affix';
+            prefix.textContent = visibleSpaces(group.prefix);
+            pill.appendChild(prefix);
+        }
+        const label = document.createElement('span');
+        label.className = 'template-token-label';
+        label.textContent = spec ? spec.label : group.token;
+        pill.appendChild(label);
+        if (group.paddingWidth) {
+            const pad = document.createElement('span');
+            pad.className = 'template-token-pad';
+            pad.textContent = '0'.repeat(group.paddingWidth - 1) + '1';
+            pad.title = `Zero-padded to ${group.paddingWidth} digits`;
+            pill.appendChild(pad);
+        }
+        if (group.suffix) {
+            const suffix = document.createElement('span');
+            suffix.className = 'template-token-affix';
+            suffix.textContent = visibleSpaces(group.suffix);
+            pill.appendChild(suffix);
+        }
+
+        const close = document.createElement('i');
+        close.className = 'bi bi-x template-token-remove';
+        close.setAttribute('role', 'button');
+        close.setAttribute('aria-label', `Remove ${spec ? spec.label : group.token}`);
+        close.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            removePill(pill);
+            sync();
+        });
+        pill.appendChild(close);
+        pill.classList.toggle('template-token-pill-optional', Boolean(group.prefix || group.suffix));
+    }
+
+    function makePill(groupText) {
+        const pill = document.createElement('span');
+        pill.className = 'template-token-pill token-pill-token';
+        pill.dataset.token = groupText;
+        pill.setAttribute('contenteditable', 'false');
+        pill.draggable = false;
+        paintPill(pill);
+        attachDrag(pill);
+        return pill;
+    }
+
+    const pillsIn = () => Array.from(editor.querySelectorAll('.template-token-pill'));
+    const isText = node => !!(node && node.nodeType === Node.TEXT_NODE);
+    const isPill = node => !!(node && node.nodeType === Node.ELEMENT_NODE && node.dataset.token);
+    /** A caret anchor: a text node of nothing but zero-width spaces. */
+    const isAnchor = node => isText(node) && node.textContent.length > 0
+        && node.textContent.split(TEMPLATE_ZWSP).join('') === '';
+
+    /**
+     * A caret at an element boundary - after the last token, before the first, or
+     * between two touching ones - has no text node to sit in, and so no rect for
+     * the browser to paint it from. Desktop browsers guess well enough; mobile
+     * Chrome and Safari paint it at the far right of the field. A zero-width space
+     * gives those positions a text node to live in; serialize() strips them out,
+     * and moveCaretPastAnchors() keeps the keyboard from tripping over them.
+     *
+     * Adding only, never tidying: Chrome throws away its undo stack the moment we
+     * mutate the field behind its back, so an ordinary keystroke has to leave the
+     * DOM alone. An anchor left behind by a deleted token is invisible, is stripped
+     * from the value, and goes on the next rebuild.
+     */
+    function ensureCaretAnchors() {
+        const anchor = () => document.createTextNode(TEMPLATE_ZWSP);
+        const kids = Array.from(editor.childNodes);
+        if (isPill(kids[0])) editor.insertBefore(anchor(), kids[0]);
+        kids.forEach((node, index) => {
+            if (isPill(node) && isPill(kids[index + 1])) editor.insertBefore(anchor(), kids[index + 1]);
+        });
+        if (isPill(editor.lastChild)) editor.appendChild(anchor());
+    }
+
+    /**
+     * The neighbour in `dir`, ignoring text nodes that contribute nothing to the
+     * template. Inserting into a range splits the text node it lands in, trimming a
+     * separator can empty one, and caret anchors sit between tokens by design; all
+     * of them would otherwise hide a node's real neighbour.
+     */
+    function beside(node, dir) {
+        let next = node[dir];
+        while (isText(next) && (next.textContent === '' || isAnchor(next))) next = next[dir];
+        return next;
+    }
+
+    /**
+     * Removing a token takes the separator it leaves orphaned with it, so deleting
+     * a level out of "a/{Genre}/b" gives "a/b" rather than "a//b".
+     */
+    function removePill(pill) {
+        const prev = beside(pill, 'previousSibling');
+        const next = beside(pill, 'nextSibling');
+        const before = isText(prev) ? prev : null;
+        const after = isText(next) ? next : null;
+        if (pill === optionsPill) closeOptions();
+        pill.remove();
+        if (after && after.textContent.startsWith('/') && (!before || before.textContent.endsWith('/'))) {
+            after.textContent = after.textContent.slice(1);
+        } else if (before && before.textContent.endsWith('/') && !after) {
+            before.textContent = before.textContent.slice(0, -1);
+        }
+    }
+
+    /** {token: value} for the current item, or null when the caller has none. */
+    const currentValues = () => (tokenValues ? tokenValues() : null);
+
+    /** What one group renders to for the current item, e.g. " (1997)". */
+    function renderGroup(groupText, values) {
+        const byKey = {};
+        REL_PATH_TOKENS.forEach(spec => { byKey[spec.key] = values[spec.token] || ''; });
+        // Rendered on its own so the path builder's segment trimming cannot eat
+        // the group's spaces.
+        return buildRelativePathFromTemplate(`\u0001${groupText}\u0001`, byKey).slice(1, -1);
+    }
+
+    function decoratePills() {
+        // Shown only when the field is emptied, i.e. "no override, inherit this".
+        editor.dataset.placeholder = normalizeRelPathTemplate(fallback() || '');
+        const values = currentValues();
+        pillsIn().forEach(pill => {
+            const spec = REL_PATH_TOKEN_SPECS.get(pill.dataset.base);
+            const name = spec ? spec.label : pill.dataset.base;
+            if (values) {
+                const rendered = renderGroup(pill.dataset.token, values);
+                pill.title = rendered ? `${name}: "${rendered}"` : `${name}: nothing for this item`;
+                pill.classList.toggle('template-token-pill-empty', !rendered);
+            } else {
+                pill.title = `${name}. Tap for options, drag to move.`;
+            }
+        });
+    }
+
+    /**
+     * Rebuild the field from the input. Skipped when the field already says the
+     * same thing, so that typing - which syncs the other way - keeps its caret.
+     */
+    function render(force = false) {
+        const template = normalizeRelPathTemplate(currentTemplate());
+        if (!force && template === serialize()) {
+            decoratePills();
+            renderMenu();
+            return;
+        }
+        closeOptions();
+        editor.textContent = '';
+        // The old caret pointed into nodes that no longer exist.
+        savedRange = null;
+        appendTemplate(editor, template);
+        ensureCaretAnchors();
+        editor.classList.toggle('template-token-editor-empty', !template);
+        decoratePills();
+        renderMenu();
+    }
+
+    /** Append `text` to `parent`, turning every recognised token group into a pill. */
+    function appendTemplate(parent, text) {
+        let lastPill = null;
+        splitRelPathTemplate(text).forEach(part => {
+            if (part.text !== undefined) {
+                parent.appendChild(document.createTextNode(part.text));
+            } else {
+                lastPill = makePill(part.group.raw);
+                parent.appendChild(lastPill);
+            }
+        });
+        return lastPill;
+    }
+
+    /** A {Tag} typed or pasted by hand becomes a pill as soon as it is complete. */
+    function pillifyTypedTokens() {
+        let lastPill = null;
+        Array.from(editor.childNodes)
+            .filter(node => isText(node) && node.textContent.includes('}'))
+            .forEach(node => {
+                const text = node.textContent.split(TEMPLATE_ZWSP).join('');
+                if (!splitRelPathTemplate(text).some(part => part.group)) return;
+                const frag = document.createDocumentFragment();
+                lastPill = appendTemplate(frag, text);
+                node.replaceWith(frag);
+            });
+        if (lastPill) placeCaretAfter(lastPill);
+    }
+
+    function renderMenu() {
+        addMenu.innerHTML = '';
+        const used = serialize() || currentTemplate();
+        const values = currentValues();
+
+        REL_PATH_TOKENS.forEach(spec => {
+            const li = document.createElement('li');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item template-token-add-item';
+            btn.dataset.token = spec.token;
+
+            const title = document.createElement('span');
+            title.className = 'template-token-add-label';
+            title.textContent = spec.label;
+            const detail = document.createElement('span');
+            detail.className = 'template-token-add-detail';
+
+            // When the caller supplied per-item values, show what the token would be
+            // for this item; one with nothing to render is offered but marked, rather
+            // than silently adding an empty level.
+            const resolved = values ? (values[spec.token] || '') : null;
+            if (values && !resolved) {
+                btn.classList.add('template-token-add-item-empty');
+                detail.textContent = `No ${spec.label.toLowerCase()} for this item`;
+            } else {
+                detail.textContent = resolved || spec.hint;
+            }
+
+            if (templateHasToken(used, spec.token)) {
+                const check = document.createElement('i');
+                check.className = 'bi bi-check2 template-token-add-used';
+                check.title = 'Already in the template';
+                title.appendChild(check);
+            }
+
+            btn.append(title, detail);
+            btn.addEventListener('click', () => insertToken(spec.token));
+            li.appendChild(btn);
+            addMenu.appendChild(li);
+        });
+    }
+
+    // --- caret -------------------------------------------------------------
+
+    const selection = () => (document.getSelection ? document.getSelection() : null);
+
+    function rangeAtEnd() {
+        const range = document.createRange();
+        const last = editor.lastChild;
+        if (isText(last)) range.setStart(last, last.textContent.length);
+        else { range.selectNodeContents(editor); range.collapse(false); }
+        range.collapse(true);
+        return range;
+    }
+
+    function setCaret(node, offset) {
+        const sel = selection();
+        if (!sel) return;
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        savedRange = range.cloneRange();
+    }
+
+    /** The caret the user placed in the field, if there is one. */
+    function caretInEditor() {
+        const sel = selection();
+        if (sel && sel.rangeCount) {
+            const live = sel.getRangeAt(0);
+            if (editor.contains(live.commonAncestorContainer)) return live.cloneRange();
+        }
+        if (savedRange && editor.contains(savedRange.commonAncestorContainer)) return savedRange.cloneRange();
+        return null;
+    }
+
+    function placeCaretAfter(node, before = false) {
+        const sel = selection();
+        if (!sel) return;
+        const range = document.createRange();
+        // Aim for a text node: a caret against an element has no rect to paint from.
+        const neighbour = before ? node.previousSibling : node.nextSibling;
+        if (isText(neighbour)) range.setStart(neighbour, before ? neighbour.textContent.length : 0);
+        else if (before) range.setStartBefore(node);
+        else range.setStartAfter(node);
+        range.collapse(true);
+        editor.focus({ preventScroll: true });
+        sel.removeAllRanges();
+        sel.addRange(range);
+        savedRange = range.cloneRange();
+    }
+
+    /**
+     * Insert a token. With a caret in the field it goes exactly there and nothing
+     * else; with none (the menu was opened without clicking into the field first)
+     * it is appended as a new folder level, since gluing it onto the last token is
+     * never what that meant.
+     */
+    function insertToken(token) {
+        const placed = caretInEditor();
+        const pill = makePill(token);
+        if (placed) {
+            placed.deleteContents();
+            placed.insertNode(pill);
+        } else {
+            const current = serialize();
+            if (current && !current.endsWith('/')) editor.appendChild(document.createTextNode('/'));
+            editor.appendChild(pill);
+        }
+        sync();
+        placeCaretAfter(pill);
+    }
+
+    /**
+     * Turn a caret parked on the editor element itself (between child nodes) into
+     * the equivalent spot inside a text node, so it can be reasoned about.
+     */
+    function caretInText() {
+        const sel = selection();
+        if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+        let node = sel.anchorNode;
+        let offset = sel.anchorOffset;
+        if (node === editor) {
+            const before = editor.childNodes[offset - 1];
+            const after = editor.childNodes[offset];
+            if (isText(before)) { node = before; offset = before.textContent.length; }
+            else if (isText(after)) { node = after; offset = 0; }
+            else return null;
+        }
+        return isText(node) && node.parentNode === editor ? { node, offset } : null;
+    }
+
+    /**
+     * Step the caret over any zero-width anchor characters in `dir`, so the key
+     * about to act (an arrow, Backspace, Delete) reaches the next real character
+     * or token instead of spending a press on something invisible.
+     */
+    function moveCaretPastAnchors(backward) {
+        const at = caretInText();
+        if (!at) return;
+        let { node, offset } = at;
+        for (;;) {
+            const text = node.textContent;
+            if (backward) {
+                while (offset > 0 && text[offset - 1] === TEMPLATE_ZWSP) offset -= 1;
+                if (offset === 0 && isText(node.previousSibling)) {
+                    node = node.previousSibling;
+                    offset = node.textContent.length;
+                    continue;
+                }
+            } else {
+                while (offset < text.length && text[offset] === TEMPLATE_ZWSP) offset += 1;
+                if (offset === text.length && isText(node.nextSibling)) {
+                    node = node.nextSibling;
+                    offset = 0;
+                    continue;
+                }
+            }
+            break;
+        }
+        if (node !== at.node || offset !== at.offset) setCaret(node, offset);
+    }
+
+    // --- token options -----------------------------------------------------
+
+    function closeOptions() {
+        optionsPill?.classList.remove('template-token-pill-selected');
+        optionsPill = null;
+        optionsPanel.classList.add('d-none');
+        optionsPanel.textContent = '';
+    }
+
+    /** Values to show a token's result with: the item's own, or a sample book. */
+    function resultValues() {
+        if (tokenValues) return tokenValues();
+        const sample = {
+            ...authorTokenValues('J.K. Rowling'),
+            narrator: 'Stephen Fry',
+            series: 'Harry Potter',
+            seriesNumber: '1',
+            title: "Harry Potter and the Sorcerer's Stone",
+            genre: 'Fantasy',
+            format: 'M4B',
+            category: 'Audiobooks',
+            year: '1997'
+        };
+        return Object.fromEntries(REL_PATH_TOKENS.map(spec => [spec.token, sample[spec.key] || '']));
+    }
+
+    /**
+     * A token's own editor: its text exactly as it sits in the template, the
+     * result of that text, and options that are specific to the token (only
+     * zero-padding for Series # so far), which edit the same text.
+     */
+    function openOptions(pill) {
+        if (optionsPill === pill) { closeOptions(); return; }
+        closeOptions();
+        optionsPill = pill;
+        pill.classList.add('template-token-pill-selected');
+        const uid = `tto-${Math.random().toString(36).slice(2, 8)}`;
+
+        optionsPanel.innerHTML = `
+            <div class="d-flex align-items-center gap-2">
+                <input type="text" class="form-control form-control-sm font-monospace" id="${uid}-text"
+                    autocomplete="off" spellcheck="false" aria-label="Token text">
+                <button type="button" class="btn btn-sm btn-outline-danger template-token-options-remove"
+                    title="Remove token" aria-label="Remove token"><i class="bi bi-trash"></i></button>
+                <button type="button" class="btn-close btn-close-sm ms-1" aria-label="Close"></button>
+            </div>
+            <div class="small font-monospace mt-1 text-break template-token-options-result"></div>
+            <div class="invalid-feedback d-block small template-token-options-error"></div>
+            <div class="form-text small mt-1">Text inside the braces only appears when there's a value.</div>
+            <div class="mt-2 template-token-options-pad">
+                <label class="form-label small mb-1" for="${uid}-pad">Leading zeros</label>
+                <select class="form-select form-select-sm" id="${uid}-pad">
+                    <option value="0">None (1, 2, 10)</option>
+                    <option value="2">2 digits (01, 02, 10)</option>
+                    <option value="3">3 digits (001, 002, 010)</option>
+                    <option value="4">4 digits (0001)</option>
+                </select>
+            </div>`;
+
+        const text = optionsPanel.querySelector(`#${uid}-text`);
+        const pad = optionsPanel.querySelector(`#${uid}-pad`);
+        const padRow = optionsPanel.querySelector('.template-token-options-pad');
+        const result = optionsPanel.querySelector('.template-token-options-result');
+        const error = optionsPanel.querySelector('.template-token-options-error');
+
+        /** The single known token group `value` is, or null. */
+        const parseOne = (value) => {
+            const parts = splitRelPathTemplate(value);
+            return parts.length === 1 && parts[0].group ? parts[0].group : null;
+        };
+
+        /** Bring the result line and the options in line with the pill. */
+        const reflect = () => {
+            const group = pillGroup(pill);
+            const isSeriesNumber = group.token === '{SeriesNumber}';
+            padRow.classList.toggle('d-none', !isSeriesNumber);
+            if (isSeriesNumber) pad.value = String(group.paddingWidth || 0);
+            const rendered = renderGroup(pill.dataset.token, resultValues());
+            result.textContent = rendered ? `→ ${rendered}` : '→ (nothing for this item)';
+            result.classList.toggle('text-body-secondary', !rendered);
+        };
+
+        const commit = (value) => {
+            if (pill.dataset.token === value) return;
+            pill.dataset.token = value;
+            paintPill(pill);
+            pill.classList.add('template-token-pill-selected');
+            sync();
+        };
+
+        text.value = pill.dataset.token;
+        reflect();
+
+        text.addEventListener('input', () => {
+            const value = text.value.replace(/\\/g, '/');
+            const group = parseOne(value);
+            text.classList.toggle('is-invalid', !group);
+            error.textContent = group ? '' : 'Not a token. Use one tag in braces, e.g. {Year}.';
+            if (!group) return;
+            commit(value);
+            reflect();
+        });
+
+        pad.addEventListener('change', () => {
+            const group = pillGroup(pill);
+            // Rewrite only the padding and keep the rest of the token text as typed.
+            const width = Number(pad.value) || 0;
+            const content = pill.dataset.token.slice(1, -1);
+            const updated = `{${content.replace(/SeriesNumber(:0(?:10|[1-9]))?/, width ? `SeriesNumber:0${width}` : 'SeriesNumber')}}`;
+            if (parseOne(updated)?.token !== group.token) return;
+            text.value = updated;
+            text.classList.remove('is-invalid');
+            error.textContent = '';
+            commit(updated);
+            reflect();
+        });
+
+        text.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') { event.preventDefault(); closeOptions(); }
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeOptions(); }
+        });
+        optionsPanel.querySelector('.btn-close').addEventListener('click', closeOptions);
+        optionsPanel.querySelector('.template-token-options-remove').addEventListener('click', () => {
+            removePill(pill);
+            sync();
+        });
+
+        optionsPanel.classList.remove('d-none');
+        // Not on touch, where focusing pops the keyboard over the panel.
+        if (!window.matchMedia?.('(pointer: coarse)').matches) text.focus({ preventScroll: true });
+    }
+
+    // --- dragging a pill to a new spot -------------------------------------
+
+    function nodeRect(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) return node.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getBoundingClientRect ? range.getBoundingClientRect() : null;
+    }
+
+    /** Nearest gap between the field's children; used when the browser has no caret-from-point. */
+    function nearestGap(x, y) {
+        let best = null;
+        Array.from(editor.childNodes)
+            .filter(node => node !== dropCaret)
+            .forEach(node => {
+                const rect = nodeRect(node);
+                if (!rect || (!rect.width && !rect.height)) return;
+                const midY = (rect.top + rect.bottom) / 2;
+                [['setStartBefore', rect.left], ['setStartAfter', rect.right]].forEach(([method, edgeX]) => {
+                    const score = Math.abs(y - midY) * 4 + Math.abs(x - edgeX);
+                    if (!best || score < best.score) best = { node, method, score };
+                });
+            });
+        if (!best) return rangeAtEnd();
+        const range = document.createRange();
+        range[best.method](best.node);
+        range.collapse(true);
+        return range;
+    }
+
+    /** The text position under the pointer, snapped outside any pill it lands in. */
+    function insertionRange(x, y) {
+        let range = null;
+        if (document.caretRangeFromPoint) {
+            range = document.caretRangeFromPoint(x, y);
+        } else if (document.caretPositionFromPoint) {
+            const pos = document.caretPositionFromPoint(x, y);
+            if (pos) {
+                range = document.createRange();
+                range.setStart(pos.offsetNode, pos.offset);
+            }
+        }
+        if (range && editor.contains(range.startContainer)) {
+            range.collapse(true);
+            const node = range.startContainer;
+            const host = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+            const pill = host?.closest('.template-token-pill');
+            if (!pill) return range;
+            const rect = pill.getBoundingClientRect();
+            const snapped = document.createRange();
+            if (x < (rect.left + rect.right) / 2) snapped.setStartBefore(pill);
+            else snapped.setStartAfter(pill);
+            snapped.collapse(true);
+            return snapped;
+        }
+        return nearestGap(x, y);
+    }
+
+    function removeDropCaret() {
+        dropCaret?.remove();
+        dropCaret = null;
+    }
+
+    function showDropCaret(x, y) {
+        removeDropCaret();
+        const range = insertionRange(x, y);
+        dropCaret = document.createElement('span');
+        dropCaret.className = 'template-token-drop-caret';
+        dropCaret.setAttribute('contenteditable', 'false');
+        range.insertNode(dropCaret);
+    }
+
+    /**
+     * Pointer-based dragging. HTML5 drag-and-drop does not fire on touch, so
+     * pointer events drive both mouse and touch from one path; CSS sets
+     * touch-action:none on the pills so dragging does not scroll the panel.
+     */
+    function attachDrag(pill) {
+        let pointerId = null;
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const detach = () => {
+            pill.removeEventListener('pointermove', onMove);
+            pill.removeEventListener('pointerup', onUp);
+            pill.removeEventListener('pointercancel', onCancel);
+            pill.releasePointerCapture?.(pointerId);
+            pill.classList.remove('dragging');
+            editor.classList.remove('template-token-editor-dragging');
+            pointerId = null;
+        };
+
+        const onMove = (event) => {
+            if (event.pointerId !== pointerId) return;
+            if (!dragging) {
+                // A small threshold so a tap still opens the token's options.
+                if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) < 6) return;
+                dragging = true;
+                pill.classList.add('dragging');
+                editor.classList.add('template-token-editor-dragging');
+            }
+            event.preventDefault();
+            showDropCaret(event.clientX, event.clientY);
+        };
+
+        const onUp = (event) => {
+            if (event.pointerId !== pointerId) return;
+            const wasDragging = dragging;
+            const target = wasDragging && dropCaret?.parentNode ? dropCaret : null;
+            if (target) {
+                // Literally a move: the token goes exactly where the caret was
+                // shown and the text around it is left alone, so it can be dropped
+                // flush against another token when that is what you want.
+                target.parentNode.insertBefore(pill, target);
+            }
+            removeDropCaret();
+            dragging = false;
+            detach();
+            if (target) { sync(); placeCaretAfter(pill); return; }
+            if (!wasDragging) openOptions(pill);
+        };
+
+        const onCancel = (event) => {
+            if (event.pointerId !== pointerId) return;
+            dragging = false;
+            removeDropCaret();
+            detach();
+        };
+
+        // Stop the browser starting a text selection (or its own drag) from the
+        // pill: inside a contenteditable, pressing on one otherwise begins
+        // selecting across the field the moment the pointer moves.
+        pill.addEventListener('mousedown', event => event.preventDefault());
+
+        pill.addEventListener('pointerdown', (event) => {
+            if (event.button != null && event.button !== 0) return;
+            if (event.target.closest('.template-token-remove')) return;
+            pointerId = event.pointerId;
+            startX = event.clientX;
+            startY = event.clientY;
+            pill.setPointerCapture?.(pointerId);
+            pill.addEventListener('pointermove', onMove);
+            pill.addEventListener('pointerup', onUp);
+            pill.addEventListener('pointercancel', onCancel);
+        });
+    }
+
+    // --- wiring ------------------------------------------------------------
+
+    editor.addEventListener('input', () => {
+        pillifyTypedTokens();
+        sync();
+    });
+
+    editor.addEventListener('keydown', (event) => {
+        // One line only: Enter would otherwise split the field into blocks.
+        if (event.key === 'Enter') { event.preventDefault(); return; }
+        if (event.key === 'Escape' && optionsPill) { closeOptions(); return; }
+        // Backspace and Delete themselves are left to the browser, which already
+        // treats a pill as one character and, unlike anything we could do by hand,
+        // records it for undo. We only step over the invisible anchors first.
+        if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+        if (event.key === 'ArrowLeft' || event.key === 'Backspace') moveCaretPastAnchors(true);
+        else if (event.key === 'ArrowRight' || event.key === 'Delete') moveCaretPastAnchors(false);
+    });
+
+    // Left alone, the clipboard gets Chrome's rendering of the pills, labels and
+    // all. Copy the template text instead, so it pastes back as itself here or
+    // anywhere else.
+    ['copy', 'cut'].forEach(type => editor.addEventListener(type, (event) => {
+        const sel = selection();
+        if (!event.clipboardData || !sel || !sel.rangeCount || sel.isCollapsed) return;
+        const range = sel.getRangeAt(0);
+        if (!editor.contains(range.commonAncestorContainer)) return;
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', serializeNodes(Array.from(range.cloneContents().childNodes)));
+        if (type !== 'cut') return;
+        range.deleteContents();
+        sync();
+    }));
+
+    editor.addEventListener('paste', (event) => {
+        if (!event.clipboardData) return;
+        event.preventDefault();
+        const text = String(event.clipboardData.getData('text/plain') || '')
+            .replace(/[\r\n]+/g, ' ').split(TEMPLATE_ZWSP).join('');
+        const range = caretInEditor() || rangeAtEnd();
+        range.deleteContents();
+        const node = document.createTextNode(text);
+        range.insertNode(node);
+        placeCaretAfter(node);
+        pillifyTypedTokens();
+        sync();
+    });
+
+    // Clicking the empty space after the text behaves like clicking a text input:
+    // the caret goes to the end. Clicks on the text itself are the browser's.
+    editor.addEventListener('click', (event) => {
+        if (event.target !== editor) return;
+        const sel = selection();
+        if (!sel || (sel.rangeCount && !sel.isCollapsed)) return;
+        const last = editor.lastChild;
+        const rect = last ? nodeRect(last) : null;
+        const pastEnd = !rect || event.clientY > rect.bottom
+            || (event.clientY >= rect.top && event.clientX > rect.right);
+        if (!pastEnd) return;
+        editor.focus();
+        const end = rangeAtEnd();
+        setCaret(end.startContainer, end.startOffset);
+    });
+
+    // Opening the [+] menu focuses the button and collapses the caret, so keep a
+    // copy of it while it is still ours. Scoped to the field, not the document, so
+    // an override block that is removed takes its listeners with it.
+    const rememberCaret = () => {
+        const sel = selection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (editor.contains(range.commonAncestorContainer)) savedRange = range.cloneRange();
+    };
+    ['keyup', 'mouseup', 'pointerup', 'input', 'focus'].forEach(type =>
+        editor.addEventListener(type, rememberCaret));
+
+    textToggle.addEventListener('click', () => {
+        const hidden = input.classList.toggle('d-none');
+        textToggle.textContent = hidden ? 'Edit as text' : 'Hide text editor';
+        if (!hidden) input.focus();
+    });
+
+    // The raw field is written directly by resets, by settings snapshot restore,
+    // and by typing into it under "Edit as text".
+    input.addEventListener('input', () => render(true));
+
+    render(true);
+    return { element: wrap, refresh: () => render(false) };
 }
 
 function getSeriesName(seriesJsonStr) {
@@ -3701,6 +4522,17 @@ document.addEventListener("DOMContentLoaded", async function () {
             renderTypeCategoryRows(rows);
         }
 
+        // Category override blocks are built by JS, so restore them from the snapshot
+        // rather than relying on the generic named-field pass below.
+        const snapshotOverrides = settingsSnapshot['category_override_blocks[]'];
+        if (Array.isArray(snapshotOverrides)) {
+            renderCategoryOverrides(
+                snapshotOverrides
+                    .map(raw => { try { return JSON.parse(raw); } catch { return null; } })
+                    .filter(Boolean)
+            );
+        }
+
         settingsForm.querySelectorAll('input, select, textarea').forEach(el => {
             if (el.name?.endsWith('[]')) return;
             if (!el.name || !(el.name in settingsSnapshot)) return;
@@ -3789,17 +4621,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     const resetTemplateBtn = document.getElementById('reset-template-btn');
 
     if (relTemplateInput && previewOutput) {
-        let relTemplateCaretRange = null;
-
-        const captureRelTemplateCaretRange = () => {
-            if (document.activeElement !== relTemplateInput) return;
-            const start = relTemplateInput.selectionStart;
-            const end = relTemplateInput.selectionEnd;
-            if (typeof start === 'number' && typeof end === 'number') {
-                relTemplateCaretRange = { start, end };
-            }
-        };
-
         const previewData = {
             ...authorTokenValues('J.K. Rowling'),
             narrator: 'Stephen Fry',
@@ -3812,37 +4633,35 @@ document.addEventListener("DOMContentLoaded", async function () {
             year: '1997'
         };
 
+        // Built the same way the real path is, so stray separators preview honestly.
         const updatePathPreview = () => {
             const template = relTemplateInput.value?.trim() || DEFAULT_REL_PATH_TEMPLATE;
             previewOutput.textContent = buildRelativePathFromTemplate(template, previewData);
         };
 
         relTemplateInput.addEventListener('input', updatePathPreview);
-        relTemplateInput.addEventListener('keyup', captureRelTemplateCaretRange);
-        relTemplateInput.addEventListener('click', captureRelTemplateCaretRange);
-        relTemplateInput.addEventListener('select', captureRelTemplateCaretRange);
-        relTemplateInput.addEventListener('focus', captureRelTemplateCaretRange);
 
-        document.querySelectorAll('.insert-token-btn').forEach(btn => {
-            btn.addEventListener('mousedown', () => {
-                captureRelTemplateCaretRange();
-            });
-
-            btn.addEventListener('click', () => {
-                const token = btn.dataset.token;
-                if (!token) return;
-
-                relTemplateCaretRange = insertTokenIntoTemplateInput(
-                    relTemplateInput, token, relTemplateCaretRange
-                );
-                relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
-            });
+        // Same token editor as the confirm modal and the category override blocks.
+        const globalTemplateEditor = createTemplateTokenEditor({
+            input: relTemplateInput,
+            fallback: () => DEFAULT_REL_PATH_TEMPLATE,
+            onChange: () => {
+                updatePathPreview();
+                if (!isRestoringSettings) settingsDirty = true;
+            }
         });
+        relTemplateInput.classList.add('d-none');
+        relTemplateInput.parentElement.insertBefore(globalTemplateEditor.element, relTemplateInput);
+        globalTemplateEditor.element.appendChild(relTemplateInput);
 
         resetTemplateBtn?.addEventListener('click', () => {
             relTemplateInput.value = DEFAULT_REL_PATH_TEMPLATE;
             relTemplateInput.dispatchEvent(new Event('input', { bubbles: true }));
+            updatePathPreview();
         });
+
+        // Snapshot restore writes the field directly, so keep the pills in step.
+        relTemplateInput.addEventListener('input', () => globalTemplateEditor.refresh());
 
         updatePathPreview();
     }
@@ -5895,10 +6714,13 @@ document.addEventListener("DOMContentLoaded", async function () {
     const confirmInput = document.getElementById('confirm-path-input');
     const confirmTemplateInput = document.getElementById('confirm-template-input');
     const confirmResetTemplateBtn = document.getElementById('confirm-reset-template-btn');
-    const confirmTokenButtons = Array.from(document.querySelectorAll('.confirm-token-btn'));
     // Resolved tag values for the torrent currently in the confirm modal.
     let confirmTokenValues = {};
-    let confirmTemplateCaretRange = null;
+    // The template the modal was seeded with for the current torrent: its category
+    // override's template when it has one, otherwise the global default. Reset
+    // returns here, not to the global, so it undoes the user's edits rather than
+    // silently discarding the category override too.
+    let confirmDefaultTemplate = '';
     const previewSpan = document.getElementById('full-path-preview');
     const confirmDestinationSelect = document.getElementById('confirm-destination-select');
     const confirmDestinationRoot = document.getElementById('confirm-destination-root');
@@ -6001,30 +6823,13 @@ document.addEventListener("DOMContentLoaded", async function () {
         const row = document.createElement('div');
         row.className = 'destination-path-row mb-2';
 
-        const defaultWrap = document.createElement('div');
-        defaultWrap.className = 'form-floating destination-path-row-main-type';
-        const defaultSelect = document.createElement('select');
-        defaultSelect.className = 'form-select destination-default-select';
-        defaultSelect.name = 'extra_dest_defaults[]';
-
-        const noneOption = document.createElement('option');
-        noneOption.value = '';
-        noneOption.textContent = 'None (Global)';
-        defaultSelect.appendChild(noneOption);
-
-        mediaTypeOptions.forEach(item => {
-            const option = document.createElement('option');
-            option.value = item.id;
-            option.textContent = item.label;
-            if (item.id === defaultMainCat) {
-                option.selected = true;
-            }
-            defaultSelect.appendChild(option);
-        });
-
-        const defaultLabel = document.createElement('label');
-        defaultLabel.textContent = 'Main Type';
-        defaultWrap.append(defaultSelect, defaultLabel);
+        // Media-type roots are Category Overrides now, so these rows are untyped. The
+        // hidden field keeps extra_dest_defaults[] aligned with extra_dest_paths[].
+        const defaultInput = document.createElement('input');
+        defaultInput.type = 'hidden';
+        defaultInput.className = 'destination-default-select';
+        defaultInput.name = 'extra_dest_defaults[]';
+        defaultInput.value = '';
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
@@ -6046,7 +6851,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         pathLabel.textContent = 'Destination Path';
         pathWrap.append(pathInput, pathLabel);
 
-        row.append(defaultWrap, pathWrap, removeBtn);
+        row.append(defaultInput, pathWrap, removeBtn);
         return row;
     }
 
@@ -6065,7 +6870,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         rows.forEach((row, index) => {
             const select = row.querySelector('.destination-default-select');
-            if (!select) return;
+            if (!select?.options) return;
             const ownValue = selectedDefaults[index];
             Array.from(select.options).forEach(option => {
                 if (!option.value) {
@@ -6084,10 +6889,339 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
     }
 
+    // ============================================================
+    //  Category Overrides (optional per-media-type auto-organize settings)
+    // ============================================================
+    const categoryOverridesList = document.getElementById('category-overrides-list');
+    const categoryOverridesMenu = document.getElementById('add-category-override-menu');
+    const categoryOverridesCount = document.getElementById('category-overrides-count');
+    const categoryOverridesEmpty = document.getElementById('category-overrides-empty');
+
+    function normalizeCategoryOverride(entry) {
+        const mainCat = String(entry?.main_cat || '').trim();
+        if (!allowedDestinationDefaults.has(mainCat)) return null;
+        const linkMode = String(entry?.link_mode || '').trim().toLowerCase();
+        return {
+            main_cat: mainCat,
+            root_path: String(entry?.root_path || '').trim(),
+            rel_path_template: String(entry?.rel_path_template || '').trim(),
+            link_mode: (linkMode === 'copy' || linkMode === 'hardlink') ? linkMode : ''
+        };
+    }
+
+    function readCategoryOverrides() {
+        if (!categoryOverridesList) return [];
+        return Array.from(categoryOverridesList.querySelectorAll('.category-override-value'))
+            .map(input => { try { return normalizeCategoryOverride(JSON.parse(input.value)); } catch { return null; } })
+            .filter(Boolean);
+    }
+
+    function getCategoryOverride(mainCat) {
+        const target = String(mainCat || '').trim();
+        if (!target) return null;
+        return readCategoryOverrides().find(entry => entry.main_cat === target) || null;
+    }
+
+    /** Sample values used by each block's live preview. */
+    function categoryPreviewValues(mainCat) {
+        const label = mediaTypeOptions.find(m => m.id === mainCat)?.label || 'Ebooks';
+        const genre = mainCat === '15' ? 'Music Book' : (mainCat === '16' ? 'Documentary' : 'Fantasy');
+        return {
+            ...authorTokenValues('J.K. Rowling'),
+            narrator: mainCat === '13' ? 'Stephen Fry' : '',
+            series: 'Harry Potter',
+            seriesNumber: '1',
+            title: "Harry Potter and the Sorcerer's Stone",
+            genre,
+            format: mainCat === '14' ? 'EPUB' : 'M4B',
+            category: label,
+            year: '1997'
+        };
+    }
+
+    function updateCategoryOverrideCount() {
+        const count = categoryOverridesList?.querySelectorAll('.category-override-block').length || 0;
+        if (categoryOverridesCount) {
+            categoryOverridesCount.textContent = String(count);
+            categoryOverridesCount.classList.toggle('d-none', count < 1);
+        }
+        categoryOverridesEmpty?.classList.toggle('d-none', count > 0);
+        renderAddCategoryOverrideMenu();
+    }
+
+    /** Only offer media types that do not already have a block. */
+    function renderAddCategoryOverrideMenu() {
+        if (!categoryOverridesMenu) return;
+        const used = new Set(readCategoryOverrides().map(e => e.main_cat));
+        categoryOverridesMenu.innerHTML = '';
+
+        const available = mediaTypeOptions.filter(item => !used.has(item.id));
+        if (!available.length) {
+            const li = document.createElement('li');
+            li.innerHTML = '<span class="dropdown-item-text small text-body-secondary">All media types added</span>';
+            categoryOverridesMenu.appendChild(li);
+            return;
+        }
+        available.forEach(item => {
+            const li = document.createElement('li');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item';
+            btn.textContent = item.label;
+            btn.addEventListener('click', () => {
+                addCategoryOverrideBlock({ main_cat: item.id });
+            });
+            li.appendChild(btn);
+            categoryOverridesMenu.appendChild(li);
+        });
+    }
+
+    function addCategoryOverrideBlock(entry) {
+        const normalized = normalizeCategoryOverride(entry);
+        if (!normalized || !categoryOverridesList) return;
+        categoryOverridesList.appendChild(buildCategoryOverrideBlock(normalized));
+        updateCategoryOverrideCount();
+        syncConfirmDestinationOptions();
+        if (!isRestoringSettings) settingsDirty = true;
+    }
+
+    function renderCategoryOverrides(entries) {
+        if (!categoryOverridesList) return;
+        categoryOverridesList.innerHTML = '';
+        (Array.isArray(entries) ? entries : [])
+            .map(normalizeCategoryOverride)
+            .filter(Boolean)
+            .forEach(entry => categoryOverridesList.appendChild(buildCategoryOverrideBlock(entry)));
+        updateCategoryOverrideCount();
+    }
+
+    /**
+     * Header summary naming which options are switched on, per the design:
+     * "· custom root · custom template", or "· inherits everything".
+     */
+    function categoryOverrideSummary(state) {
+        const bits = [];
+        if (state.root_path) bits.push('custom root');
+        if (state.rel_path_template) bits.push('custom template');
+        if (state.link_mode) bits.push('custom link mode');
+        return bits.length ? `· ${bits.join(' · ')}` : '· inherits everything';
+    }
+
+    function buildCategoryOverrideBlock(entry) {
+        const label = mediaTypeOptions.find(m => m.id === entry.main_cat)?.label || entry.main_cat;
+        const bodyId = `category-override-body-${entry.main_cat}`;
+
+        const block = document.createElement('div');
+        block.className = 'category-override-block card mb-2 border-secondary-subtle';
+        block.dataset.mainCat = entry.main_cat;
+
+        // Whole block submits as one JSON value: its fields are optional and an
+        // unchecked switch would simply be absent, misaligning parallel arrays.
+        const valueInput = document.createElement('input');
+        valueInput.type = 'hidden';
+        valueInput.className = 'category-override-value';
+        valueInput.name = 'category_override_blocks[]';
+
+        // --- collapsible header carrying a one-line summary ---
+        const header = document.createElement('div');
+        header.className = 'card-header bg-transparent d-flex justify-content-between align-items-center '
+            + 'py-2 cursor-pointer noselect collapsed settings-collapse-toggle';
+        header.setAttribute('data-bs-toggle', 'collapse');
+        header.setAttribute('data-bs-target', `#${bodyId}`);
+        header.setAttribute('aria-controls', bodyId);
+        header.setAttribute('aria-expanded', 'false');
+
+        // Chevron first, then the media type, then the summary of what is overridden.
+        const headerText = document.createElement('span');
+        headerText.className = 'd-flex small fw-bold align-items-center text-truncate';
+        headerText.style.gap = '8px';
+        headerText.innerHTML =
+            '<i class="bi bi-chevron-down small text-body-secondary transition-transform"></i>'
+            + `<span class="flex-shrink-0">${label}</span>`
+            + '<span class="category-override-summary text-body-secondary fw-normal text-truncate"'
+            + ' style="font-size:0.72rem;"></span>';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-sm btn-outline-danger py-0 flex-shrink-0 remove-category-override-btn';
+        removeBtn.title = `Remove ${label} override`;
+        removeBtn.setAttribute('aria-label', `Remove ${label} override`);
+        removeBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        // The header itself toggles the collapse; the trash button must not.
+        removeBtn.setAttribute('data-bs-toggle', '');
+        header.append(headerText, removeBtn);
+
+        const collapse = document.createElement('div');
+        collapse.className = 'collapse';
+        collapse.id = bodyId;
+        const body = document.createElement('div');
+        body.className = 'card-body border-top pt-2 pb-3';
+        collapse.appendChild(body);
+
+        // --- Option 1: custom root directory ---
+        const rootToggle = buildOverrideSwitch(`ov-root-${entry.main_cat}`, 'Custom root directory',
+            'Place this media type under a different library root.');
+        const rootFields = document.createElement('div');
+        rootFields.className = 'ms-4 mt-2 mb-3 category-override-root-fields';
+        const rootInput = document.createElement('input');
+        rootInput.type = 'text';
+        rootInput.className = 'form-control form-control-sm category-override-root';
+        rootInput.placeholder = getDefaultDestinationPath();
+        rootInput.value = entry.root_path;
+        rootFields.appendChild(rootInput);
+
+        // --- Option 2: custom path template ---
+        const templateToggle = buildOverrideSwitch(`ov-tpl-${entry.main_cat}`, 'Custom path template',
+            'Use a different relative path template for this media type.');
+        const templateFields = document.createElement('div');
+        templateFields.className = 'ms-4 mt-2 mb-3 category-override-template-fields';
+
+        // Source of truth for the template; the shared editor renders pills over it.
+        const templateInput = document.createElement('input');
+        templateInput.type = 'text';
+        templateInput.className = 'form-control form-control-sm font-monospace mt-2 d-none category-override-template';
+        templateInput.placeholder = getRelPathTemplateValue();
+        templateInput.value = entry.rel_path_template;
+
+        const templateEditor = createTemplateTokenEditor({
+            input: templateInput,
+            fallback: () => getRelPathTemplateValue(),
+            onChange: () => { syncBlock(); markDirty(); }
+        });
+        templateEditor.element.appendChild(templateInput);
+        templateFields.appendChild(templateEditor.element);
+
+        // --- Option 3: link mode ---
+        const linkToggle = buildOverrideSwitch(`ov-link-${entry.main_cat}`, 'Custom link mode',
+            'Override hardlink vs copy, e.g. when this root is on another filesystem.');
+        const linkFields = document.createElement('div');
+        linkFields.className = 'ms-4 mt-2 mb-3 category-override-link-fields';
+        const linkSelect = document.createElement('select');
+        linkSelect.className = 'form-select form-select-sm category-override-link';
+        [['hardlink', 'Hardlink (same filesystem, no extra space)'], ['copy', 'Copy (works across filesystems)']]
+            .forEach(([value, text]) => {
+                const opt = document.createElement('option');
+                opt.value = value;
+                opt.textContent = text;
+                linkSelect.appendChild(opt);
+            });
+        linkSelect.value = entry.link_mode || 'hardlink';
+        linkFields.appendChild(linkSelect);
+
+        // --- Preview, always visible at the bottom ---
+        const preview = document.createElement('div');
+        preview.className = 'border-top pt-3 mt-2';
+        preview.innerHTML = '<div class="form-text small m-0 mb-1">Preview</div>'
+            + '<div class="border rounded-2 px-2 py-2 category-override-preview"></div>';
+
+        body.append(rootToggle.wrap, rootFields, templateToggle.wrap, templateFields,
+            linkToggle.wrap, linkFields, preview);
+        block.append(valueInput, header, collapse);
+
+        rootToggle.input.checked = Boolean(entry.root_path);
+        templateToggle.input.checked = Boolean(entry.rel_path_template);
+        linkToggle.input.checked = Boolean(entry.link_mode);
+
+        const markDirty = () => { if (!isRestoringSettings) settingsDirty = true; };
+
+        /** Effective template for this block: its own when set, else the global one. */
+        const effectiveTemplate = () => normalizeRelPathTemplate(
+            (templateToggle.input.checked ? templateInput.value.trim() : '') || getRelPathTemplateValue()
+        );
+
+        function syncBlock() {
+            rootFields.classList.toggle('d-none', !rootToggle.input.checked);
+            templateFields.classList.toggle('d-none', !templateToggle.input.checked);
+            linkFields.classList.toggle('d-none', !linkToggle.input.checked);
+
+            const state = {
+                main_cat: entry.main_cat,
+                root_path: rootToggle.input.checked ? rootInput.value.trim() : '',
+                rel_path_template: templateToggle.input.checked ? templateInput.value.trim() : '',
+                link_mode: linkToggle.input.checked ? linkSelect.value : ''
+            };
+            valueInput.value = JSON.stringify(state);
+            block.querySelector('.category-override-summary').textContent = categoryOverrideSummary(state);
+
+            templateEditor.refresh();
+
+            const effectiveRoot = (state.root_path || getDefaultDestinationPath()).replace(/\/+$/, '');
+            const rendered = buildRelativePathFromTemplate(
+                effectiveTemplate(), categoryPreviewValues(entry.main_cat)
+            );
+            // Root muted, the part the template controls highlighted.
+            const previewEl = block.querySelector('.category-override-preview');
+            previewEl.innerHTML = '';
+            const rootSpan = document.createElement('span');
+            rootSpan.className = 'category-override-preview-root';
+            rootSpan.textContent = `${effectiveRoot}/`;
+            const relSpan = document.createElement('span');
+            relSpan.className = 'category-override-preview-rel';
+            relSpan.textContent = rendered;
+            previewEl.append(rootSpan, relSpan);
+        }
+
+        [rootToggle.input, templateToggle.input, linkToggle.input].forEach(input => {
+            input.addEventListener('change', () => {
+                syncBlock();
+                syncConfirmDestinationOptions();
+                markDirty();
+            });
+        });
+        [rootInput, templateInput].forEach(input => {
+            input.addEventListener('input', () => { syncBlock(); markDirty(); });
+        });
+        linkSelect.addEventListener('change', () => { syncBlock(); markDirty(); });
+        removeBtn.addEventListener('click', (event) => {
+            event.stopPropagation();          // do not toggle the collapse
+            block.remove();
+            updateCategoryOverrideCount();
+            syncConfirmDestinationOptions();
+            markDirty();
+        });
+
+        // Seed the pill editor from the global template when the block has none yet,
+        // so [+] and drag have something to act on.
+        if (!templateInput.value) templateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
+        syncBlock();
+        return block;
+    }
+
+    function buildOverrideSwitch(id, labelText, helpText) {
+        const wrap = document.createElement('div');
+        wrap.className = 'form-check form-switch';
+        const input = document.createElement('input');
+        input.className = 'form-check-input';
+        input.type = 'checkbox';
+        input.role = 'switch';
+        input.id = id;
+        const label = document.createElement('label');
+        label.className = 'form-check-label small';
+        label.setAttribute('for', id);
+        const hint = document.createElement('span');
+        hint.className = 'text-body-secondary d-block';
+        hint.style.fontSize = '0.75rem';
+        hint.textContent = helpText;
+        label.append(document.createTextNode(labelText), hint);
+        wrap.append(input, label);
+        return { wrap, input, hint };
+    }
+
+    if (categoryOverridesList) {
+        renderCategoryOverrides(window.CATEGORY_OVERRIDES || []);
+    }
+
     function syncConfirmDestinationOptions(mainCat = '', preferCategoryDefault = false) {
         if (!confirmDestinationSelect) return;
 
         const liveEntries = buildConfiguredDestinationEntries();
+
+        // A category override's root is a valid destination even if it was never added
+        // to the path list, so surface it as an option here.
+        const overrideRoot = getCategoryOverride(mainCat)?.root_path || '';
+        if (overrideRoot && !liveEntries.some(entry => entry.path === overrideRoot)) {
+            liveEntries.push({ path: overrideRoot, default_main_cat: String(mainCat || '') });
+        }
         destinationPathEntries = liveEntries;
 
         const existingValue = confirmDestinationSelect.value;
@@ -6100,9 +7234,10 @@ document.addEventListener("DOMContentLoaded", async function () {
             confirmDestinationSelect.appendChild(option);
         });
 
+        // Precedence: category override root > media-type path rule > global default.
         const mappedDefault = liveEntries.find(entry => entry.default_main_cat === String(mainCat || ''));
         const fallbackDefault = liveEntries[0];
-        const preferredValue = (mappedDefault || fallbackDefault)?.path || '';
+        const preferredValue = overrideRoot || (mappedDefault || fallbackDefault)?.path || '';
         const hasExisting = liveEntries.some(entry => entry.path === existingValue);
 
         if (preferCategoryDefault) {
@@ -6117,8 +7252,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     function renderDestinationRows(entries) {
         if (!destinationPathsList) return;
         const fallbackPath = getDefaultDestinationPath();
+        // Typed entries are legacy Type-Specific Paths, already migrated into
+        // Category Overrides on config load; they are dropped here on the next save.
         const normalized = normalizeDestinationEntries(entries, fallbackPath, false)
-            .filter(entry => entry.path !== fallbackPath || entry.default_main_cat);
+            .filter(entry => entry.path !== fallbackPath && !entry.default_main_cat);
         destinationPathEntries = normalized;
 
         destinationPathsList.innerHTML = '';
@@ -6282,79 +7419,38 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 
-    /**
-     * Reflect the confirm-modal template in the tag buttons: a tag already in the
-     * template reads as active (click to remove), and a tag with no value for this
-     * torrent is disabled unless it is in the template, so it can still be removed.
-     */
-    function syncConfirmTokenButtons() {
-        if (!confirmTokenButtons.length) return;
-        const template = normalizeRelPathTemplate(confirmTemplateInput?.value || '');
-
-        confirmTokenButtons.forEach(btn => {
-            const spec = REL_PATH_TOKENS.find(t => t.token === btn.dataset.token);
-            if (!spec) return;
-
-            const value = confirmTokenValues[spec.key] || '';
-            const isActive = templateHasToken(template, spec.token);
-
-            btn.disabled = !value && !isActive;
-            btn.dataset.active = isActive ? 'true' : 'false';
-            btn.classList.toggle('btn-primary', isActive);
-            btn.classList.toggle('text-white', isActive);
-            btn.classList.toggle('btn-outline-primary', !isActive);
-            btn.title = value
-                ? `${spec.label}: ${value}`
-                : `No ${spec.label.toLowerCase()} for this torrent`;
-        });
-    }
-
     /** Rebuild the relative path from the confirm-modal template, discarding manual edits. */
     function applyConfirmTemplate() {
         if (confirmInput && confirmTemplateInput) {
             confirmInput.value = buildRelativePathFromTemplate(confirmTemplateInput.value, confirmTokenValues);
         }
         updateConfirmPathPreview();
-        syncConfirmTokenButtons();
+        confirmTemplateEditor?.refresh();
     }
 
+    let confirmTemplateEditor = null;
     if (confirmTemplateInput) {
-        const captureConfirmTemplateCaret = () => {
-            if (document.activeElement !== confirmTemplateInput) return;
-            const start = confirmTemplateInput.selectionStart;
-            const end = confirmTemplateInput.selectionEnd;
-            if (typeof start === 'number' && typeof end === 'number') {
-                confirmTemplateCaretRange = { start, end };
-            }
-        };
+        // Same token editor as Settings and the category override blocks. Values for
+        // the torrent being confirmed feed the pill tooltips and mark tokens that
+        // would render nothing.
+        confirmTemplateEditor = createTemplateTokenEditor({
+            input: confirmTemplateInput,
+            fallback: () => confirmDefaultTemplate || getRelPathTemplateValue(),
+            tokenValues: () => Object.fromEntries(
+                REL_PATH_TOKENS.map(spec => [spec.token, confirmTokenValues[spec.key] || ''])
+            ),
+            onChange: () => applyConfirmTemplate()
+        });
+        confirmTemplateInput.classList.add('d-none');
+        confirmTemplateInput.parentElement.insertBefore(confirmTemplateEditor.element, confirmTemplateInput);
+        confirmTemplateEditor.element.appendChild(confirmTemplateInput);
 
         confirmTemplateInput.addEventListener('input', applyConfirmTemplate);
-        ['keyup', 'click', 'select', 'focus'].forEach(evt => {
-            confirmTemplateInput.addEventListener(evt, captureConfirmTemplateCaret);
-        });
-
-        confirmTokenButtons.forEach(btn => {
-            btn.addEventListener('mousedown', captureConfirmTemplateCaret);
-            btn.addEventListener('click', () => {
-                const token = btn.dataset.token;
-                if (!token || btn.disabled) return;
-
-                const template = normalizeRelPathTemplate(confirmTemplateInput.value || '');
-                if (templateHasToken(template, token)) {
-                    confirmTemplateInput.value = removeTokenFromTemplate(template, token);
-                    confirmTemplateCaretRange = null;
-                } else {
-                    confirmTemplateCaretRange = insertTokenIntoTemplateInput(
-                        confirmTemplateInput, token, confirmTemplateCaretRange
-                    );
-                }
-                applyConfirmTemplate();
-            });
-        });
 
         confirmResetTemplateBtn?.addEventListener('click', () => {
-            confirmTemplateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
-            confirmTemplateCaretRange = null;
+            confirmTemplateInput.value = normalizeRelPathTemplate(
+                confirmDefaultTemplate || getRelPathTemplateValue()
+            );
             applyConfirmTemplate();
         });
     }
@@ -7262,6 +8358,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const cleanTitle = sanitizeFilename(downloadData.title);
                 const cleanSeries = seriesName ? sanitizeFilename(seriesName) : "";
                 const cleanSeriesNumber = seriesNumber ? sanitizeFilename(seriesNumber) : "";
+                const categoryOverride = getCategoryOverride(downloadData.main_cat);
                 const { category, genre } = splitCatname(downloadData.catname, downloadData.main_cat);
                 const cleanGenre = genre ? sanitizeFilename(genre) : "";
                 const cleanCategory = category ? sanitizeFilename(category) : "";
@@ -7282,19 +8379,22 @@ document.addEventListener("DOMContentLoaded", async function () {
                     category: cleanCategory,
                     year: downloadData.year
                 };
-                confirmTemplateCaretRange = null;
+                // Category override template beats the global default.
+                confirmDefaultTemplate = normalizeRelPathTemplate(
+                    categoryOverride?.rel_path_template || getRelPathTemplateValue()
+                );
                 if (confirmTemplateInput) {
-                    confirmTemplateInput.value = normalizeRelPathTemplate(getRelPathTemplateValue());
+                    confirmTemplateInput.value = confirmDefaultTemplate;
                 }
                 applyConfirmTemplate();
             } else {
                 confirmTokenValues = {};
-                confirmTemplateCaretRange = null;
+                confirmDefaultTemplate = '';
                 if (confirmTemplateInput) confirmTemplateInput.value = '';
                 if (confirmInput) confirmInput.value = '';
                 syncConfirmDestinationOptions('', false);
                 updateConfirmPathPreview();
-                syncConfirmTokenButtons();
+                confirmTemplateEditor?.refresh();
             }
 
             // Sync Freeleech UI

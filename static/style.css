@@ -506,6 +506,18 @@ input:disabled, select:disabled {
     }
 }
 
+/* Destination rows are a path and a remove button only; media-type roots moved
+   to Category Overrides. */
+#settingsOffcanvas #destination-paths-list .destination-path-row {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+}
+
+#settingsOffcanvas #destination-paths-list .destination-path-row > .btn {
+    grid-column: 2;
+    grid-row: 1;
+}
+
 .roundTop {
     border-start-start-radius: 1rem;
 }
@@ -1397,6 +1409,228 @@ input:disabled, select:disabled {
 .custom-scrollbar::-webkit-scrollbar-thumb {
     background-color: var(--bs-secondary);
     border-radius: 10px;
+}
+
+/* --- Path template editor (an editable text box with inline token pills) --- */
+.template-token-editor {
+    /* A text field, so literal text and separators are typed inline between the
+       pills; pre-wrap keeps the spaces the user types. */
+    display: block;
+    min-height: calc(1.5em + 0.75rem + 2px);
+    height: auto;
+    padding: 7px 9px;
+    line-height: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    cursor: text;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.82rem;
+}
+
+/* Marked empty by the editor rather than :empty, because a cleared field still
+   holds the zero-width anchors the caret needs. */
+.template-token-editor-empty::before {
+    content: attr(data-placeholder);
+    opacity: 0.5;
+}
+
+/* Nothing to select while a pill is being dragged across the text. */
+.template-token-editor-dragging {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.template-token-pill {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: baseline;
+    gap: 4px;
+    padding: 2px 5px;
+    /* Breathing room from neighbouring tokens and from the text either side. */
+    margin: 0 2px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-family: var(--bs-body-font-family);
+    line-height: 1.4;
+    cursor: grab;
+    border: 1px solid rgba(110, 168, 254, 0.55);
+    background: rgba(110, 168, 254, 0.14);
+    color: #8bb9fe;
+    /* Dragging is pointer-driven so it works on touch; without this the browser
+       would claim the gesture for scrolling before any pointermove fires. */
+    touch-action: none;
+    -webkit-touch-callout: none;
+}
+
+.template-token-pill:active {
+    cursor: grabbing;
+}
+
+.template-token-pill.dragging {
+    opacity: 0.45;
+}
+
+/* Where the dragged pill would land, drawn between the characters it sits in. */
+.template-token-drop-caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.15em;
+    margin: 0 -1px;
+    vertical-align: text-bottom;
+    background: rgba(110, 168, 254, 0.95);
+    border-radius: 1px;
+}
+
+.template-token-grip {
+    opacity: 0.5;
+    font-size: 0.72rem;
+}
+
+.template-token-remove {
+    cursor: pointer;
+    opacity: 0.75;
+    /* Comfortable tap target without inflating the pill. */
+    margin: -7px -3px -7px 0;
+    padding: 7px 3px;
+    touch-action: manipulation;
+}
+
+.template-token-remove:hover {
+    opacity: 1;
+}
+
+.template-token-add-btn {
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.template-token-add-menu {
+    min-width: 220px;
+    max-width: 280px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.template-token-add-item {
+    display: flex;
+    flex-direction: column;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    white-space: normal;
+}
+
+.template-token-add-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.template-token-add-detail {
+    font-size: 0.72rem;
+    opacity: 0.65;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.template-token-add-used {
+    margin-left: auto;
+    color: var(--bs-success);
+}
+
+/* A token the current item has nothing for: still offered, but quieter. */
+.template-token-add-item-empty .template-token-add-label {
+    opacity: 0.55;
+}
+
+.template-token-text-toggle,
+.template-token-hint {
+    font-size: 0.72rem;
+}
+
+/* Optional text inside a pill: shown, but clearly not part of the token itself. */
+.template-token-affix {
+    opacity: 0.7;
+    font-style: italic;
+    white-space: pre;
+}
+
+.template-token-pad {
+    font-size: 0.68rem;
+    padding: 0 3px;
+    border-radius: 3px;
+    background: rgba(110, 168, 254, 0.22);
+}
+
+.template-token-label {
+    white-space: nowrap;
+}
+
+/* Rendering nothing for the item being confirmed. */
+.template-token-pill-empty {
+    border-style: dashed;
+    opacity: 0.6;
+}
+
+.template-token-pill-selected {
+    border-color: rgba(110, 168, 254, 1);
+    box-shadow: 0 0 0 2px rgba(110, 168, 254, 0.35);
+}
+
+.template-token-options {
+    margin-top: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    background: var(--bs-tertiary-bg);
+}
+
+.template-token-options .btn-close-sm {
+    font-size: 0.6rem;
+}
+
+.template-token-options .invalid-feedback:empty {
+    display: none !important;
+}
+
+/* Roomier pills on touch screens, where dragging needs a bigger grab area. */
+@media (pointer: coarse) {
+    .template-token-editor {
+        line-height: 2.2;
+    }
+
+    .template-token-pill {
+        padding: 4px 7px;
+        font-size: 0.82rem;
+    }
+
+    .template-token-grip {
+        font-size: 0.85rem;
+        opacity: 0.7;
+    }
+}
+
+/* --- Category override cards --- */
+#settingsOffcanvas .category-override-block .card-header {
+    gap: 0.5rem;
+}
+
+#settingsOffcanvas .category-override-preview {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.74rem;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#settingsOffcanvas .category-override-preview-root {
+    opacity: 0.55;
+}
+
+#settingsOffcanvas .category-override-preview-rel {
+    color: #75c687;
 }
 
 /* --- Tom Select Dark Mode Overrides --- */
