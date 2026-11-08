@@ -6823,30 +6823,13 @@ document.addEventListener("DOMContentLoaded", async function () {
         const row = document.createElement('div');
         row.className = 'destination-path-row mb-2';
 
-        const defaultWrap = document.createElement('div');
-        defaultWrap.className = 'form-floating destination-path-row-main-type';
-        const defaultSelect = document.createElement('select');
-        defaultSelect.className = 'form-select destination-default-select';
-        defaultSelect.name = 'extra_dest_defaults[]';
-
-        const noneOption = document.createElement('option');
-        noneOption.value = '';
-        noneOption.textContent = 'None (Global)';
-        defaultSelect.appendChild(noneOption);
-
-        mediaTypeOptions.forEach(item => {
-            const option = document.createElement('option');
-            option.value = item.id;
-            option.textContent = item.label;
-            if (item.id === defaultMainCat) {
-                option.selected = true;
-            }
-            defaultSelect.appendChild(option);
-        });
-
-        const defaultLabel = document.createElement('label');
-        defaultLabel.textContent = 'Main Type';
-        defaultWrap.append(defaultSelect, defaultLabel);
+        // Media-type roots are Category Overrides now, so these rows are untyped. The
+        // hidden field keeps extra_dest_defaults[] aligned with extra_dest_paths[].
+        const defaultInput = document.createElement('input');
+        defaultInput.type = 'hidden';
+        defaultInput.className = 'destination-default-select';
+        defaultInput.name = 'extra_dest_defaults[]';
+        defaultInput.value = '';
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
@@ -6868,7 +6851,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         pathLabel.textContent = 'Destination Path';
         pathWrap.append(pathInput, pathLabel);
 
-        row.append(defaultWrap, pathWrap, removeBtn);
+        row.append(defaultInput, pathWrap, removeBtn);
         return row;
     }
 
@@ -6887,7 +6870,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         rows.forEach((row, index) => {
             const select = row.querySelector('.destination-default-select');
-            if (!select) return;
+            if (!select?.options) return;
             const ownValue = selectedDefaults[index];
             Array.from(select.options).forEach(option => {
                 if (!option.value) {
@@ -7269,8 +7252,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     function renderDestinationRows(entries) {
         if (!destinationPathsList) return;
         const fallbackPath = getDefaultDestinationPath();
+        // Typed entries are legacy Type-Specific Paths, already migrated into
+        // Category Overrides on config load; they are dropped here on the next save.
         const normalized = normalizeDestinationEntries(entries, fallbackPath, false)
-            .filter(entry => entry.path !== fallbackPath || entry.default_main_cat);
+            .filter(entry => entry.path !== fallbackPath && !entry.default_main_cat);
         destinationPathEntries = normalized;
 
         destinationPathsList.innerHTML = '';

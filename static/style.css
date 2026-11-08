@@ -506,6 +506,18 @@ input:disabled, select:disabled {
     }
 }
 
+/* Destination rows are a path and a remove button only; media-type roots moved
+   to Category Overrides. */
+#settingsOffcanvas #destination-paths-list .destination-path-row {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+}
+
+#settingsOffcanvas #destination-paths-list .destination-path-row > .btn {
+    grid-column: 2;
+    grid-row: 1;
+}
+
 .roundTop {
     border-start-start-radius: 1rem;
 }
