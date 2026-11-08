@@ -2096,16 +2096,6 @@ const REL_PATH_TOKEN_SPECS = new Map(REL_PATH_TOKENS.map(spec => [spec.token, sp
 const TEMPLATE_ZWSP = '\u200b';
 
 /**
- * Write a token group back out as template text: "{ #SeriesNumber:02}".
- * Inverse of parseRelPathTemplateGroups() for a single group.
- */
-function formatRelPathTemplateGroup({ token, prefix = '', suffix = '', paddingWidth = 0 }) {
-    const name = token.slice(1, -1);
-    const padding = name === 'SeriesNumber' && paddingWidth ? `:0${paddingWidth}` : '';
-    return `{${prefix}${name}${padding}${suffix}}`;
-}
-
-/**
  * Split template text into literal runs and recognised token groups, the way the
  * path builder will read it. Unknown brace groups stay literal text.
  */
@@ -2129,9 +2119,9 @@ function splitRelPathTemplate(text) {
  * It behaves like an ordinary text box. Tokens are inline pills the caret steps
  * over as a unit; everything between them - separators, literal text - is typed
  * and edited normally. Pills can be dragged to another spot in the text, the
- * [+] menu inserts a token at the caret, and tapping a pill opens its options
- * (text shown only when the token has a value, and zero-padding for Series #).
- * A pill stands for a whole brace group, so "{ (Year)}" is one pill.
+ * [+] menu inserts a token at the caret, and tapping a pill opens its text for
+ * editing, with its result and any token-specific options (zero-padding for
+ * Series #). A pill stands for a whole brace group, so "{ (Year)}" is one pill.
  *
  * `input` is the real form field and stays the source of truth, so names, ids and
  * form submission are left to the caller. The editor mounts around it.
@@ -2174,7 +2164,7 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
     const hint = document.createElement('span');
     hint.className = 'form-text small m-0 me-auto template-token-hint';
-    hint.textContent = 'Tap a token for options';
+    hint.textContent = 'Tap a token to edit it';
 
     const textToggle = document.createElement('button');
     textToggle.type = 'button';
@@ -2612,111 +2602,118 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
         optionsPanel.textContent = '';
     }
 
+    /** Values to show a token's result with: the item's own, or a sample book. */
+    function resultValues() {
+        if (tokenValues) return tokenValues();
+        const sample = {
+            ...authorTokenValues('J.K. Rowling'),
+            narrator: 'Stephen Fry',
+            series: 'Harry Potter',
+            seriesNumber: '1',
+            title: "Harry Potter and the Sorcerer's Stone",
+            genre: 'Fantasy',
+            format: 'M4B',
+            category: 'Audiobooks',
+            year: '1997'
+        };
+        return Object.fromEntries(REL_PATH_TOKENS.map(spec => [spec.token, sample[spec.key] || '']));
+    }
+
     /**
-     * Options for one token, edited live: text that only appears when the token
-     * has a value (" (" + Year + ")"), and zero-padding for the series number.
+     * A token's own editor: its text exactly as it sits in the template, the
+     * result of that text, and options that are specific to the token (only
+     * zero-padding for Series # so far), which edit the same text.
      */
     function openOptions(pill) {
         if (optionsPill === pill) { closeOptions(); return; }
         closeOptions();
         optionsPill = pill;
         pill.classList.add('template-token-pill-selected');
-
-        const group = pillGroup(pill);
-        const spec = REL_PATH_TOKEN_SPECS.get(group.token);
-        const name = spec ? spec.label : group.token;
         const uid = `tto-${Math.random().toString(36).slice(2, 8)}`;
 
         optionsPanel.innerHTML = `
-            <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="small fw-bold"></span>
-                <button type="button" class="btn-close btn-close-sm" aria-label="Close"></button>
+            <div class="d-flex align-items-center gap-2">
+                <input type="text" class="form-control form-control-sm font-monospace" id="${uid}-text"
+                    autocomplete="off" spellcheck="false" aria-label="Token text">
+                <button type="button" class="btn btn-sm btn-outline-danger template-token-options-remove"
+                    title="Remove token" aria-label="Remove token"><i class="bi bi-trash"></i></button>
+                <button type="button" class="btn-close btn-close-sm ms-1" aria-label="Close"></button>
             </div>
-            <div class="row g-2">
-                <div class="col-6">
-                    <label class="form-label small mb-1" for="${uid}-pre">Text before</label>
-                    <input type="text" class="form-control form-control-sm font-monospace" id="${uid}-pre" autocomplete="off">
-                </div>
-                <div class="col-6">
-                    <label class="form-label small mb-1" for="${uid}-suf">Text after</label>
-                    <input type="text" class="form-control form-control-sm font-monospace" id="${uid}-suf" autocomplete="off">
-                </div>
-                <div class="col-12 template-token-options-pad">
-                    <label class="form-label small mb-1" for="${uid}-pad">Leading zeros</label>
-                    <select class="form-select form-select-sm" id="${uid}-pad">
-                        <option value="0">None (1, 2, 10)</option>
-                        <option value="2">2 digits (01, 02, 10)</option>
-                        <option value="3">3 digits (001, 002, 010)</option>
-                        <option value="4">4 digits (0001)</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-text small mt-2 template-token-options-help"></div>
+            <div class="small font-monospace mt-1 text-break template-token-options-result"></div>
             <div class="invalid-feedback d-block small template-token-options-error"></div>
-            <div class="d-flex justify-content-between align-items-center mt-2">
-                <span class="small font-monospace text-body-secondary text-break template-token-options-raw"></span>
-                <button type="button" class="btn btn-sm btn-outline-danger py-0 template-token-options-remove">
-                    <i class="bi bi-trash"></i> Remove
-                </button>
+            <div class="form-text small mt-1">Text inside the braces only appears when there's a value.</div>
+            <div class="mt-2 template-token-options-pad">
+                <label class="form-label small mb-1" for="${uid}-pad">Leading zeros</label>
+                <select class="form-select form-select-sm" id="${uid}-pad">
+                    <option value="0">None (1, 2, 10)</option>
+                    <option value="2">2 digits (01, 02, 10)</option>
+                    <option value="3">3 digits (001, 002, 010)</option>
+                    <option value="4">4 digits (0001)</option>
+                </select>
             </div>`;
 
-        optionsPanel.querySelector('.fw-bold').textContent = `${name} options`;
-        const pre = optionsPanel.querySelector(`#${uid}-pre`);
-        const suf = optionsPanel.querySelector(`#${uid}-suf`);
+        const text = optionsPanel.querySelector(`#${uid}-text`);
         const pad = optionsPanel.querySelector(`#${uid}-pad`);
-        const help = optionsPanel.querySelector('.template-token-options-help');
+        const padRow = optionsPanel.querySelector('.template-token-options-pad');
+        const result = optionsPanel.querySelector('.template-token-options-result');
         const error = optionsPanel.querySelector('.template-token-options-error');
-        const raw = optionsPanel.querySelector('.template-token-options-raw');
-        const isSeriesNumber = group.token === '{SeriesNumber}';
 
-        optionsPanel.querySelector('.template-token-options-pad').classList.toggle('d-none', !isSeriesNumber);
-        pre.value = group.prefix || '';
-        suf.value = group.suffix || '';
-        pre.placeholder = isSeriesNumber ? 'e.g.  #' : 'e.g.  - ';
-        suf.placeholder = group.token === '{Year}' ? 'e.g. )' : '';
-        pad.value = String(group.paddingWidth || 0);
-        help.textContent = `Text before and after only appears when the item has a ${name.toLowerCase()}, `
-            + `so nothing is left dangling. A "/" in it adds a folder level only when there is a value.`;
+        /** The single known token group `value` is, or null. */
+        const parseOne = (value) => {
+            const parts = splitRelPathTemplate(value);
+            return parts.length === 1 && parts[0].group ? parts[0].group : null;
+        };
 
-        const apply = () => {
-            const next = {
-                token: group.token,
-                prefix: pre.value.replace(/[{}]/g, ''),
-                suffix: suf.value.replace(/[{}]/g, ''),
-                paddingWidth: isSeriesNumber ? Number(pad.value) || 0 : 0
-            };
-            const text = formatRelPathTemplateGroup(next);
-            // Only accept text that reads back as the same token: a letter right
-            // against the token name, or another token's name inside the text,
-            // would make the path builder see something else entirely.
-            const back = parseRelPathTemplateGroups(text)[0];
-            const ok = back && back.token === next.token && back.prefix === next.prefix
-                && back.suffix === next.suffix && (back.paddingWidth || 0) === next.paddingWidth;
-            pre.classList.toggle('is-invalid', !ok);
-            suf.classList.toggle('is-invalid', !ok);
-            if (!ok) {
-                error.textContent = 'Start the text after (and end the text before) with a space or symbol, '
-                    + 'and do not use another token\'s name in it.';
-                return;
-            }
-            error.textContent = '';
-            raw.textContent = text;
-            if (pill.dataset.token === text) return;
-            pill.dataset.token = text;
+        /** Bring the result line and the options in line with the pill. */
+        const reflect = () => {
+            const group = pillGroup(pill);
+            const isSeriesNumber = group.token === '{SeriesNumber}';
+            padRow.classList.toggle('d-none', !isSeriesNumber);
+            if (isSeriesNumber) pad.value = String(group.paddingWidth || 0);
+            const rendered = renderGroup(pill.dataset.token, resultValues());
+            result.textContent = rendered ? `→ ${rendered}` : '→ (nothing for this item)';
+            result.classList.toggle('text-body-secondary', !rendered);
+        };
+
+        const commit = (value) => {
+            if (pill.dataset.token === value) return;
+            pill.dataset.token = value;
             paintPill(pill);
             pill.classList.add('template-token-pill-selected');
             sync();
         };
 
-        raw.textContent = pill.dataset.token;
-        [pre, suf].forEach(field => {
-            field.addEventListener('input', apply);
-            field.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') { event.preventDefault(); closeOptions(); }
-                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeOptions(); }
-            });
+        text.value = pill.dataset.token;
+        reflect();
+
+        text.addEventListener('input', () => {
+            const value = text.value.replace(/\\/g, '/');
+            const group = parseOne(value);
+            text.classList.toggle('is-invalid', !group);
+            error.textContent = group ? '' : 'Not a token. Use one tag in braces, e.g. {Year}.';
+            if (!group) return;
+            commit(value);
+            reflect();
         });
-        pad.addEventListener('change', apply);
+
+        pad.addEventListener('change', () => {
+            const group = pillGroup(pill);
+            // Rewrite only the padding and keep the rest of the token text as typed.
+            const width = Number(pad.value) || 0;
+            const content = pill.dataset.token.slice(1, -1);
+            const updated = `{${content.replace(/SeriesNumber(:0(?:10|[1-9]))?/, width ? `SeriesNumber:0${width}` : 'SeriesNumber')}}`;
+            if (parseOne(updated)?.token !== group.token) return;
+            text.value = updated;
+            text.classList.remove('is-invalid');
+            error.textContent = '';
+            commit(updated);
+            reflect();
+        });
+
+        text.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') { event.preventDefault(); closeOptions(); }
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeOptions(); }
+        });
         optionsPanel.querySelector('.btn-close').addEventListener('click', closeOptions);
         optionsPanel.querySelector('.template-token-options-remove').addEventListener('click', () => {
             removePill(pill);
@@ -2725,7 +2722,7 @@ function createTemplateTokenEditor({ input, fallback = () => DEFAULT_REL_PATH_TE
 
         optionsPanel.classList.remove('d-none');
         // Not on touch, where focusing pops the keyboard over the panel.
-        if (!window.matchMedia?.('(pointer: coarse)').matches) pre.focus({ preventScroll: true });
+        if (!window.matchMedia?.('(pointer: coarse)').matches) text.focus({ preventScroll: true });
     }
 
     // --- dragging a pill to a new spot -------------------------------------
